@@ -6,7 +6,6 @@ import { CitationModal } from '../components/CitationModal';
 import { GuestOtpModal } from '../features/chat/GuestOtpModal';
 import { api } from '../lib/api';
 import {
-  ShoppingBag,
   Sparkles,
   Search,
   ShoppingCart,
@@ -95,8 +94,12 @@ export const App: React.FC = () => {
           
           {/* Left Brand Logo */}
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('assistant')}>
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-purple-200">
-              <ShoppingBag className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-purple-200 overflow-hidden p-1.5">
+              <img
+                src="/images/brand/shopping-bag-icon.png"
+                alt="ShopSupport Logo"
+                className="w-full h-full object-contain filter drop-shadow-sm"
+              />
             </div>
             <div className="flex items-center gap-1.5">
               <span className="font-extrabold text-slate-900 tracking-tight text-lg">

@@ -27,12 +27,14 @@ jobs:
 
       - name: Seed test database & index policy
         run: |
+          mkdir -p backend/data
           python -m shopagent.cli seed
           python -m shopagent.rag.indexer
         env:
           INTEGRATION_MODE: simulated
           DATABASE_URL: sqlite+aiosqlite:///backend/data/shopagent.db
           DATABASE_URL_SYNC: sqlite:///backend/data/shopagent.db
+          PYTHONPATH: backend/src:.
 
       - name: Run Backend Pytest Suite
         run: |
@@ -42,12 +44,14 @@ jobs:
           DATABASE_TEST_URL: sqlite+aiosqlite:///:memory:
           LLM_PRIMARY_PROVIDER: fake
           LLM_FALLBACK_PROVIDER: fake
+          PYTHONPATH: backend/src:.
 
       - name: Run Evaluation Harness Smoke Test
         run: |
           python -m evals.harness.runner --agent oracle
         env:
           INTEGRATION_MODE: simulated
+          PYTHONPATH: backend/src:.
 
   frontend:
     name: Frontend Build & Tests

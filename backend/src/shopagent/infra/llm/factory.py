@@ -70,8 +70,13 @@ def get_chat_model(role: str = "agent_primary") -> BaseChatModel:
 
     api_key = settings.GEMINI_API_KEY or os.environ.get("GOOGLE_API_KEY")
 
-    if provider == "fake" or not api_key:
+    if provider == "fake":
         return FakeChatModel()
+
+    if not api_key:
+        raise ValueError(
+            f"LLM provider '{provider}' for role '{role}' requires a valid GEMINI_API_KEY or GOOGLE_API_KEY."
+        )
 
     if provider == "gemini":
         try:
@@ -82,8 +87,7 @@ def get_chat_model(role: str = "agent_primary") -> BaseChatModel:
                 timeout=30.0,
             )
         except Exception as e:
-            logger.warning("Failed to initialize ChatGoogleGenerativeAI(%s): %s. Using FakeChatModel.", model_name, e)
-            return FakeChatModel()
+            logger.error("Failed to initialize ChatGoogleGenerativeAI(%s): %s", model_name, e)
+            raise RuntimeError(f"Could not initialize Gemini model '{model_name}': {e}") from e
 
-    # Default fallback
-    return FakeChatModel()
+    raise ValueError(f"Unsupported LLM provider '{provider}' for role '{role}'.")

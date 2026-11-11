@@ -53,6 +53,7 @@ class ConversationDto(BaseModel):
     id: str
     conversation_id: str | None = None
     customer_id: str | None = None
+    guest_token: str | None = None
     channel: str = "web"
     mode: str = "ai"
     created_at: str

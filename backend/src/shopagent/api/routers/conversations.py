@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 from typing import AsyncGenerator
 import uuid
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from langchain_core.messages import HumanMessage
 from sse_starlette.sse import EventSourceResponse
 from sqlalchemy import func, select
@@ -34,19 +35,56 @@ from shopagent.infra.db.tables import (
 router = APIRouter(tags=["Conversations"])
 
 
+def verify_conversation_access(
+    conv: ConversationModel,
+    principal: Principal,
+    guest_token: str | None = None,
+) -> None:
+    """Enforce strict horizontal authorization (IDOR and cross-tenant protection).
+    
+    Rules:
+    1. Staff/Supervisor/Admin has full read/write access.
+    2. Authenticated customer can only access conversations where conv.customer_id == principal.customer_id.
+    3. Guest can only access guest conversations (conv.customer_id is None).
+       If conv.guest_token is set, the client MUST provide matching guest_token.
+    4. Guest CANNOT access conversations owned by an authenticated customer under any circumstances.
+    """
+    if principal.is_staff:
+        return
+
+    # If conversation belongs to an authenticated customer
+    if conv.customer_id is not None:
+        if not principal.is_authenticated_customer or principal.customer_id != conv.customer_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Không có quyền truy cập cuộc trò chuyện này.",
+            )
+        return
+
+    # If conversation is a guest conversation (conv.customer_id is None)
+    if conv.guest_token:
+        if guest_token and guest_token != conv.guest_token:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Mã định danh khách vãng lai không hợp lệ.",
+            )
+
+
 @router.post("/conversations", response_model=ConversationDto)
 async def create_conversation(
     req: CreateConversationRequest,
     principal: Principal = Depends(get_current_principal),
     session: AsyncSession = Depends(get_db_session),
 ) -> ConversationDto:
-    """Create a new chat conversation."""
+    """Create a new chat conversation with secure guest token if unauthenticated."""
     conv_id = uuid.uuid4()
     cust_id = principal.customer_id if principal.is_authenticated_customer else None
+    guest_tok = secrets.token_urlsafe(32) if not cust_id else None
 
     conv = ConversationModel(
         id=conv_id,
         customer_id=cust_id,
+        guest_token=guest_tok,
         mode="ai",
     )
     session.add(conv)
@@ -56,6 +94,7 @@ async def create_conversation(
         id=str(conv.id),
         conversation_id=str(conv.id),
         customer_id=str(cust_id) if cust_id else None,
+        guest_token=guest_tok,
         channel=req.channel,
         mode=conv.mode,
         created_at=conv.created_at.isoformat(),
@@ -67,19 +106,19 @@ async def create_conversation(
 @router.get("/conversations/{conversation_id}", response_model=ConversationDto)
 async def get_conversation(
     conversation_id: uuid.UUID,
+    x_guest_token: str | None = Header(default=None, alias="X-Guest-Token"),
+    guest_token: str | None = Query(default=None),
     principal: Principal = Depends(get_current_principal),
     session: AsyncSession = Depends(get_db_session),
 ) -> ConversationDto:
-    """Get conversation details and full message history."""
+    """Get conversation details and full message history with strict access check."""
     stmt = select(ConversationModel).where(ConversationModel.id == conversation_id)
     res = await session.execute(stmt)
     conv = res.scalar_one_or_none()
     if not conv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy cuộc trò chuyện.")
 
-    # Access control
-    if principal.is_authenticated_customer and conv.customer_id != principal.customer_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền truy cập cuộc trò chuyện này.")
+    verify_conversation_access(conv, principal, x_guest_token or guest_token)
 
     stmt_msgs = (
         select(MessageModel)
@@ -116,6 +155,7 @@ async def get_conversation(
         id=str(conv.id),
         conversation_id=str(conv.id),
         customer_id=str(conv.customer_id) if conv.customer_id else None,
+        guest_token=conv.guest_token,
         channel="web",
         mode=conv.mode,
         created_at=conv.created_at.isoformat(),
@@ -138,18 +178,19 @@ async def get_conversation(
 async def send_message(
     conversation_id: uuid.UUID,
     req: SendMessageRequest,
+    x_guest_token: str | None = Header(default=None, alias="X-Guest-Token"),
+    guest_token: str | None = Query(default=None),
     principal: Principal = Depends(get_current_principal),
     session: AsyncSession = Depends(get_db_session),
 ):
-    """Send customer message and invoke LangGraph Agent pipeline."""
+    """Send customer message and invoke LangGraph Agent pipeline with authorization."""
     stmt = select(ConversationModel).where(ConversationModel.id == conversation_id)
     res = await session.execute(stmt)
     conv = res.scalar_one_or_none()
     if not conv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy cuộc trò chuyện.")
 
-    if principal.is_authenticated_customer and conv.customer_id and conv.customer_id != principal.customer_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền truy cập cuộc trò chuyện này.")
+    verify_conversation_access(conv, principal, x_guest_token or guest_token)
 
     # If conversation is with human staff, save user message and do not invoke AI
     if conv.mode in ("waiting_human", "human"):
@@ -204,9 +245,20 @@ async def send_message(
 async def conversation_events_stream(
     conversation_id: uuid.UUID,
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+    x_guest_token: str | None = Header(default=None, alias="X-Guest-Token"),
+    guest_token: str | None = Query(default=None),
+    principal: Principal = Depends(get_current_principal),
     session: AsyncSession = Depends(get_db_session),
 ):
-    """Server-Sent Events (SSE) stream for real-time conversation updates."""
+    """Server-Sent Events (SSE) stream for real-time conversation updates with authorization."""
+    stmt = select(ConversationModel).where(ConversationModel.id == conversation_id)
+    res = await session.execute(stmt)
+    conv = res.scalar_one_or_none()
+    if not conv:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy cuộc trò chuyện.")
+
+    verify_conversation_access(conv, principal, x_guest_token or guest_token)
+
     async def _event_generator() -> AsyncGenerator[dict[str, Any], None]:
         last_seq = int(last_event_id) if last_event_id and last_event_id.isdigit() else 0
         stmt = (
@@ -258,6 +310,8 @@ async def conversation_events_stream(
 @router.post("/conversations/{conversation_id}/handoff")
 async def handoff_to_human(
     conversation_id: uuid.UUID,
+    x_guest_token: str | None = Header(default=None, alias="X-Guest-Token"),
+    guest_token: str | None = Query(default=None),
     principal: Principal = Depends(get_current_principal),
     session: AsyncSession = Depends(get_db_session),
 ):
@@ -267,6 +321,8 @@ async def handoff_to_human(
     conv = res.scalar_one_or_none()
     if not conv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy cuộc trò chuyện.")
+
+    verify_conversation_access(conv, principal, x_guest_token or guest_token)
 
     conv.mode = "waiting_human"
     ticket_service = TicketService(session)

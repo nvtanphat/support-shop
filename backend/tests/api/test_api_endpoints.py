@@ -222,3 +222,56 @@ async def test_conversation_and_handoff_flow(test_app_client: AsyncClient):
     assert res_return.status_code == 200
     assert res_return.json()["status"] == "returned_to_ai"
 
+
+@pytest.mark.asyncio
+async def test_conversation_authorization_and_idor_protection(test_app_client: AsyncClient):
+    """Test strict IDOR protection for conversations across guests and authenticated customers."""
+    # 1. Customer A logs in and creates a conversation
+    res_login = await test_app_client.post(
+        "/auth/login",
+        json={"email": "cust1@example.com", "password": "Pass1234!"},
+    )
+    cust_token = res_login.json()["access_token"]
+    cust_headers = {"Authorization": f"Bearer {cust_token}"}
+
+    res_conv_a = await test_app_client.post("/conversations", json={"channel": "web"}, headers=cust_headers)
+    assert res_conv_a.status_code == 200
+    conv_a_id = res_conv_a.json()["id"]
+
+    # 2. Guest attempts to read Customer A's conversation without token -> 403 Forbidden
+    res_unauth_get = await test_app_client.get(f"/conversations/{conv_a_id}")
+    assert res_unauth_get.status_code == 403
+
+    # 3. Guest attempts to send message to Customer A's conversation -> 403 Forbidden
+    res_unauth_post = await test_app_client.post(
+        f"/conversations/{conv_a_id}/messages",
+        json={"content": "Hacker injection message"},
+    )
+    assert res_unauth_post.status_code == 403
+
+    # 4. Guest attempts to open SSE stream of Customer A's conversation -> 403 Forbidden
+    res_unauth_sse = await test_app_client.get(f"/conversations/{conv_a_id}/events")
+    assert res_unauth_sse.status_code == 403
+
+    # 5. Guest creates own conversation and receives secure guest_token
+    res_guest_conv = await test_app_client.post("/conversations", json={"channel": "web"})
+    assert res_guest_conv.status_code == 200
+    guest_conv_data = res_guest_conv.json()
+    guest_conv_id = guest_conv_data["id"]
+    guest_token = guest_conv_data["guest_token"]
+    assert guest_token is not None and len(guest_token) >= 32
+
+    # 6. Another guest with an invalid guest_token attempts to access -> 403 Forbidden
+    res_invalid_token = await test_app_client.get(
+        f"/conversations/{guest_conv_id}",
+        headers={"X-Guest-Token": "invalid_fake_token"},
+    )
+    assert res_invalid_token.status_code == 403
+
+    # 7. Guest with legitimate guest_token accesses successfully -> 200 OK
+    res_valid_token = await test_app_client.get(
+        f"/conversations/{guest_conv_id}",
+        headers={"X-Guest-Token": guest_token},
+    )
+    assert res_valid_token.status_code == 200
+

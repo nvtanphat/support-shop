@@ -116,13 +116,22 @@ class ApiClient {
 
   // --- Conversations ---
   async createConversation() {
-    const res = await this.request<{ id: string; conversation_id?: string; mode: string }>('/conversations', {
+    const res = await this.request<{
+      id: string;
+      conversation_id?: string;
+      guest_token?: string;
+      mode: string;
+    }>('/conversations', {
       method: 'POST',
       body: JSON.stringify({ channel: 'web' }),
     });
+    if (res.guest_token) {
+      this.setGuestToken(res.guest_token);
+    }
     return {
       conversation_id: res.conversation_id || res.id,
       id: res.id || res.conversation_id || '',
+      guest_token: res.guest_token,
       mode: res.mode,
     };
   }
