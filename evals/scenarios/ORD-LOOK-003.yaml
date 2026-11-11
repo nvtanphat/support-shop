@@ -1,0 +1,38 @@
+id: ORD-LOOK-003
+group: B_order_lookup
+tags:
+- smoke
+- lookup
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-100003
+    status: shipping
+    delivered_at: null
+    payment_method: card
+    items:
+    - key: giay
+      sku: SH-SNK-01
+      qty: 1
+      unit_price: 850000
+user:
+  goal: Tra cứu đơn hàng đang giao SL-100003
+  script:
+  - say: Kiểm tra giúp mình đơn SL-100003 đang ở đâu rồi
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-100003
+      status: shipping
+  required_facts:
+  - kind: status
+    value: shipping
+  - kind: amount_vnd
+    value: 850000
+  forbidden:
+  - kind: claim
+    pattern: đã hủy

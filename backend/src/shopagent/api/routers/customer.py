@@ -22,37 +22,16 @@ async def get_order_by_code(
     principal: Principal = Depends(get_current_principal),
     session: AsyncSession = Depends(get_db_session),
 ):
-    """Fetch order details dynamically for authorized customer or guest."""
+    """Fetch order details dynamically for authorized customer or verified guest."""
     order_service = OrderService(session)
     clean_code = code.strip().upper()
     try:
         return await order_service.get_order_for_principal(principal, order_code=clean_code)
-    except ForbiddenError:
-        # Return safe masked summary for guest preview if OTP not yet completed
-        order = await order_service.order_repo.get_by_code(clean_code)
-        if not order:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Không tìm thấy đơn hàng {clean_code}.")
-        first_item = order.items[0] if order.items else None
-        prod_name = first_item.variant.product.name if first_item and first_item.variant and first_item.variant.product else "Sản phẩm"
-        return {
-            "order_id": str(order.id),
-            "order_code": order.code,
-            "status": order.status,
-            "payment_method": order.payment_method,
-            "total": order.total,
-            "placed_at": order.placed_at.isoformat() if order.placed_at else None,
-            "delivered_at": order.delivered_at.isoformat() if order.delivered_at else None,
-            "is_guest_preview": True,
-            "items": [
-                {
-                    "item_id": str(it.id),
-                    "product_name": it.variant.product.name if it.variant and it.variant.product else prod_name,
-                    "qty": it.qty,
-                    "unit_price": it.unit_price,
-                }
-                for it in order.items
-            ],
-        }
+    except ForbiddenError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bạn không có quyền truy cập thông tin đơn hàng này. Vui lòng xác thực OTP qua số điện thoại mua hàng hoặc đăng nhập.",
+        )
     except NotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 

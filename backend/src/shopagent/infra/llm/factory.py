@@ -71,6 +71,12 @@ def get_chat_model(role: str = "agent_primary") -> BaseChatModel:
     api_key = settings.GEMINI_API_KEY or os.environ.get("GOOGLE_API_KEY")
 
     if provider == "fake":
+        # Disallow silent fallback to FakeChatModel when primary LLM is a real provider
+        if role == "agent_fallback" and settings.LLM_PRIMARY_PROVIDER != "fake":
+            raise ValueError(
+                "Không được phép fallback âm thầm sang FakeChatModel khi hệ thống cấu hình chạy LLM thật. "
+                "Cần cấu hình model dự phòng thật hoặc báo lỗi gián đoạn kết nối minh bạch."
+            )
         return FakeChatModel()
 
     if not api_key:

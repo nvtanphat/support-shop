@@ -46,7 +46,7 @@ def verify_conversation_access(
     1. Staff/Supervisor/Admin has full read/write access.
     2. Authenticated customer can only access conversations where conv.customer_id == principal.customer_id.
     3. Guest can only access guest conversations (conv.customer_id is None).
-       If conv.guest_token is set, the client MUST provide matching guest_token.
+       The caller MUST provide the valid matching guest_token for that conversation.
     4. Guest CANNOT access conversations owned by an authenticated customer under any circumstances.
     """
     if principal.is_staff:
@@ -62,11 +62,13 @@ def verify_conversation_access(
         return
 
     # If conversation is a guest conversation (conv.customer_id is None)
+    # Both unauthenticated visitors and logged-in customers must provide the matching guest_token to access a guest session
+    effective_token = guest_token or principal.guest_token
     if conv.guest_token:
-        if guest_token and guest_token != conv.guest_token:
+        if not effective_token or effective_token != conv.guest_token:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Mã định danh khách vãng lai không hợp lệ.",
+                detail="Yêu cầu mã định danh phiên khách vãng lai hợp lệ để truy cập cuộc trò chuyện.",
             )
 
 

@@ -65,8 +65,17 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
   // Setup authorized SSE event stream
   useEffect(() => {
     const guestToken = api.getGuestToken();
-    const sseUrl = guestToken
-      ? `/api/conversations/${conversationId}/events?guest_token=${encodeURIComponent(guestToken)}`
+    const token = api.getToken();
+    const params = new URLSearchParams();
+    if (token) {
+      params.set('token', token);
+    }
+    if (guestToken) {
+      params.set('guest_token', guestToken);
+    }
+    const queryStr = params.toString();
+    const sseUrl = queryStr
+      ? `/api/conversations/${conversationId}/events?${queryStr}`
       : `/api/conversations/${conversationId}/events`;
 
     const eventSource = new EventSource(sseUrl);
@@ -296,6 +305,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
         orderCode={activeOrderCode}
         onQuickPrompt={executeSendMessage}
         onSelectClause={(clauseId) => setSelectedClause(clauseId)}
+        onOpenOtp={() => setIsOtpModalOpen(true)}
       />
 
       {/* Modals */}

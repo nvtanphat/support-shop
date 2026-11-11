@@ -10,6 +10,13 @@ jobs:
   backend:
     name: Backend Tests & Evaluation
     runs-on: ubuntu-latest
+    env:
+      INTEGRATION_MODE: simulated
+      DATABASE_URL: "sqlite+aiosqlite:///backend/data/shopagent.db"
+      DATABASE_URL_SYNC: "sqlite:///backend/data/shopagent.db"
+      PYTHONPATH: "backend/src:."
+      LLM_PRIMARY_PROVIDER: fake
+      LLM_FALLBACK_PROVIDER: fake
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -30,28 +37,16 @@ jobs:
           mkdir -p backend/data
           python -m shopagent.cli seed
           python -m shopagent.rag.indexer
-        env:
-          INTEGRATION_MODE: simulated
-          DATABASE_URL: "sqlite+aiosqlite:///backend/data/shopagent.db"
-          DATABASE_URL_SYNC: "sqlite:///backend/data/shopagent.db"
-          PYTHONPATH: "backend/src:."
 
       - name: Run Backend Pytest Suite
         run: |
           pytest backend/tests/ -v
         env:
-          INTEGRATION_MODE: simulated
           DATABASE_TEST_URL: "sqlite+aiosqlite:///:memory:"
-          LLM_PRIMARY_PROVIDER: fake
-          LLM_FALLBACK_PROVIDER: fake
-          PYTHONPATH: "backend/src:."
 
       - name: Run Evaluation Harness Smoke Test
         run: |
           python -m evals.harness.runner --agent oracle
-        env:
-          INTEGRATION_MODE: simulated
-          PYTHONPATH: "backend/src:."
 
   frontend:
     name: Frontend Build & Tests

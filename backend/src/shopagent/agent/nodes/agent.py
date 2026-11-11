@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import Any
 import uuid
@@ -20,6 +21,8 @@ from shopagent.core.principal import Principal
 from shopagent.core.text import extract_text_content
 from shopagent.infra.llm.factory import get_chat_model
 
+
+logger = logging.getLogger(__name__)
 
 _TEMPLATE_DIR = CONFIG_DIR / "prompts"
 _PROCEDURES_DIR = CONFIG_DIR / "procedures"
@@ -120,6 +123,7 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
                 ai_response = await llm_with_tools.ainvoke(call_input)
                 break
             except Exception as e:
+                logger.warning("Lỗi gọi LLM lần %d: %s", attempt + 1, e)
                 if attempt < 2:
                     await asyncio.sleep(0.5 * (attempt + 1))
                 else:
@@ -133,9 +137,10 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
                         else:
                             fallback_with_tools = fallback_llm
                         ai_response = await fallback_with_tools.ainvoke(call_input)
-                    except Exception:
+                    except Exception as fb_err:
+                        logger.error("Gọi fallback LLM cũng thất bại: %s", fb_err)
                         ai_response = AIMessage(
-                            content="Dạ hiện tại hệ thống hỗ trợ đang bận tạm thời. Quý khách vui lòng thử lại sau giây lát hoặc bấm nút gặp nhân viên để được hỗ trợ trực tiếp ạ."
+                            content="Dạ hiện tại hệ thống AI đang tạm thời gián đoạn kết nối. Quý khách vui lòng thử lại sau giây lát hoặc bấm nút gặp nhân viên để được hỗ trợ trực tiếp ạ."
                         )
 
         if not ai_response:

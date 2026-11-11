@@ -182,6 +182,18 @@ async def test_guest_otp_flow(test_app_client: AsyncClient):
     guest_token = res_ok.json()["guest_token"]
     assert guest_token is not None
 
+    # 3b. Unauthenticated call to /orders/SL-TEST01 must return 403 Forbidden (P0 data protection)
+    res_unauth = await test_app_client.get("/orders/SL-TEST01")
+    assert res_unauth.status_code == 403
+
+    # 3c. Verified guest with valid grant accesses /orders/SL-TEST01 -> 200 OK
+    res_verified_order = await test_app_client.get(
+        "/orders/SL-TEST01",
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert res_verified_order.status_code == 200
+    assert res_verified_order.json()["order_code"] == "SL-TEST01"
+
     # 4. Anti-Replay: Attempt to verify same OTP again -> 404 Not Found (invalidated)
     res_replay = await test_app_client.post(
         f"/guest/verifications/{v_id}/otp",
@@ -322,10 +334,29 @@ async def test_conversation_authorization_and_idor_protection(test_app_client: A
     )
     assert res_invalid_token.status_code == 403
 
-    # 7. Guest with legitimate guest_token accesses successfully -> 200 OK
+    # 6b. Guest with NO guest token attempts to access guest conversation -> 403 Forbidden
+    res_no_token = await test_app_client.get(f"/conversations/{guest_conv_id}")
+    assert res_no_token.status_code == 403
+
+    # 6c. Guest with NO guest token attempts to access guest SSE -> 403 Forbidden
+    res_no_token_sse = await test_app_client.get(f"/conversations/{guest_conv_id}/events")
+    assert res_no_token_sse.status_code == 403
+
+    # 7. Guest with legitimate guest_token accesses successfully via header and query param -> 200 OK
     res_valid_token = await test_app_client.get(
         f"/conversations/{guest_conv_id}",
         headers={"X-Guest-Token": guest_token},
     )
     assert res_valid_token.status_code == 200
+
+    res_valid_query = await test_app_client.get(
+        f"/conversations/{guest_conv_id}?guest_token={guest_token}"
+    )
+    assert res_valid_query.status_code == 200
+
+    # 8. Customer accesses SSE with query token -> 200 OK
+    res_cust_sse_query = await test_app_client.get(
+        f"/conversations/{conv_a_id}/events?token={cust_token}"
+    )
+    assert res_cust_sse_query.status_code == 200
 

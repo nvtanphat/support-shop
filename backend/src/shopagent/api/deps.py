@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import AsyncGenerator
 import uuid
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,11 +29,14 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 async def get_current_principal(
     creds: HTTPAuthorizationCredentials | None = Depends(security),
     guest_token: str | None = Header(default=None, alias="X-Guest-Token"),
+    query_guest_token: str | None = Query(default=None, alias="guest_token"),
+    query_token: str | None = Query(default=None, alias="token"),
 ) -> Principal:
-    """Extract authenticated Principal from Bearer JWT or Guest Token."""
-    if creds and creds.credentials:
+    """Extract authenticated Principal from Bearer JWT, Query Token, or Guest Token."""
+    raw_token = (creds.credentials if creds else None) or query_token
+    if raw_token:
         try:
-            payload = decode_access_token(creds.credentials)
+            payload = decode_access_token(raw_token)
             role_str = payload.get("role", "customer")
             sub = payload.get("sub")
             if role_str in ("agent", "supervisor", "admin"):
@@ -45,7 +48,7 @@ async def get_current_principal(
             elif role_str == "guest":
                 verified_oid = payload.get("verified_order_id")
                 order_uuid = uuid.UUID(verified_oid) if verified_oid else None
-                return Principal.guest(guest_token=creds.credentials, verified_order_id=order_uuid)
+                return Principal.guest(guest_token=raw_token, verified_order_id=order_uuid)
             elif role_str == "customer":
                 return Principal.customer(
                     customer_id=uuid.UUID(sub),
@@ -64,15 +67,16 @@ async def get_current_principal(
                 detail="Token không hợp lệ hoặc đã hết hạn.",
             )
 
-    # Guest session fallback
-    if guest_token:
+    # Guest session fallback (header or query)
+    effective_guest_token = guest_token or query_guest_token
+    if effective_guest_token:
         try:
-            payload = decode_access_token(guest_token)
+            payload = decode_access_token(effective_guest_token)
             verified_oid = payload.get("verified_order_id")
             order_uuid = uuid.UUID(verified_oid) if verified_oid else None
-            return Principal.guest(guest_token=guest_token, verified_order_id=order_uuid)
+            return Principal.guest(guest_token=effective_guest_token, verified_order_id=order_uuid)
         except Exception:
-            return Principal.guest(guest_token=guest_token)
+            return Principal.guest(guest_token=effective_guest_token)
 
     return Principal.guest()
 
