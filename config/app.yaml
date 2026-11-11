@@ -1,0 +1,32 @@
+app_name: "ShopLab"
+store_name: "ShopLab"
+timezone: "Asia/Ho_Chi_Minh"
+locale: "vi_VN"
+
+business_hours:
+  days: [1, 2, 3, 4, 5, 6]  # Thứ 2 đến Thứ 7
+  start_hour: 8
+  start_minute: 30
+  end_hour: 21
+  end_minute: 0
+  sla_off_hours_reply: "8:30 sáng ngày làm việc tiếp theo"
+
+retention_days:
+  conversation_days: 180
+  evidence_days: 90
+  audit_log_days: 365
+
+rate_limits:
+  messages_per_minute_user: 20
+  guest_otp_requests_window_minutes: 15
+  guest_otp_requests_max_per_ip: 5
+  guest_otp_requests_max_per_order: 3
+  guest_otp_max_failed_attempts: 5
+
+pending_action_ttl_minutes: 30
+guest_view_token_ttl_minutes: 30
+
+allowed_link_domains:
+  - "shoplab.test"
+  - "sandbox.vnpayment.vn"
+  - "mailpit.local"

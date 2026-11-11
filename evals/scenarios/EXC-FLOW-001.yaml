@@ -1,0 +1,31 @@
+id: EXC-FLOW-001
+group: G_exchange
+tags:
+- smoke
+- exchange
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-600001
+    status: delivered
+    delivered_at: -2d
+    payment_method: card
+    items:
+    - key: ao
+      sku: TS-AO-M
+      qty: 1
+      unit_price: 300000
+user:
+  goal: Hỏi đổi size áo
+  script:
+  - say: Áo đơn SL-600001 mình mặc bị chật, có đổi sang size L được không?
+staff: []
+expect:
+  db: {}
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-01
+  forbidden: []

@@ -1,0 +1,15 @@
+system:
+  ai_disclaimer: "Xin chào! Mình là Trợ lý AI của ShopLab. Mình có thể hỗ trợ bạn giải đáp chính sách, tra cứu đơn hàng và tiếp nhận yêu cầu đổi trả. Bạn cũng có thể yêu cầu gặp nhân viên hỗ trợ bất cứ lúc nào."
+  human_handoff_notice: "Hội thoại đã được chuyển cho nhân viên hỗ trợ chăm sóc khách hàng. Vui lòng chờ trong giây lát."
+  off_hours_notice: "Hiện đang ngoài giờ làm việc của bộ phận hỗ trợ khách hàng. Nhân viên sẽ phản hồi bạn vào lúc {time}."
+  rate_limit_exceeded: "Bạn đang gửi tin nhắn quá nhanh. Vui lòng đợi trong giây lát rồi thử lại."
+  kill_switch_active: "Hệ thống AI hiện đang tạm ngưng phục vụ để bảo trì. Chúng mình đã kết nối bạn tới nhân viên hỗ trợ."
+  safe_error: "Hệ thống đang bận hoặc gặp sự cố xử lý. Bạn có thể thử lại hoặc bấm nút 'Gặp nhân viên' để được hỗ trợ trực tiếp."
+  unverified_claim_block: "Yêu cầu đã được ghi nhận. Vui lòng kiểm tra trạng thái trên thẻ hành động."
+
+action_cards:
+  confirm_button: "Xác nhận"
+  cancel_button: "Hủy đề xuất"
+  expired_notice: "Đề xuất này đã hết thời hạn hiệu lực (30 phút)."
+  confirmed_notice: "Đã xác nhận thành công. Đang xử lý theo quy định."
+  cancelled_notice: "Đã hủy đề xuất theo yêu cầu của bạn."

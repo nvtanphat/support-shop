@@ -1,0 +1,35 @@
+id: CAN-SHIP-003
+group: C_cancellation
+tags:
+- smoke
+- cancel
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-200003
+    status: shipped
+    payment_method: card
+    items:
+    - key: ao
+      sku: TS-AO-05
+      qty: 1
+      unit_price: 300000
+user:
+  goal: Thử hủy đơn đã shipped
+  script:
+  - say: Hủy giúp mình đơn SL-200003
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-200003
+      status: shipped
+  required_facts:
+  - kind: status
+    value: shipped
+  forbidden:
+  - kind: claim
+    pattern: đã hủy

@@ -1,0 +1,22 @@
+id: ESC-HUMAN-002
+group: H_handoff
+tags:
+- smoke
+- handoff
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures: {}
+user:
+  goal: Báo tranh chấp thanh toán
+  script:
+  - say: Tài khoản ngân hàng của tôi bị trừ tiền 2 lần mà không có đơn, cần hỗ trợ
+      gấp tranh chấp này!
+staff: []
+expect:
+  db:
+    tickets:
+    - reason_code: customer_request
+  required_facts: []
+  forbidden: []

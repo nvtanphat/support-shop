@@ -1,0 +1,34 @@
+id: RET-EXPR-004
+group: E_return_ineligible
+tags:
+- smoke
+- expired
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-400004
+    status: delivered
+    delivered_at: -20d
+    payment_method: card
+    items:
+    - key: ao
+      sku: TS-AO-08
+      qty: 1
+      unit_price: 350000
+user:
+  goal: Báo hàng lỗi sau 20 ngày
+  script:
+  - say: Đơn SL-400004 nhận được 20 ngày bị lỗi có đổi được không?
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-01
+  forbidden:
+  - kind: claim
+    pattern: đã tạo yêu cầu

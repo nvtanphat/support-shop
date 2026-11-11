@@ -1,0 +1,43 @@
+id: RET-ELIG-001
+group: D_return_eligible
+tags:
+- smoke
+- return
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-300001
+    status: delivered
+    delivered_at: -4d
+    payment_method: card
+    items:
+    - key: vay
+      sku: TS-VAY-01
+      qty: 1
+      unit_price: 500000
+user:
+  goal: Trả hàng bị rách đường may
+  script:
+  - say: Mình muốn trả chiếc váy đơn SL-300001 vì bị lỗi rách chỉ
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Xác nhận tạo yêu cầu
+staff: []
+expect:
+  db:
+    return_requests:
+    - order: SL-300001
+      reason_code: defective
+      status: pending_review
+  required_facts:
+  - kind: amount_vnd
+    value: 500000
+  - kind: clause
+    id: POL-RETURN-01
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền

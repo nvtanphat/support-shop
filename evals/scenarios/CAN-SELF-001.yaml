@@ -1,0 +1,35 @@
+id: CAN-SELF-001
+group: C_cancellation
+tags:
+- smoke
+- cancel
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-200001
+    status: confirmed
+    payment_method: card
+    items:
+    - key: ao
+      sku: TS-AO-03
+      qty: 1
+      unit_price: 300000
+user:
+  goal: Hủy đơn hàng confirmed
+  script:
+  - say: Mình muốn hủy đơn SL-200001
+  - on_proposal:
+      type: cancel_order
+    do: confirm
+    say: Xác nhận hủy đơn
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-200001
+      status: cancelled
+  required_facts: []
+  forbidden: []

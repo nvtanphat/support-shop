@@ -1,0 +1,41 @@
+id: VER-BOUND-001
+group: V_version_boundary
+tags:
+- smoke
+- boundary
+clock: '2026-11-08T23:59:50+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-800001
+    status: delivered
+    delivered_at: '2026-11-01T14:00:00+07:00'
+    payment_method: card
+    items:
+    - key: ao
+      sku: TS-AO-12
+      qty: 1
+      unit_price: 300000
+user:
+  goal: Trả hàng ở phút cuối cùng ngày thứ 7
+  script:
+  - say: Mình muốn trả áo đơn SL-800001 do đổi ý
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Xác nhận trả hàng
+staff: []
+expect:
+  db:
+    return_requests:
+    - order: SL-800001
+      reason_code: change_of_mind
+      status: awaiting_return
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-02
+  forbidden:
+  - kind: claim
+    pattern: đã hết hạn

@@ -1,0 +1,36 @@
+id: RET-EXCL-002
+group: E_return_ineligible
+tags:
+- smoke
+- exclusion
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-400002
+    status: delivered
+    delivered_at: -2d
+    payment_method: card
+    items:
+    - key: aoxakho
+      sku: TS-XAKHO-01
+      qty: 1
+      unit_price: 99000
+      flags:
+      - final_sale
+user:
+  goal: Đổi ý trả hàng xả kho
+  script:
+  - say: Mình muốn trả áo xả kho đơn SL-400002
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-03
+  forbidden:
+  - kind: claim
+    pattern: đã tạo yêu cầu

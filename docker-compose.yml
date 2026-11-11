@@ -1,0 +1,78 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: shopagent-postgres
+    environment:
+      POSTGRES_DB: shopagent
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d shopagent"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: shopagent-phoenix
+    ports:
+      - "6006:6006"
+    environment:
+      PHOENIX_PORT: 6006
+      PHOENIX_HOST: 0.0.0.0
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: shopagent-mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: shopagent-api
+    command: uvicorn shopagent.api.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/src:/app/src
+      - ./config:/app/config
+      - ./.env:/app/.env
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/shopagent
+      - DATABASE_URL_SYNC=postgresql+psycopg://postgres:postgres@postgres:5432/shopagent
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://phoenix:6006/v1/traces
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: shopagent-worker
+    command: python -m shopagent.worker
+    volumes:
+      - ./backend/src:/app/src
+      - ./config:/app/config
+      - ./.env:/app/.env
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/shopagent
+      - DATABASE_URL_SYNC=postgresql+psycopg://postgres:postgres@postgres:5432/shopagent
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://phoenix:6006/v1/traces
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

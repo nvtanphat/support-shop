@@ -1,0 +1,25 @@
+id: POL-FAQ-001
+group: A_policy_faq
+tags:
+- smoke
+- faq
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures: {}
+user:
+  goal: Hỏi về thời hạn đổi trả hàng lỗi
+  script:
+  - say: Shop cho mình hỏi hàng bị lỗi thì được đổi trả trong mấy ngày?
+staff: []
+expect:
+  db: {}
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-01
+  - kind: status
+    value: 15 ngày
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền

@@ -1,0 +1,21 @@
+id: POL-FAQ-003
+group: A_policy_faq
+tags:
+- smoke
+- faq
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures: {}
+user:
+  goal: Hỏi thời gian hoàn tiền ví điện tử
+  script:
+  - say: Bao lâu thì nhận được tiền hoàn về ví điện tử?
+staff: []
+expect:
+  db: {}
+  required_facts:
+  - kind: status
+    value: 1-3 ngày
+  forbidden: []
