@@ -7,6 +7,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
+from shopagent.agent.checkpoint import get_default_checkpointer
 from shopagent.agent.nodes.agent import agent_node
 from shopagent.agent.nodes.load_context import load_context_node
 from shopagent.agent.nodes.persist_emit import persist_emit_node
@@ -49,7 +50,7 @@ def build_agent_graph(checkpointer: BaseCheckpointSaver | None = None) -> Any:
     builder.add_edge("persist_emit", END)
 
     if checkpointer is None:
-        checkpointer = MemorySaver()
+        checkpointer = get_default_checkpointer()
 
     return builder.compile(checkpointer=checkpointer)
 

@@ -161,14 +161,68 @@ async def test_guest_otp_flow(test_app_client: AsyncClient):
         json={"order_code": "SL-TEST01", "phone": "0901234567"},
     )
     assert res_req.status_code == 202
-    v_id = res_req.json()["verification_id"]
+    data = res_req.json()
+    v_id = data["verification_id"]
+    simulated_otp = data.get("simulated_otp")
+    assert simulated_otp is not None
 
     # 2. Wrong OTP
     res_wrong = await test_app_client.post(
         f"/guest/verifications/{v_id}/otp",
         json={"otp": "000000"},
     )
-    assert res_wrong.status_code in (400, 404)
+    assert res_wrong.status_code == 400
+
+    # 3. Correct OTP verification succeeds
+    res_ok = await test_app_client.post(
+        f"/guest/verifications/{v_id}/otp",
+        json={"otp": simulated_otp},
+    )
+    assert res_ok.status_code == 200
+    guest_token = res_ok.json()["guest_token"]
+    assert guest_token is not None
+
+    # 4. Anti-Replay: Attempt to verify same OTP again -> 404 Not Found (invalidated)
+    res_replay = await test_app_client.post(
+        f"/guest/verifications/{v_id}/otp",
+        json={"otp": simulated_otp},
+    )
+    assert res_replay.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_otp_rate_limiting_and_brute_force_protection(test_app_client: AsyncClient):
+    """Test cooldown rate limiting and brute force cancellation."""
+    from shopagent.api.routers.guest import _RATE_LIMIT_STORE, _GUEST_VERIFICATIONS
+    _RATE_LIMIT_STORE.clear()
+    _GUEST_VERIFICATIONS.clear()
+
+    # Rate limit cooldown test: sending request twice for same phone within 60s
+    res1 = await test_app_client.post(
+        "/guest/verifications",
+        json={"order_code": "SL-TEST01", "phone": "0901234567"},
+    )
+    assert res1.status_code == 202
+
+    res_fast_cooldown = await test_app_client.post(
+        "/guest/verifications",
+        json={"order_code": "SL-TEST01", "phone": "0901234567"},
+    )
+    assert res_fast_cooldown.status_code == 429
+
+    # Brute force test: try wrong OTP 5 times -> gets locked with 429
+    v_id = res1.json()["verification_id"]
+    for i in range(4):
+        r = await test_app_client.post(f"/guest/verifications/{v_id}/otp", json={"otp": "000000"})
+        assert r.status_code == 400
+
+    # 5th attempt must return 429 and terminate session
+    r5 = await test_app_client.post(f"/guest/verifications/{v_id}/otp", json={"otp": "000000"})
+    assert r5.status_code == 429
+
+    # 6th attempt: session was terminated -> 404
+    r6 = await test_app_client.post(f"/guest/verifications/{v_id}/otp", json={"otp": "000000"})
+    assert r6.status_code == 404
 
 
 @pytest.mark.asyncio

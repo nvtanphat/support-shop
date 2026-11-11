@@ -145,6 +145,24 @@ class ApiClient {
     }>(`/conversations/${id}`);
   }
 
+  async getOrder(orderCode: string) {
+    return this.request<{
+      order_id: string;
+      order_code: string;
+      status: string;
+      payment_method?: string;
+      total: number;
+      placed_at?: string;
+      delivered_at?: string;
+      items: Array<{
+        item_id: string;
+        product_name: string;
+        qty: number;
+        unit_price: number;
+      }>;
+    }>(`/orders/${encodeURIComponent(orderCode)}`);
+  }
+
   async sendMessage(conversationId: string, content: string) {
     const res = await this.request<{
       status: string;

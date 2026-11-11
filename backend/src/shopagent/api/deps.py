@@ -42,11 +42,22 @@ async def get_current_principal(
                     role=PrincipalRole(role_str),
                     email=payload.get("email", ""),
                 )
-            else:
+            elif role_str == "guest":
+                verified_oid = payload.get("verified_order_id")
+                order_uuid = uuid.UUID(verified_oid) if verified_oid else None
+                return Principal.guest(guest_token=creds.credentials, verified_order_id=order_uuid)
+            elif role_str == "customer":
                 return Principal.customer(
                     customer_id=uuid.UUID(sub),
                     email=payload.get("email", ""),
                 )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Vai trò trong token không hợp lệ.",
+                )
+        except HTTPException:
+            raise
         except Exception:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

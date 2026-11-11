@@ -201,3 +201,63 @@ async def test_action_expiration_and_tampered_hash_rejection(res_session_factory
             assert "hết hạn" in res_expired.json()["detail"]["message"].lower()
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_durable_checkpointer_persistence_across_restart(tmp_path):
+    """Verify DurableCheckpointer saves checkpoints to disk and restores state across restarts."""
+    from shopagent.agent.checkpoint import DurableCheckpointer
+
+    ckpt_file = tmp_path / "checkpoints_test.pkl"
+    cp1 = DurableCheckpointer(storage_path=ckpt_file)
+
+    config_t1 = {"configurable": {"thread_id": "thread-user-42", "checkpoint_ns": ""}}
+    ckpt_t1 = {
+        "v": 1,
+        "id": "chk-001",
+        "ts": "2026-11-11T12:00:00Z",
+        "channel_values": {"messages": ["Xin chào", "Cần hỗ trợ đổi đơn SL-8F3D9K"], "step": 1},
+        "channel_versions": {"messages": 1, "step": 1},
+        "versions_seen": {},
+    }
+    cp1.put(config_t1, ckpt_t1, {}, {"messages": 1, "step": 1})
+
+    # Verify file is persisted
+    assert ckpt_file.exists()
+
+    # Simulate process restart by creating a new checkpointer from disk
+    cp2 = DurableCheckpointer(storage_path=ckpt_file)
+    restored_tuple = cp2.get_tuple(config_t1)
+
+    assert restored_tuple is not None
+    assert restored_tuple.checkpoint["id"] == "chk-001"
+    assert restored_tuple.checkpoint["channel_values"]["messages"] == [
+        "Xin chào",
+        "Cần hỗ trợ đổi đơn SL-8F3D9K",
+    ]
+    assert restored_tuple.checkpoint["channel_values"]["step"] == 1
+
+    # Verify updating a restored thread in a new namespace works without error
+    config_t1_ns = {"configurable": {"thread_id": "thread-user-42", "checkpoint_ns": "sub_workflow"}}
+    ckpt_t1_ns = {
+        "v": 1,
+        "id": "chk-sub-001",
+        "ts": "2026-11-11T12:01:00Z",
+        "channel_values": {"sub_status": "in_progress"},
+        "channel_versions": {"sub_status": 1},
+        "versions_seen": {},
+    }
+    cp2.put(config_t1_ns, ckpt_t1_ns, {}, {"sub_status": 1})
+
+    # Third checkpointer instance should have both
+    cp3 = DurableCheckpointer(storage_path=ckpt_file)
+    t1_loaded = cp3.get_tuple(config_t1)
+    t1_ns_loaded = cp3.get_tuple(config_t1_ns)
+    assert t1_loaded.checkpoint["channel_values"]["step"] == 1
+    assert t1_ns_loaded.checkpoint["channel_values"]["sub_status"] == "in_progress"
+
+    # Verify delete_thread
+    cp3.delete_thread("thread-user-42")
+    cp4 = DurableCheckpointer(storage_path=ckpt_file)
+    assert cp4.get_tuple(config_t1) is None
+
