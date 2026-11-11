@@ -56,10 +56,12 @@ async def get_current_principal(
     # Guest session fallback
     if guest_token:
         try:
-            conv_id = uuid.UUID(guest_token)
-            return Principal.guest(conversation_id=conv_id)
+            payload = decode_access_token(guest_token)
+            verified_oid = payload.get("verified_order_id")
+            order_uuid = uuid.UUID(verified_oid) if verified_oid else None
+            return Principal.guest(guest_token=guest_token, verified_order_id=order_uuid)
         except Exception:
-            return Principal.guest()
+            return Principal.guest(guest_token=guest_token)
 
     return Principal.guest()
 

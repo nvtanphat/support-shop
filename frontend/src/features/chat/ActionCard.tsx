@@ -76,16 +76,16 @@ export const ActionCard: React.FC<ActionCardProps> = ({
   const isExpired = action.status === 'expired';
 
   return (
-    <div className="bg-white border-2 border-emerald-600/80 rounded-xl p-5 my-3 shadow-md transition-all">
-      <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
+    <div className="bg-white border-2 border-purple-400/90 rounded-2xl p-5 my-3 shadow-md transition-all">
+      <div className="flex items-center justify-between border-b border-purple-100 pb-3 mb-3">
         <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span className="w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse"></span>
           <h4 className="font-bold text-slate-900 text-sm md:text-base">
             {action.preview.title || 'Đề xuất xử lý'}
           </h4>
         </div>
         {isProposed && (
-          <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded-md border border-amber-200">
+          <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
             <Clock className="w-3.5 h-3.5" />
             <span>Hết hạn: {timeLeft}</span>
           </div>
@@ -96,10 +96,10 @@ export const ActionCard: React.FC<ActionCardProps> = ({
 
       {/* Breakdown Details & Estimated Refund */}
       {(action.preview.breakdown || action.preview.estimated_refund_vnd !== undefined) && (
-        <div className="bg-slate-50 rounded-lg p-3 text-xs mb-3 space-y-1.5 border border-slate-200">
+        <div className="bg-purple-50/50 rounded-xl p-3 text-xs mb-3 space-y-1.5 border border-purple-100">
           {action.preview.breakdown && (
             <>
-              <div className="font-semibold text-slate-850 mb-1">Chi tiết giải trình số tiền:</div>
+              <div className="font-semibold text-slate-800 mb-1">Chi tiết giải trình số tiền:</div>
               {Object.entries(action.preview.breakdown).map(([k, v]) => (
                 <div key={k} className="flex justify-between text-slate-600">
                   <span>{k}:</span>
@@ -111,9 +111,9 @@ export const ActionCard: React.FC<ActionCardProps> = ({
             </>
           )}
           {action.preview.estimated_refund_vnd !== undefined && (
-            <div className="flex justify-between font-bold text-emerald-700 pt-1.5 border-t border-slate-200 text-sm">
+            <div className="flex justify-between font-bold text-purple-900 pt-1.5 border-t border-purple-100 text-sm">
               <span>Khoản hoàn ước tính:</span>
-              <span className="font-mono">
+              <span className="font-mono text-purple-700 text-base">
                 {action.preview.estimated_refund_vnd.toLocaleString('vi-VN')} đ
               </span>
             </div>
@@ -123,8 +123,8 @@ export const ActionCard: React.FC<ActionCardProps> = ({
 
       {/* Evidence & Approval Notices */}
       {action.preview.requires_evidence && isProposed && (
-        <div className="bg-blue-50 text-blue-800 text-xs p-2.5 rounded-lg mb-3 flex items-start gap-2 border border-blue-200">
-          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+        <div className="bg-purple-50 text-purple-800 text-xs p-2.5 rounded-xl mb-3 flex items-start gap-2 border border-purple-200">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-purple-600" />
           <span>
             Yêu cầu cung cấp bằng chứng hình ảnh/video sản phẩm sau khi bấm xác nhận.
           </span>
@@ -132,14 +132,14 @@ export const ActionCard: React.FC<ActionCardProps> = ({
       )}
 
       {action.preview.requires_approval && (
-        <div className="bg-purple-50 text-purple-800 text-xs p-2.5 rounded-lg mb-3 flex items-start gap-2 border border-purple-200">
-          <ShieldAlert className="w-4 h-4 flex-shrink-0 mt-0.5" />
+        <div className="bg-indigo-50 text-indigo-800 text-xs p-2.5 rounded-xl mb-3 flex items-start gap-2 border border-indigo-200">
+          <ShieldAlert className="w-4 h-4 flex-shrink-0 mt-0.5 text-indigo-600" />
           <span>Yêu cầu này sẽ được nhân viên duyệt trước khi thực thi giải ngân.</span>
         </div>
       )}
 
       {error && (
-        <div className="p-2.5 mb-3 bg-red-50 text-red-700 text-xs rounded-lg border border-red-200 flex items-center gap-1.5">
+        <div className="p-2.5 mb-3 bg-red-50 text-red-700 text-xs rounded-xl border border-red-200 flex items-center gap-1.5">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           <span>{error}</span>
         </div>
@@ -151,7 +151,7 @@ export const ActionCard: React.FC<ActionCardProps> = ({
           <button
             onClick={handleConfirm}
             disabled={loading}
-            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2.5 px-4 rounded-lg text-sm flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-sm"
+            className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2.5 px-4 rounded-xl text-sm flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-md shadow-purple-200"
           >
             <CheckCircle2 className="w-4 h-4" />
             <span>Xác nhận</span>
@@ -159,7 +159,7 @@ export const ActionCard: React.FC<ActionCardProps> = ({
           <button
             onClick={handleCancel}
             disabled={loading}
-            className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg text-sm flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+            className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-xl text-sm flex items-center justify-center gap-1.5 transition disabled:opacity-50"
           >
             <XCircle className="w-4 h-4 text-slate-500" />
             <span>Hủy</span>

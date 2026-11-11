@@ -62,13 +62,13 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
 
     LLM_PRIMARY_PROVIDER: str = "gemini"
-    LLM_PRIMARY_MODEL: str = "gemini-3.8-flash"
+    LLM_PRIMARY_MODEL: str = "gemini-2.5-flash"
     LLM_FALLBACK_PROVIDER: str = "fake"
     LLM_FALLBACK_MODEL: str = "fake-model"
     LLM_CHEAP_PROVIDER: str = "gemini"
-    LLM_CHEAP_MODEL: str = "gemini-3.5-flash-lite"
+    LLM_CHEAP_MODEL: str = "gemini-2.5-flash-lite"
     LLM_SIM_PROVIDER: str = "gemini"
-    LLM_SIM_MODEL: str = "gemini-3.8-flash"
+    LLM_SIM_MODEL: str = "gemini-2.5-flash"
 
     # Auth
     JWT_SECRET: str = "dev_secret_change_in_production_32charsmin!"
@@ -102,6 +102,11 @@ def get_settings() -> Settings:
     global _settings
     if _settings is None:
         _settings = Settings()
+        # Synchronize Google API key to prevent SDK from picking up stale OS environment variables
+        if _settings.GEMINI_API_KEY:
+            import os
+            os.environ["GOOGLE_API_KEY"] = _settings.GEMINI_API_KEY
+            os.environ["GEMINI_API_KEY"] = _settings.GEMINI_API_KEY
     return _settings
 
 

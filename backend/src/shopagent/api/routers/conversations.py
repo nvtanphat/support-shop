@@ -24,7 +24,12 @@ from shopagent.api.schemas.models import (
 from shopagent.core.clock import get_clock
 from shopagent.core.principal import Principal
 from shopagent.domain.services.tickets import TicketService
-from shopagent.infra.db.tables import ConversationEventModel, ConversationModel, MessageModel
+from shopagent.infra.db.tables import (
+    ConversationEventModel,
+    ConversationModel,
+    MessageModel,
+    PendingActionModel,
+)
 
 router = APIRouter(tags=["Conversations"])
 
@@ -49,11 +54,13 @@ async def create_conversation(
 
     return ConversationDto(
         id=str(conv.id),
+        conversation_id=str(conv.id),
         customer_id=str(cust_id) if cust_id else None,
         channel=req.channel,
         mode=conv.mode,
         created_at=conv.created_at.isoformat(),
         messages=[],
+        pending_actions=[],
     )
 
 
@@ -82,8 +89,32 @@ async def get_conversation(
     res_msgs = await session.execute(stmt_msgs)
     msgs = res_msgs.scalars().all()
 
+    # Active pending actions
+    stmt_act = select(PendingActionModel).where(
+        PendingActionModel.conversation_id == conversation_id,
+        PendingActionModel.status == "proposed",
+    )
+    res_act = await session.execute(stmt_act)
+    acts = res_act.scalars().all()
+    now_time = get_clock().now()
+    pending_list = [
+        {
+            "id": str(a.id),
+            "action_id": str(a.id),
+            "conversation_id": str(a.conversation_id),
+            "type": a.type,
+            "preview": a.preview,
+            "preview_hash": a.payload_hash,
+            "status": a.status,
+            "expires_at": a.expires_at.isoformat(),
+        }
+        for a in acts
+        if a.expires_at > now_time
+    ]
+
     return ConversationDto(
         id=str(conv.id),
+        conversation_id=str(conv.id),
         customer_id=str(conv.customer_id) if conv.customer_id else None,
         channel="web",
         mode=conv.mode,
@@ -99,6 +130,7 @@ async def get_conversation(
             )
             for m in msgs
         ],
+        pending_actions=pending_list,
     )
 
 
@@ -157,8 +189,12 @@ async def send_message(
     output = await graph.ainvoke(initial_state, config=config)
     await session.commit()
 
+    verified = output.get("verified_output") or ""
     return {
-        "verified_output": output.get("verified_output"),
+        "status": "success",
+        "verified_output": verified,
+        "assistant_message": verified,
+        "citations": list(output.get("retrieved_clauses") or []),
         "pending_action": output.get("pending_action"),
         "tool_calls": output.get("tool_calls", []),
     }
@@ -172,7 +208,6 @@ async def conversation_events_stream(
 ):
     """Server-Sent Events (SSE) stream for real-time conversation updates."""
     async def _event_generator() -> AsyncGenerator[dict[str, Any], None]:
-        # 1. Replay durable events since last_event_id
         last_seq = int(last_event_id) if last_event_id and last_event_id.isdigit() else 0
         stmt = (
             select(ConversationEventModel)
@@ -185,14 +220,37 @@ async def conversation_events_stream(
         res = await session.execute(stmt)
         events = res.scalars().all()
         for ev in events:
+            if ev.seq > last_seq:
+                last_seq = ev.seq
             yield {
                 "event": ev.type,
                 "id": str(ev.seq),
                 "data": json.dumps(ev.payload, ensure_ascii=False),
             }
 
-        # Keep connection open for brief polling/heartbeat
         yield {"event": "ping", "data": "connected"}
+
+        # Keep connection open for brief heartbeat and event streaming
+        for _ in range(60):
+            await asyncio.sleep(1.0)
+            stmt_new = (
+                select(ConversationEventModel)
+                .where(
+                    ConversationEventModel.conversation_id == conversation_id,
+                    ConversationEventModel.seq > last_seq,
+                )
+                .order_by(ConversationEventModel.seq.asc())
+            )
+            res_new = await session.execute(stmt_new)
+            new_events = res_new.scalars().all()
+            for ev in new_events:
+                if ev.seq > last_seq:
+                    last_seq = ev.seq
+                yield {
+                    "event": ev.type,
+                    "id": str(ev.seq),
+                    "data": json.dumps(ev.payload, ensure_ascii=False),
+                }
 
     return EventSourceResponse(_event_generator())
 

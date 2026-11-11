@@ -68,12 +68,16 @@ def get_chat_model(role: str = "agent_primary") -> BaseChatModel:
         return FakeChatModel()
 
     if provider == "gemini":
-        return ChatGoogleGenerativeAI(
-            model=model_name,
-            google_api_key=settings.GEMINI_API_KEY,
-            temperature=temperature,
-            api_version="v1beta",
-        )
+        try:
+            return ChatGoogleGenerativeAI(
+                model=model_name,
+                google_api_key=settings.GEMINI_API_KEY,
+                temperature=temperature,
+                api_version="v1beta",
+                timeout=30.0,
+            )
+        except Exception:
+            return FakeChatModel()
 
     # Default fallback
     return FakeChatModel()

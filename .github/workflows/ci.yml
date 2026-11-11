@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  backend:
+    name: Backend Tests & Evaluation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Seed test database & index policy
+        run: |
+          python -m shopagent.cli seed
+          python -m shopagent.rag.indexer
+        env:
+          INTEGRATION_MODE: simulated
+          DATABASE_URL: sqlite+aiosqlite:///backend/data/shopagent.db
+          DATABASE_URL_SYNC: sqlite:///backend/data/shopagent.db
+
+      - name: Run Backend Pytest Suite
+        run: |
+          pytest backend/tests/ -v
+        env:
+          INTEGRATION_MODE: simulated
+          DATABASE_TEST_URL: sqlite+aiosqlite:///:memory:
+          LLM_PRIMARY_PROVIDER: fake
+          LLM_FALLBACK_PROVIDER: fake
+
+      - name: Run Evaluation Harness Smoke Test
+        run: |
+          python -m evals.harness.runner --agent oracle
+        env:
+          INTEGRATION_MODE: simulated
+
+  frontend:
+    name: Frontend Build & Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: cd frontend && npm ci
+
+      - name: TypeScript Check & Vite Build
+        run: cd frontend && npm run build
+
+      - name: Run Vitest Unit Tests
+        run: cd frontend && npm test

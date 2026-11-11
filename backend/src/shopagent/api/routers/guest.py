@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shopagent.api.deps import get_db_session
 from shopagent.api.schemas.models import GuestVerificationRequest, GuestVerifyOtpRequest
 from shopagent.core.clock import get_clock
+from shopagent.core.config import get_settings
+from shopagent.core.security import create_access_token
 from shopagent.infra.db.tables import CustomerModel, OrderModel
 
 router = APIRouter(prefix="/guest", tags=["Guest Verifications"])
@@ -54,11 +56,17 @@ async def request_guest_verification(
                 "expires_at": clock.now().timestamp() + 900,  # 15 minutes
             }
 
-    return {
+    settings = get_settings()
+    resp: dict[str, Any] = {
         "status": "accepted",
         "verification_id": verification_id,
         "message": "Nếu thông tin đơn hàng và số điện thoại chính xác, mã xác nhận OTP gồm 6 chữ số đã được gửi qua SMS.",
     }
+    # In simulated mode, return simulated_otp so clients can test without real SMS gateway
+    if settings.INTEGRATION_MODE == "simulated" and verification_id in _GUEST_VERIFICATIONS:
+        resp["simulated_otp"] = _GUEST_VERIFICATIONS[verification_id]["otp"]
+
+    return resp
 
 
 @router.post("/verifications/{verification_id}/otp")
@@ -79,9 +87,21 @@ async def verify_guest_otp(
     if req.otp != record["otp"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mã OTP không chính xác.")
 
+    # Create temporary guest JWT token with verified_order_id grant for 30 minutes
+    guest_token = create_access_token(
+        data={
+            "sub": str(record["customer_id"]),
+            "role": "guest",
+            "verified_order_id": str(record["order_id"]),
+            "order_code": record["order_code"],
+        },
+        expires_minutes=30,
+    )
+
     # Verification successful
     return {
         "status": "verified",
+        "guest_token": guest_token,
         "order_code": record["order_code"],
         "granted_for_minutes": 30,
         "message": "Xác minh thành công. Bạn có thể tra cứu đơn hàng này.",

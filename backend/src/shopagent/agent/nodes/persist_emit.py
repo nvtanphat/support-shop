@@ -70,6 +70,26 @@ async def persist_emit_node(state: AgentState, config: RunnableConfig) -> dict[s
                 )
                 session.add(a_msg)
 
+                # Persist message.completed event for SSE replay
+                stmt_ev_seq = select(func.coalesce(func.max(ConversationEventModel.seq), 0)).where(
+                    ConversationEventModel.conversation_id == c_uuid
+                )
+                res_ev_seq = await session.execute(stmt_ev_seq)
+                ev_seq = res_ev_seq.scalar_one() + 1
+                ev_msg = ConversationEventModel(
+                    conversation_id=c_uuid,
+                    seq=ev_seq,
+                    type="message.completed",
+                    payload={
+                        "id": str(a_msg.id),
+                        "seq": current_seq,
+                        "role": "assistant",
+                        "content": verified_output,
+                        "citations": list(state.get("retrieved_clauses", [])),
+                    },
+                )
+                session.add(ev_msg)
+
             # Persist pending action event if any
             pending_action = state.get("pending_action")
             if pending_action:
@@ -88,8 +108,9 @@ async def persist_emit_node(state: AgentState, config: RunnableConfig) -> dict[s
                 session.add(ev)
 
             await session.flush()
-        except Exception:
-            # Persistence logging or error handling
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger("shopagent.agent.persist_emit").error("Failed to persist turn: %s", e, exc_info=True)
+            raise
 
     return {"verified_output": verified_output}

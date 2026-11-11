@@ -94,14 +94,14 @@ class ApiClient {
 
   // --- Guest Verification ---
   async requestGuestVerification(orderCode: string, phone: string) {
-    return this.request<{ verification_id: string; message: string }>('/guest/verifications', {
+    return this.request<{ verification_id: string; message: string; simulated_otp?: string }>('/guest/verifications', {
       method: 'POST',
       body: JSON.stringify({ order_code: orderCode, phone }),
     });
   }
 
   async verifyGuestOtp(verificationId: string, otp: string) {
-    const res = await this.request<{ status: string; guest_token: string; expires_in: number }>(
+    const res = await this.request<{ status: string; guest_token?: string; expires_in?: number; message?: string }>(
       `/guest/verifications/${verificationId}/otp`,
       {
         method: 'POST',
@@ -116,10 +116,15 @@ class ApiClient {
 
   // --- Conversations ---
   async createConversation() {
-    return this.request<{ conversation_id: string; mode: string }>('/conversations', {
+    const res = await this.request<{ id: string; conversation_id?: string; mode: string }>('/conversations', {
       method: 'POST',
-      body: JSON.stringify({ guest_token: this.guestToken }),
+      body: JSON.stringify({ channel: 'web' }),
     });
+    return {
+      conversation_id: res.conversation_id || res.id,
+      id: res.id || res.conversation_id || '',
+      mode: res.mode,
+    };
   }
 
   async getConversation(id: string) {
@@ -132,16 +137,23 @@ class ApiClient {
   }
 
   async sendMessage(conversationId: string, content: string) {
-    return this.request<{
+    const res = await this.request<{
       status: string;
+      verified_output?: string;
       assistant_message?: string;
       citations?: string[];
       pending_action?: PendingAction;
+      tool_calls?: any[];
       ticket_code?: string;
+      message?: string;
     }>(`/conversations/${conversationId}/messages`, {
       method: 'POST',
       body: JSON.stringify({ content }),
     });
+    return {
+      ...res,
+      assistant_message: res.assistant_message || res.verified_output || res.message,
+    };
   }
 
   async handoff(conversationId: string, reasonCode: string, summary: string) {

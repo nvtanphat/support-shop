@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color-scheme: light;
 }
 
@@ -12,9 +12,26 @@ body {
   display: flex;
   min-width: 320px;
   min-height: 100vh;
-  background-color: #f8fafc;
+  background: radial-gradient(circle at 15% 10%, #faf5ff 0%, #f5f3ff 45%, #f8fafc 100%);
+  color: #1e293b;
 }
 
 #root {
   width: 100%;
+}
+
+/* Custom delicate scrollbars for independent chat scroll */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #ddd6fe;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #c4b5fd;
 }

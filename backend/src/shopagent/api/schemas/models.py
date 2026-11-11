@@ -51,11 +51,13 @@ class MessageDto(BaseModel):
 
 class ConversationDto(BaseModel):
     id: str
-    customer_id: str | None
-    channel: str
-    mode: str
+    conversation_id: str | None = None
+    customer_id: str | None = None
+    channel: str = "web"
+    mode: str = "ai"
     created_at: str
     messages: list[MessageDto] = []
+    pending_actions: list[dict[str, Any]] = []
 
 
 # -----------------------------------------------------------------------------
