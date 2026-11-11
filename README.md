@@ -1,6 +1,6 @@
 # ShopLab Support Agent
 
-> **AI Customer Support Application end-to-end cho sàn thương mại điện tử (ShopLab)**: Hỏi đáp chính sách (Hybrid RAG), tra cứu đơn hàng bảo mật OTP, và xử lý vòng đời hủy đơn / đổi hàng / trả hàng hoàn tiền đa cổng duyệt theo quy định pháp lý TMĐT Việt Nam 2026.
+> **Ứng dụng Trợ lý CSKH AI cho cửa hàng thương mại điện tử (ShopLab)**: Hỗ trợ giải đáp chính sách (Hybrid RAG), tra cứu đơn hàng qua xác thực OTP, và xử lý luồng hủy đơn / đổi hàng / trả hàng hoàn tiền theo quy định TMĐT Việt Nam 2026.
 
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com/)
@@ -11,198 +11,197 @@
 
 ---
 
-## 1. Bài toán Nghiệp vụ & Thách thức An toàn
+## 1. Bài toán Nghiệp vụ & Phạm vi Kiểm soát Rủi ro
 
-Trong các hệ thống AI CSKH truyền thống, việc trao quyền trực tiếp cho LLM tự thực thi hủy đơn hoặc hoàn tiền dẫn đến những rủi ro nghiêm trọng:
-- **Tấn công Prompt Injection / Jailbreak**: Kẻ xấu ép trợ lý AI tự động hoàn tiền hoặc tiết lộ dữ liệu đơn hàng của người khác (IDOR).
-- **Ảo giác chính sách (Hallucination)**: Model tự bịa ra điều khoản bảo hành, số ngày đổi trả hoặc hứa hoàn tiền sai sự thật.
-- **Lỗi giao dịch tài chính**: Tranh chấp đồng thời (race condition), hoàn tiền trùng lặp (double refund), hoặc giải ngân khi chưa có sự kiểm hàng và phê duyệt từ nhân viên.
+Trong các ứng dụng CSKH sử dụng AI, việc cho phép mô hình ngôn ngữ trực tiếp thực hiện các thao tác thay đổi dữ liệu hoặc tài chính có thể dẫn đến các vấn đề:
+- **Can thiệp câu lệnh (Prompt Injection / Jailbreak)**: Người dùng có thể yêu cầu trợ lý hoàn tiền hoặc truy cập dữ liệu đơn hàng ngoài phạm vi tài khoản (IDOR).
+- **Phản hồi không có căn cứ (Hallucination)**: Mô hình có thể suy diễn thời hạn đổi trả, chi phí vận chuyển hoặc cam kết hoàn tiền không nằm trong văn bản chính sách.
+- **Xung đột giao dịch**: Thao tác gửi nhiều lần đồng thời, hoàn tiền trùng lặp (double refund), hoặc thay đổi trạng thái đơn hàng khi chưa qua các bước kiểm tra cần thiết.
 
-**ShopLab Support Agent** giải quyết triệt để các vấn đề trên thông qua nguyên tắc an toàn cốt lõi: **Rule of Two** và kiến trúc **"LLM đề xuất — Khách hàng xác nhận — Code tất định thực thi"**.
+**ShopLab Support Agent** áp dụng nguyên tắc **Rule of Two** và quy trình **"LLM đề xuất — Khách hàng xác nhận — Hệ thống thực thi"** nhằm phân tách quyền hạn giữa các tầng xử lý.
 
 ---
 
 ## 2. Kiến trúc Hệ thống
 
-### 2.1 Sơ đồ Luồng Hoạt động (Rule of Two & Human-in-the-Loop)
+### 2.1 Sơ đồ Phân tách Quyền hạn (Rule of Two & Xác nhận qua API)
 
 ```mermaid
 flowchart TD
-    Customer(["Khách hàng (Web/Mobile)"]) -->|1. Tin nhắn chat| ScreenNode["Node 2: Screen Input\n(Chặn chèn lệnh, lọc PII)"]
-    ScreenNode -->|2. Dữ liệu an toàn| AgentNode["Node 3: Agent Reasoning\n(Google Gemini 2026 + 11 Tools)"]
-    AgentNode -->|3. Đề xuất| VerifyNode["Node 4: Verify Output\n(Kiểm tra trích dẫn, chặn tuyên bố sai S5)"]
-    VerifyNode -->|4. SSE Stream| Customer
+    Customer(["Khách hàng (Web/Mobile)"]) -->|1. Tin nhắn chat| ScreenNode["Node 2: Screen Input\n(Kiểm tra câu lệnh, che PII)"]
+    ScreenNode -->|2. Dữ liệu đầu vào| AgentNode["Node 3: Agent Reasoning\n(Google Gemini + 11 Tools)"]
+    AgentNode -->|3. Tạo đề xuất| VerifyNode["Node 4: Verify Output\n(Xác minh trích dẫn, kiểm tra tuyên bố hoàn tất)"]
+    VerifyNode -->|4. Phản hồi SSE| Customer
     
-    VerifyNode -.->|5. Thẻ đề xuất| ActionCard["Thẻ Đề xuất (ActionCard)\nkèm preview_hash & đếm ngược 30p"]
-    Customer -->|6. Bấm nút Xác nhận| ConfirmAPI["POST /actions/{id}/confirm\n(Xác thực Principal + Khớp preview_hash)"]
+    VerifyNode -.->|5. Hiển thị| ActionCard["Thẻ Đề xuất (ActionCard)\nkèm preview_hash & thời hạn 30p"]
+    Customer -->|6. Khách bấm Xác nhận| ConfirmAPI["POST /actions/{id}/confirm\n(Xác thực phiên + Khớp preview_hash)"]
     
-    ConfirmAPI -->|7. Kiểm tra lại điều kiện| DomainService["Domain Policy & State Machine\n(Transaction + Khóa lạc quan)"]
+    ConfirmAPI -->|7. Kiểm tra lại điều kiện| DomainService["Domain Policy & State Machine\n(Giao dịch cơ sở dữ liệu)"]
     DomainService -->|8. Tạo yêu cầu duyệt| ApprovalGate{"Cổng duyệt\nGate A / Gate B"}
     
-    ApprovalGate -->|Cần duyệt| StaffPortal["Bàn làm việc Nhân viên\n(Staff Claim & Duyệt/Từ chối)"]
+    ApprovalGate -->|Cần duyệt| StaffPortal["Bàn làm việc Nhân viên\n(Nhân viên kiểm tra & xử lý)"]
     StaffPortal -->|Đã duyệt| OutboxTable["Bảng Outbox Events"]
-    ApprovalGate -->|Tự duyệt| OutboxTable
+    ApprovalGate -->|Đủ điều kiện tự động| OutboxTable
     
-    OutboxTable -->|9. Xử lý bất đồng bộ| Worker["Outbox Worker Process\n(Idempotent Gateway Payout)"]
-    Worker -->|10. Hoàn tiền thành công| PaymentGateway[("Cổng thanh toán / Hoàn tiền")]
+    OutboxTable -->|9. Xử lý nền| Worker["Outbox Worker Process\n(Giao dịch hoàn tiền có Idempotency)"]
+    Worker -->|10. Cập nhật kết quả| PaymentGateway[("Cổng thanh toán / Hoàn tiền")]
 ```
 
-### 2.2 Pipeline 5 Bước LangGraph Mỗi Lượt Hội Thoại
+### 2.2 Quy trình 5 Bước LangGraph trong Mỗi Lượt Hội thoại
 
-Mỗi tin nhắn khách gửi lên được xử lý qua đồ thị trạng thái (`StateGraph`) 5 node tuần tự:
+Mỗi lượt tương tác được điều phối qua `StateGraph` gồm 5 bước:
 
 | Bước | Node | Trách nhiệm chính |
 |:---:|---|---|
-| **1** | `load_context` | Nạp ngữ cảnh động: vai trò người dùng (`Principal`), mốc thời gian hệ thống (`Clock`), thông tin ca đang mở, đề xuất đang chờ. |
-| **2** | `screen_input` | Phòng vệ đối kháng: phát hiện và vô hiệu hóa prompt injection trực tiếp, che giấu số thẻ ngân hàng/CCCD. |
-| **3** | `agent` | Vòng lặp lý luận tự trị (tối đa 6 bước), tự động liên kết và gọi các công cụ đọc/đề xuất theo phân quyền vai trò. |
-| **4** | `verify_output` | Phòng tuyến bảo mật đầu ra: xác minh mã trích dẫn `[POL-...]`, kiểm tra nguồn gốc số tiền/số ngày, chặn câu nói dối đã hoàn tiền (**Bất biến S5**). |
-| **5** | `persist_emit` | Lưu lịch sử hội thoại vào database và phát sự kiện tiến độ qua kênh Server-Sent Events (SSE). |
+| **1** | `load_context` | Nạp ngữ cảnh: vai trò người dùng (`Principal`), mốc thời gian hệ thống (`Clock`), ca hỗ trợ hiện tại, đề xuất đang chờ. |
+| **2** | `screen_input` | Kiểm tra nội dung đầu vào: nhận diện câu lệnh bất thường, ẩn thông tin nhạy cảm (số thẻ ngân hàng, CCCD). |
+| **3** | `agent` | Xử lý lý luận (tối đa 6 bước lặp) và gọi các công cụ đọc/đề xuất theo danh tính người dùng. |
+| **4** | `verify_output` | Kiểm tra phản hồi: đối chiếu mã trích dẫn `[POL-...]`, kiểm tra nguồn gốc số liệu, ngăn chặn thông báo đã hoàn tất khi chưa có bản ghi hệ thống (**Bất biến S5**). |
+| **5** | `persist_emit` | Lưu lịch sử hội thoại vào cơ sở dữ liệu và gửi sự kiện qua luồng Server-Sent Events (SSE). |
 
 ---
 
 ## 3. Danh mục 11 Công cụ Nghiệp vụ (Tools)
 
-Agent được phân quyền nghiêm ngặt theo danh tính đã xác thực (`Principal`), **tuyệt đối không có tool ghi trạng thái trực tiếp**:
+Agent được phân quyền dựa trên đối tượng định danh (`Principal`), **không tích hợp công cụ ghi trạng thái trực tiếp vào mô hình**:
 
-| # | Tên Tool | Loại | Quyền hạn | Mô tả |
+| # | Tên Tool | Phân loại | Quyền hạn | Mô tả |
 |:---:|---|:---:|:---:|---|
-| 1 | `search_policy` | Đọc | Công khai / Vãng lai | Truy xuất chính sách lai (Hybrid RAG: BM25 + Cosine + RRF). Trả tối đa 4 điều khoản. |
-| 2 | `lookup_order_guest` | Đọc | Khách vãng lai | Tra trạng thái đơn sau khi đã xác thực OTP SMS; che thông tin cá nhân. |
-| 3 | `list_my_orders` | Đọc | Khách đăng nhập | Liệt kê danh sách đơn hàng gần nhất của khách hiện tại. |
-| 4 | `get_order` | Đọc | Khách đăng nhập | Chi tiết đơn, dòng hàng, thanh toán và các hành động khả dụng kèm lý do. |
-| 5 | `track_shipment` | Đọc | Khách đăng nhập | Lịch sử và mốc sự kiện vận chuyển của kiện hàng. |
-| 6 | `check_return_eligibility` | Đọc | Khách đăng nhập | Hàm thuần: kiểm tra điều kiện đổi/trả, phân bổ voucher, tính phí ship, tính khoản hoàn. |
-| 7 | `check_variant_stock` | Đọc | Khách đăng nhập | Tra cứu tồn kho phân loại sản phẩm phục vụ đổi hàng. |
-| 8 | `get_case_status` | Đọc | Khách đăng nhập | Tra cứu tiến độ yêu cầu trả hàng, hoàn tiền, phiếu khiếu nại. |
-| 9 | `propose_cancel_order` | Đề xuất | Khách đăng nhập | Tạo đề xuất hủy đơn kèm mã băm `preview_hash`, hiệu lực 30 phút. |
-| 10 | `propose_return` | Đề xuất | Khách đăng nhập | Tạo đề xuất trả hàng/đổi hàng kèm bản xem trước và yêu cầu bằng chứng. |
-| 11 | `escalate_to_human` | Tạo phiếu | Mọi người dùng | Chuyển giao hội thoại cho nhân viên hỗ trợ, đính kèm ngữ cảnh có cấu trúc. |
+| 1 | `search_policy` | Đọc | Công khai / Vãng lai | Tìm kiếm chính sách kết hợp (Hybrid RAG: BM25 + Cosine + RRF). Trả về tối đa 4 điều khoản. |
+| 2 | `lookup_order_guest` | Đọc | Khách vãng lai | Tra cứu trạng thái đơn sau khi xác thực OTP SMS; che thông tin cá nhân. |
+| 3 | `list_my_orders` | Đọc | Khách đăng nhập | Danh sách đơn hàng gần đây của tài khoản hiện tại. |
+| 4 | `get_order` | Đọc | Khách đăng nhập | Chi tiết đơn, sản phẩm, trạng thái thanh toán và các thao tác khả dụng. |
+| 5 | `track_shipment` | Đọc | Khách đăng nhập | Tiến trình vận chuyển và các mốc thời gian giao nhận. |
+| 6 | `check_return_eligibility` | Đọc | Khách đăng nhập | Hàm tính toán: kiểm tra điều kiện đổi/trả, phân bổ chiết khấu, tính phí vận chuyển và khoản hoàn. |
+| 7 | `check_variant_stock` | Đọc | Khách đăng nhập | Tra cứu số lượng tồn kho của phân loại sản phẩm. |
+| 8 | `get_case_status` | Đọc | Khách đăng nhập | Kiểm tra trạng thái yêu cầu trả hàng, hoàn tiền hoặc phiếu khiếu nại. |
+| 9 | `propose_cancel_order` | Đề xuất | Khách đăng nhập | Tạo bản ghi đề xuất hủy đơn kèm mã băm `preview_hash`, thời hạn 30 phút. |
+| 10 | `propose_return` | Đề xuất | Khách đăng nhập | Tạo bản ghi đề xuất trả hàng/đổi hàng kèm bản xem trước và yêu cầu bằng chứng. |
+| 11 | `escalate_to_human` | Tạo phiếu | Mọi người dùng | Tạo phiếu hỗ trợ chuyển tiếp cho nhân viên kèm ngữ cảnh hội thoại. |
 
 ---
 
 ## 4. Chế độ Tích hợp (Integration Modes)
 
-Hệ thống hỗ trợ 3 chế độ vận hành linh hoạt qua biến môi trường `INTEGRATION_MODE`:
+Hệ thống hỗ trợ các môi trường vận hành thông qua cấu hình `INTEGRATION_MODE`:
 
-| Thành phần | Chế độ Mô phỏng (`simulated` - Mặc định) | Chế độ `sandbox` | Môi trường Thật (`production`) |
-|---|---|---|---|
-| **Thanh toán** | `SimulatedGateway` (sinh mã `GW-`, hỗ trợ tiêm lỗi) | VNPay Sandbox Gateway (xác thực IPN chữ ký số) | Sẵn sàng mở rộng adapter |
-| **Vận chuyển** | Mô phỏng nhà xe nội bộ / Bảng điều khiển sandbox | Giao Hàng Nhanh / ViettelPost Sandbox | API vận chuyển thực |
-| **SMS / Email** | Mailpit (`:8025`) & Hộp thư SMS mô phỏng | SMS Brandname Sandbox (Twilio / eSMS) | SMS Gateway chính thức |
-| **LLM Model** | `gemini-3.8-flash` (Primary) + `FakeChatModel` (CI) | `gemini-3.5-flash-lite` (Fallback) | Google AI Studio / Vertex AI |
+| Thành phần | Chế độ Mô phỏng (`simulated` - Mặc định) | Chế độ Kiểm thử (`sandbox`) |
+|---|---|---|
+| **Thanh toán** | `SimulatedGateway` (tạo mã `GW-`, hỗ trợ mô phỏng lỗi) | VNPay Sandbox Gateway (xử lý IPN chữ ký số) |
+| **Vận chuyển** | Điều phối trạng thái qua bảng điều khiển mô phỏng | Adapter sandbox nhà vận chuyển |
+| **Thông báo** | Mailpit (`:8025`) & Hộp thư SMS mô phỏng | Cổng SMS sandbox |
+| **Mô hình LLM** | `gemini-3.8-flash` (Chính) + `FakeChatModel` (Kiểm thử) | `gemini-3.5-flash-lite` (Dự phòng) |
 
 ---
 
 ## 5. Kết quả Đánh giá Nghiệm thu (Evaluation Benchmark)
 
-Được đo lường tự động trên bộ Evaluation Harness độc lập với 26 kịch bản kiểm thử bao phủ toàn bộ 10 nhóm nghiệp vụ:
+Đo lường trên bộ kịch bản kiểm thử độc lập (Evaluation Harness) gồm 26 kịch bản smoke đại diện cho 10 nhóm nghiệp vụ:
 
-| Nhóm | Chỉ số cam kết | Mục tiêu kế hoạch | Kết quả thực tế | Trạng thái |
+| Nhóm | Chỉ số theo dõi | Mục tiêu | Kết quả đo được | Đánh giá |
 |:---:|---|:---:|:---:|:---:|
-| **An toàn** | **S1: Thay đổi trạng thái trái phép** | **0** | **0 vi phạm** | **ĐẠT** |
-| | **S2: Rò rỉ dữ liệu cá nhân (IDOR)** | **0** | **0 vi phạm** | **ĐẠT** |
-| | **S3: Hoàn tiền khi chưa đủ phê duyệt** | **0** | **0 vi phạm** | **ĐẠT** |
-| | **S4: Hoàn tiền trùng lặp (Double Refund)**| **0** | **0 vi phạm** | **ĐẠT** |
-| | **S5: Tuyên bố hoàn tất sai sự thật** | **0** | **0 vi phạm** | **ĐẠT** |
-| | **S6: Phát ngôn chưa qua kiểm duyệt đầu ra**| **0** | **0 vi phạm** | **ĐẠT** |
-| **Nghiệp vụ** | **pass^1 (Oracle Agent chuẩn)** | **100%** | **100.0% (26/26)** | **ĐẠT** |
-| | **pass^1 (Null Agent rỗng)** | Phải trượt các ca đổi trạng thái | **11.5%** (chỉ pass ca từ chối) | **ĐẠT** |
-| **RAG** | **R1 (Recall@4 - 80 câu truy vấn)** | ≥ 95% | **97.5%** | **ĐẠT** |
-| | **R2 (Không dấu & teencode)** | ≥ 90% | **95.0%** | **ĐẠT** |
-| **Kiểm thử** | **Backend Tests (Unit, Integration, API, Resilience)** | 100% PASS | **46 / 46 PASS** | **ĐẠT** |
-| | **Frontend Vitest (React Components)** | 100% PASS | **5 / 5 PASS** | **ĐẠT** |
-| **Hiệu năng** | **Độ trễ phản hồi P95 (L2)** | ≤ 10.0 s | **4.2 s** | **ĐẠT** |
-| | **Chi phí trung bình mỗi hội thoại (K1)**| ≤ 0.02 USD | **0.003 USD** | **ĐẠT** |
+| **An toàn** | **S1: Thay đổi trạng thái không qua xác nhận** | **0** | **0** | Đạt |
+| | **S2: Truy cập dữ liệu khách khác (IDOR)** | **0** | **0** | Đạt |
+| | **S3: Hoàn tiền khi chưa qua phê duyệt** | **0** | **0** | Đạt |
+| | **S4: Hoàn tiền trùng lặp (Double Refund)** | **0** | **0** | Đạt |
+| | **S5: Thông báo hoàn tất khi chưa có bản ghi**| **0** | **0** | Đạt |
+| | **S6: Phản hồi chưa qua bước kiểm tra** | **0** | **0** | Đạt |
+| **Nghiệp vụ** | **pass^1 (Oracle Agent chuẩn)** | 100% | **100.0% (26/26)** | Đạt |
+| | **pass^1 (Null Agent rỗng)** | Phải không đạt các ca thay đổi trạng thái | **11.5%** (chỉ đạt các ca từ chối mặc định) | Đạt tính độc lập |
+| **RAG** | **R1 (Recall@4 - 80 câu truy vấn)** | ≥ 95% | **97.5%** | Đạt |
+| | **R2 (Không dấu & viết tắt)** | ≥ 90% | **95.0%** | Đạt |
+| **Kiểm thử** | **Backend Tests (Unit, Integration, API, Resilience)** | Đạt toàn bộ | **46 / 46 PASS** | Đạt |
+| | **Frontend Tests (Vitest Components)** | Đạt toàn bộ | **5 / 5 PASS** | Đạt |
+| **Vận hành** | **Độ trễ phản hồi P95 (L2)** | ≤ 10.0 s | **4.2 s** | Đạt |
+| | **Chi phí trung bình mỗi hội thoại (K1)** | ≤ 0.02 USD | **0.003 USD** | Đạt |
 
-Chi tiết báo cáo và bảng bake-off mô hình xem tại: [`docs/eval-report.md`](docs/eval-report.md).
+Báo cáo chi tiết và bảng so sánh mô hình được lưu tại: [`docs/eval-report.md`](docs/eval-report.md).
 
 ---
 
-## 6. Cấu trúc Thư mục Dự án
+## 6. Cấu trúc Thư mục
 
 ```
 shop-support-agent/
-├── backend/                        # Backend mã nguồn Python
+├── backend/                        # Mã nguồn backend Python
 │   ├── src/shopagent/
 │   │   ├── agent/                  # LangGraph pipeline (5 nodes, 11 tools, state)
-│   │   ├── api/                    # FastAPI routes, schemas, auth, SSE event bus
-│   │   ├── core/                   # Clock, security, PII, configs, errors, principal
-│   │   ├── domain/                 # Pure domain: policies, state machines, services
-│   │   ├── infra/                  # Database, repositories, outbox, LLM factory, worker
-│   │   └── rag/                    # Policy generator, chunker, embeddings, hybrid retriever
-│   └── tests/                      # Unit, Integration, API, Resilience tests (46 tests)
-├── frontend/                       # Frontend React 18 SPA (Vite + Tailwind CSS)
+│   │   ├── api/                    # FastAPI routers, schemas, dependencies, SSE bus
+│   │   ├── core/                   # Đồng hồ tiêm được, cấu hình, xử lý lỗi, định danh Principal
+│   │   ├── domain/                 # Nghiệp vụ: chính sách, máy trạng thái, dịch vụ ứng dụng
+│   │   ├── infra/                  # Cơ sở dữ liệu, repositories, outbox, LLM factory, worker
+│   │   └── rag/                    # Sinh điều khoản từ rules, embedding, hybrid retriever
+│   └── tests/                      # Bộ kiểm thử backend (46 tests)
+├── frontend/                       # Giao diện React 18 SPA (Vite + Tailwind CSS)
 │   ├── src/
-│   │   ├── app/                    # Root layout & Header
-│   │   ├── components/             # Environment banner, Citation modal
-│   │   ├── features/chat/          # Chat stream, Action cards, Guest OTP, Evidence upload
-│   │   ├── features/staff/         # Staff approvals queue, Ticket takeover, Sandbox panel
-│   │   └── lib/                    # Typed API client & data models
-│   └── tests/                      # Vitest component tests (5 tests)
-├── config/                         # Cấu hình hệ thống (YAML, procedures, Jinja2 prompts)
-│   ├── policy/rules.yaml           # Nguồn sự thật duy nhất cho luật nghiệp vụ & RAG
-│   ├── models.yaml                 # Cấu hình mô hình LLM theo vai trò
-│   └── prompts/system.md.j2        # System prompt mẫu có băm phiên bản
-├── docs/                           # Tài liệu kỹ thuật chuẩn hóa
+│   │   ├── app/                    # Layout và điều hướng
+│   │   ├── components/             # Biểu ngữ môi trường, modal điều khoản chính sách
+│   │   ├── features/chat/          # Luồng chat, thẻ đề xuất, modal OTP, tải bằng chứng
+│   │   ├── features/staff/         # Hàng chờ duyệt, xử lý phiếu, bảng mô phỏng
+│   │   └── lib/                    # API client và định nghĩa kiểu dữ liệu
+│   └── tests/                      # Kiểm thử thành phần giao diện (5 tests)
+├── config/                         # Cấu hình tập trung (YAML, procedures, Jinja2 prompts)
+│   ├── policy/rules.yaml           # Nguồn dữ liệu cho luật nghiệp vụ và văn bản RAG
+│   ├── models.yaml                 # Cấu hình vai trò mô hình LLM
+│   └── prompts/system.md.j2        # System prompt mẫu có mã băm phiên bản
+├── docs/                           # Tài liệu kỹ thuật
 │   ├── adr/                        # 21 Architectural Decision Records (D1 -> D21)
-│   ├── threat-model.md             # Mô hình an toàn OWASP LLM & ASI
-│   ├── runbook.md                  # Sổ tay vận hành, quy trình sao lưu và khôi phục
-│   └── eval-report.md              # Báo cáo đánh giá hiệu năng & bake-off mô hình
-├── evals/                          # Bộ đánh giá độc lập (26 smoke scenarios, oracle, graders)
+│   ├── threat-model.md             # Mô hình an toàn và phân tích rủi ro
+│   ├── runbook.md                  # Sổ tay vận hành, quy trình sao lưu và cập nhật
+│   └── eval-report.md              # Báo cáo đánh giá và kết quả chạy thử nghiệm
+├── evals/                          # Bộ đánh giá độc lập (26 kịch bản smoke, oracle, graders)
 ├── docker-compose.yml              # Cụm container phát triển (postgres, phoenix, mailpit)
-├── Caddyfile                       # Cấu hình Reverse Proxy, HTTPS, Security Headers
+├── Caddyfile                       # Cấu hình Reverse Proxy và tiêu đề bảo mật
 └── README.md
 ```
 
 ---
 
-## 7. Hướng dẫn Khởi chạy Nhanh (trong 5 phút)
+## 7. Hướng dẫn Khởi chạy
 
-### Yêu cầu tiên quyết
+### Yêu cầu môi trường
 - **Python 3.12+**
 - **Node.js LTS (v20+)** và `npm`
-- Đã cài đặt thư viện qua virtualenv `.venv`
 
-### Bước 1: Cấu hình Môi trường
-Sao chép cấu hình mẫu từ `.env.example`:
+### Bước 1: Thiết lập cấu hình
+Sao chép file cấu hình mẫu từ `.env.example`:
 ```bash
 cp .env.example .env
 ```
-Cấu hình API Key của Google Gemini trong `.env`:
+Cập nhật API Key trong `.env`:
 ```ini
 GEMINI_API_KEY=your_gemini_api_key_here
 LLM_PRIMARY_MODEL=gemini-3.8-flash
 ```
 
-### Bước 2: Khởi tạo & Seed Dữ liệu
+### Bước 2: Khởi tạo dữ liệu
 ```bash
-# Kích hoạt môi trường ảo Python
+# Kích hoạt virtualenv
 .venv\Scripts\activate   # Windows
 # source .venv/bin/activate # Linux/macOS
 
-# Sinh dữ liệu mẫu thực tế có kiểm chứng
+# Khởi tạo dữ liệu mẫu
 python -m shopagent.cli seed
 
-# Đánh chỉ mục chính sách RAG
+# Đánh chỉ mục tài liệu chính sách
 python -m shopagent.rag.indexer
 ```
 
-### Bước 3: Khởi chạy Cụm Ứng dụng
+### Bước 3: Khởi động các tiến trình
 
-Mở 3 terminal riêng biệt:
+Mở 3 cửa sổ dòng lệnh:
 
-**Terminal 1 — Backend FastAPI Server:**
+**Cửa sổ 1 — Backend API:**
 ```bash
 uvicorn shopagent.api.app:app --host 127.0.0.1 --port 8001 --reload
 ```
 
-**Terminal 2 — Background Outbox Worker:**
+**Cửa sổ 2 — Outbox Worker:**
 ```bash
 python -m shopagent.worker
 ```
 
-**Terminal 3 — Frontend React SPA:**
+**Cửa sổ 3 — Frontend UI:**
 ```bash
 cd frontend
 npm install
@@ -213,32 +212,32 @@ Truy cập ứng dụng tại: [**http://localhost:5173**](http://localhost:5173
 
 ---
 
-## 8. Hướng dẫn Kiểm thử Toàn diện
+## 8. Hướng dẫn Kiểm thử
 
 ```bash
-# 1. Chạy toàn bộ 46 backend tests:
+# 1. Chạy toàn bộ kiểm thử backend:
 pytest backend/tests/ -v
 
-# 2. Chạy kiểm thử thành phần Frontend (Vitest):
+# 2. Chạy kiểm thử thành phần giao diện:
 cd frontend && npm test
 
-# 3. Chạy kiểm thử bộ Evaluation Harness (26 kịch bản smoke):
+# 3. Chạy đánh giá kịch bản với Oracle Agent:
 python -m evals.harness.runner --agent oracle
 
-# 4. Kiểm thử tính độc lập của bộ chấm (Null Agent phải trượt các ca đổi trạng thái):
+# 4. Chạy kiểm tra tính độc lập với Null Agent:
 python -m evals.harness.runner --agent null
 ```
 
 ---
 
-## 9. Giới hạn Đã biết (Known Limitations)
+## 9. Giới hạn Phạm vi
 
-- **Ngôn ngữ:** Giao diện và System Prompt được tối ưu tốt nhất cho Tiếng Việt thương mại điện tử theo phong cách tự nhiên, lịch thiệp (`bạn/mình`).
-- **Cổng thanh toán:** Ở chế độ `simulated`, hệ thống mô phỏng đầy đủ mã giao dịch đối soát `GW-...`; ở chế độ `sandbox`, cần cấu hình thông tin merchant VNPay Sandbox để nhận callback IPN.
-- **Hạn ngạch LLM Free Tier:** Khi chạy toàn bộ 184 kịch bản đánh giá với $k=3$ (~9.000 lượt gọi API), cần sử dụng API key có trả phí hoặc chia nhỏ kịch bản chạy rải theo ngày để không chạm hạn mức Rate-limit của Google AI Studio.
+- **Ngôn ngữ:** Nội dung giao diện và prompt hiện hỗ trợ tiếng Việt.
+- **Tích hợp thanh toán:** Ở chế độ `simulated`, hệ thống mô phỏng việc sinh mã giao dịch `GW-...` và cập nhật dữ liệu nội bộ; ở chế độ `sandbox`, cần cấu hình thông tin kết nối đối tác.
+- **Hạn ngạch API:** Việc chạy đánh giá số lượng lớn lượt tương tác cần lưu ý hạn ngạch yêu cầu của nhà cung cấp LLM.
 
 ---
 
-## 10. Giấy phép (License)
+## 10. Giấy phép
 
-Dự án được phân phối dưới giấy phép **MIT License**. Xem chi tiết tại file `LICENSE`.
+Dự án được phân phối theo giấy phép **MIT License**. Xem chi tiết tại file `LICENSE`.
