@@ -12,6 +12,14 @@ from langgraph.graph.message import add_messages
 from shopagent.core.principal import Principal
 
 
+def _merge_clauses(left: list[str] | None, right: list[str] | None) -> list[str]:
+    """Reducer that accumulates retrieved clause IDs across turns."""
+    res = set(left or [])
+    if right:
+        res.update(right)
+    return list(res)
+
+
 class AgentState(TypedDict, total=False):
     """Shared state for the 5-node LangGraph agent graph."""
 
@@ -20,7 +28,7 @@ class AgentState(TypedDict, total=False):
     principal: Principal
     clock: datetime
     dynamic_context: dict[str, Any]
-    retrieved_clauses: list[str]
+    retrieved_clauses: Annotated[list[str], _merge_clauses]
     tool_calls: list[dict[str, Any]]
     pending_action: dict[str, Any] | None
     events: list[dict[str, Any]]

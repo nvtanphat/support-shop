@@ -62,13 +62,13 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
 
     LLM_PRIMARY_PROVIDER: str = "gemini"
-    LLM_PRIMARY_MODEL: str = "gemini-2.5-flash"
+    LLM_PRIMARY_MODEL: str = "gemini-3.5-flash-lite"
     LLM_FALLBACK_PROVIDER: str = "fake"
     LLM_FALLBACK_MODEL: str = "fake-model"
     LLM_CHEAP_PROVIDER: str = "gemini"
-    LLM_CHEAP_MODEL: str = "gemini-2.5-flash-lite"
+    LLM_CHEAP_MODEL: str = "gemini-3.5-flash-lite"
     LLM_SIM_PROVIDER: str = "gemini"
-    LLM_SIM_MODEL: str = "gemini-2.5-flash"
+    LLM_SIM_MODEL: str = "gemini-3.5-flash-lite"
 
     # Auth
     JWT_SECRET: str = "dev_secret_change_in_production_32charsmin!"

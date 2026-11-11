@@ -17,6 +17,7 @@ from shopagent.agent.tools.registry import ToolRegistry
 from shopagent.core.clock import get_clock
 from shopagent.core.config import CONFIG_DIR
 from shopagent.core.principal import Principal
+from shopagent.core.text import extract_text_content
 from shopagent.infra.llm.factory import get_chat_model
 
 
@@ -141,6 +142,9 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
             ai_response = AIMessage(
                 content="Dạ em có thể hỗ trợ quý khách thông tin gì thêm về đơn hàng hoặc chính sách cửa hàng ạ?"
             )
+
+        if isinstance(ai_response, AIMessage) and not isinstance(ai_response.content, str):
+            ai_response.content = extract_text_content(ai_response.content)
 
         working_messages.append(ai_response)
         new_messages.append(ai_response)

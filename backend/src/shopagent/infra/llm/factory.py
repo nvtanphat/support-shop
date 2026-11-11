@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from typing import Any
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from shopagent.core.config import get_models_config, get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class FakeChatModel(BaseChatModel):
@@ -53,7 +57,7 @@ def get_chat_model(role: str = "agent_primary") -> BaseChatModel:
     role_cfg = models_cfg.get(role, {})
 
     provider = role_cfg.get("provider", "gemini")
-    model_name = role_cfg.get("model", "gemini-2.5-flash")
+    model_name = role_cfg.get("model", "gemini-3.5-flash-lite")
     temperature = role_cfg.get("temperature", 0.0)
 
     # Resolve environment variable placeholders
@@ -62,21 +66,23 @@ def get_chat_model(role: str = "agent_primary") -> BaseChatModel:
         provider = getattr(settings, env_var, "gemini")
     if isinstance(model_name, str) and model_name.startswith("${"):
         env_var = model_name.strip("${}").strip()
-        model_name = getattr(settings, env_var, "gemini-2.5-flash")
+        model_name = getattr(settings, env_var, "gemini-3.5-flash-lite")
 
-    if provider == "fake" or not settings.GEMINI_API_KEY:
+    api_key = settings.GEMINI_API_KEY or os.environ.get("GOOGLE_API_KEY")
+
+    if provider == "fake" or not api_key:
         return FakeChatModel()
 
     if provider == "gemini":
         try:
             return ChatGoogleGenerativeAI(
                 model=model_name,
-                google_api_key=settings.GEMINI_API_KEY,
+                google_api_key=api_key,
                 temperature=temperature,
-                api_version="v1beta",
                 timeout=30.0,
             )
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to initialize ChatGoogleGenerativeAI(%s): %s. Using FakeChatModel.", model_name, e)
             return FakeChatModel()
 
     # Default fallback

@@ -7,6 +7,7 @@ from typing import Any
 from langchain_core.messages import AIMessage
 
 from shopagent.agent.state import AgentState
+from shopagent.core.text import extract_text_content
 
 _CLAUSE_REGEX = re.compile(r"\[(POL-[A-Z0-9\-]+)\]")
 _NUMBER_REGEX = re.compile(r"\b(\d{1,3}(?:[.,]\d{3})+|\d+)\s*(?:đ|vnd|k|ngày|%)?\b", re.IGNORECASE)
@@ -44,7 +45,7 @@ def verify_output_node(state: AgentState) -> dict[str, Any]:
     if not last_ai_msg or not last_ai_msg.content:
         return {"verified_output": ""}
 
-    content = str(last_ai_msg.content)
+    content = extract_text_content(last_ai_msg.content)
     retrieved_clauses = set(state.get("retrieved_clauses", []))
 
     violations = []

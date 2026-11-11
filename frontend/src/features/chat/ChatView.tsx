@@ -10,7 +10,6 @@ import {
   Bot,
   User,
   Headphones,
-  Loader2,
   Sparkles,
   ShieldCheck,
   Plus,
@@ -115,7 +114,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
       try {
         const data = JSON.parse(e.data);
         const newMsg: Message = {
-          id: data.id || String(Date.now()),
+          id: data.id || `msg-${Date.now()}`,
           seq: data.seq || 0,
           role: data.role || 'assistant',
           content: data.content || '',
@@ -123,9 +122,20 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
           created_at: new Date().toISOString(),
         };
         setMessages((prev) => {
-          // Avoid duplicate message if already added via REST response
-          const exists = prev.some((m) => m.content === newMsg.content && m.role === newMsg.role);
-          if (exists) return prev;
+          // Avoid duplicate by message ID or exact seq
+          if (newMsg.id && prev.some((m) => m.id === newMsg.id)) {
+            return prev;
+          }
+          if (newMsg.seq && prev.some((m) => m.seq === newMsg.seq && m.role === newMsg.role)) {
+            return prev;
+          }
+          // If the last message was a temp assistant message added by REST, replace it
+          const lastIdx = prev.length - 1;
+          if (lastIdx >= 0 && prev[lastIdx].id.startsWith('asst-') && prev[lastIdx].role === 'assistant') {
+            const updated = [...prev];
+            updated[lastIdx] = newMsg;
+            return updated;
+          }
           return [...prev, newMsg];
         });
       } catch (err) {
@@ -195,8 +205,11 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
           created_at: new Date().toISOString(),
         };
         setMessages((prev) => {
-          const exists = prev.some((m) => m.content === assistantMsg.content && m.role === assistantMsg.role);
-          if (exists) return prev;
+          // If SSE already added this response as the last message, don't duplicate
+          const lastMsg = prev[prev.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant' && lastMsg.content === assistantMsg.content) {
+            return prev;
+          }
           return [...prev, assistantMsg];
         });
       }
@@ -209,6 +222,15 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
       }
     } catch (err: any) {
       console.error('Send message failed:', err);
+      const errMsg: Message = {
+        id: `err-${Date.now()}`,
+        seq: messages.length + 2,
+        role: 'assistant',
+        content: 'Dạ hiện tại hệ thống hỗ trợ đang bận tạm thời hoặc có sự cố mạng. Quý khách vui lòng thử lại sau giây lát hoặc bấm Hỗ trợ khác để kết nối với chuyên viên ạ.',
+        citations: [],
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, errMsg]);
     } finally {
       setLoading(false);
       setProgressText(null);
@@ -545,11 +567,31 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
             </div>
           ))}
 
-          {/* Progress Indicator */}
-          {progressText && (
-            <div className="flex items-center gap-2.5 text-xs text-purple-700 py-2.5 px-4 bg-purple-50/80 rounded-2xl w-fit border border-purple-100 animate-pulse">
-              <Loader2 className="w-4 h-4 animate-spin text-purple-600" />
-              <span>{progressText}</span>
+          {/* Active AI Processing / Typing Indicator Bubble */}
+          {loading && (
+            <div className="flex gap-3 items-end justify-start">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 text-white flex items-center justify-center flex-shrink-0 shadow-sm mb-1">
+                <Bot className="w-5 h-5 animate-pulse" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 px-1 text-xs">
+                  <span className="font-bold text-slate-900">ShopSupport AI</span>
+                  <span className="bg-purple-600 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                    <Sparkles className="w-2.5 h-2.5" />
+                    <span>AI</span>
+                  </span>
+                </div>
+                <div className="p-3.5 px-4 rounded-3xl bg-white border border-purple-200/80 rounded-bl-xs shadow-xs flex items-center gap-3">
+                  <div className="flex gap-1.5 items-center">
+                    <span className="w-2 h-2 rounded-full bg-purple-600 animate-bounce [animation-delay:-0.3s]" />
+                    <span className="w-2 h-2 rounded-full bg-purple-500 animate-bounce [animation-delay:-0.15s]" />
+                    <span className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" />
+                  </div>
+                  <span className="text-xs text-purple-700 font-medium">
+                    {progressText || 'ShopSupport AI đang xử lý...'}
+                  </span>
+                </div>
+              </div>
             </div>
           )}
 
