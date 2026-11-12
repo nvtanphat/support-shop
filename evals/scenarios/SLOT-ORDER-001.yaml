@@ -1,0 +1,48 @@
+id: SLOT-ORDER-001
+group: S_slots
+tags:
+- slots
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: slot.customer@example.test
+fixtures:
+  orders:
+  - code: SL-710001
+    status: delivered
+    delivered_at: -2d
+    payment_method: ewallet
+    items:
+    - key: ao
+      sku: TS-AO-S-XANH
+      qty: 1
+      unit_price: 250000
+  - code: SL-710002
+    status: delivered
+    delivered_at: -5d
+    payment_method: ewallet
+    items:
+    - key: ao
+      sku: TS-AO-M-TRANG
+      qty: 1
+      unit_price: 300000
+    - key: quan
+      sku: TS-QUAN-L-DEN
+      qty: 1
+      unit_price: 400000
+user:
+  goal: Trả hàng nhưng chưa nói đơn nào
+  script:
+  - say: Mình muốn trả hàng
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: asks_for
+    value: order_code
+  forbidden:
+  - kind: tool
+    pattern: propose_return
+  - kind: tool
+    pattern: check_return_eligibility

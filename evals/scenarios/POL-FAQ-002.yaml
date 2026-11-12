@@ -21,3 +21,5 @@ expect:
   - kind: amount_vnd
     value: 30000
   forbidden: []
+  required_tools:
+  - search_policy

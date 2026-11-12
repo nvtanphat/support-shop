@@ -181,7 +181,7 @@ export const EvidenceUploadModal: React.FC<EvidenceUploadModalProps> = ({
             <button
               type="submit"
               disabled={uploading || files.length === 0}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold flex items-center gap-2 disabled:opacity-50 shadow-md shadow-purple-200 transition"
+              className="px-4 py-2 bg-purple-700 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold flex items-center gap-2 disabled:opacity-50 shadow-md shadow-purple-200 transition"
             >
               {uploading ? (
                 <>

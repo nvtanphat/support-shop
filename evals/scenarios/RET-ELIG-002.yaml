@@ -41,3 +41,13 @@ expect:
   forbidden:
   - kind: claim
     pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - [check_return_eligibility, propose_return]
+  required_tool_args:
+    propose_return:
+      order_code: SL-300002
+      reason_code: change_of_mind

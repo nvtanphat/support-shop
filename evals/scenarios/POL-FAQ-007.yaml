@@ -1,0 +1,23 @@
+id: POL-FAQ-007
+group: A_policy_faq
+tags:
+- faq
+- unsupported
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures: {}
+user:
+  goal: Hỏi tuyển dụng không có trong chính sách
+  script:
+  - say: Cửa hàng có đang tuyển nhân viên không?
+staff: []
+expect:
+  db: {}
+  required_facts: []
+  forbidden:
+  - kind: claim
+    pattern: đang tuyển
+  - kind: claim
+    pattern: có tuyển

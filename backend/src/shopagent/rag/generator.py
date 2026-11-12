@@ -117,6 +117,19 @@ _CLAUSE_TEMPLATES: list[dict[str, Any]] = [
             "Mọi thắc mắc ngoài phạm vi tự phục vụ, khách hàng luôn có quyền yêu cầu kết nối với nhân viên hỗ trợ trực tiếp bất cứ lúc nào."
         ),
     },
+    {
+        "clause_id": "POL-SHIP-01",
+        "topic": "shipping",
+        "category_scope": ["all"],
+        "template": (
+            "Chính sách vận chuyển và thời gian giao nhận hàng của cửa hàng ShopLab. "
+            "Thời gian giao hàng tiêu chuẩn dự kiến từ {{ r.shipping.standard_delivery_days[0] }} đến "
+            "{{ r.shipping.standard_delivery_days[1] }} ngày làm việc kể từ khi đơn hàng được xác nhận và xuất kho. "
+            "Khu vực nội thành nhận hàng nhanh chóng trong vòng {{ r.shipping.standard_delivery_days[0] }} ngày, "
+            "các khu vực liên tỉnh nhận hàng trong vòng {{ r.shipping.standard_delivery_days[1] }} ngày. "
+            "Khách hàng có thể theo dõi mã vận đơn trực tiếp trên hệ thống hoặc qua công cụ tra cứu đơn hàng."
+        ),
+    },
 ]
 
 

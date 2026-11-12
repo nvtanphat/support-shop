@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.core.clock import get_clock
@@ -29,7 +31,9 @@ from shopagent.infra.db.tables import (
     ShipmentModel,
     TicketModel,
 )
-from shopagent.rag.retriever import HybridRetriever
+from shopagent.rag.retriever import HybridRetriever, PolicyIndexUnavailableError
+
+logger = logging.getLogger(__name__)
 
 
 # -------------------------------------------------------------------------
@@ -113,18 +117,56 @@ def create_tools(
     # Tool 1: search_policy
     async def search_policy(query: str, as_of: str | None = None) -> dict[str, Any]:
         """Tra cứu điều khoản chính sách đổi trả, bảo hành, hủy đơn, hoàn tiền của cửa hàng."""
-        as_of_dt = None
         if as_of:
             try:
-                clean_as_of = as_of.strip().replace("Z", "+00:00")
-                as_of_dt = datetime.fromisoformat(clean_as_of)
-            except Exception:
-                as_of_dt = None
-        matches = await retriever.retrieve(query=query, top_k=4, as_of=as_of_dt)
-        for m in matches:
-            if retrieved_clauses is not None:
-                retrieved_clauses.append(m["clause_id"])
-        return {"query": query, "results": matches}
+                as_of_dt = datetime.fromisoformat(as_of.strip().replace("Z", "+00:00"))
+            except ValueError:
+                return {
+                    "status": "invalid_request",
+                    "error_code": "INVALID_AS_OF",
+                    "message": f"as_of '{as_of}' không phải thời điểm ISO hợp lệ; bỏ as_of để dùng chính sách hiện hành.",
+                    "results": [],
+                }
+        else:
+            as_of_dt = get_clock().now()
+        try:
+            matches = await retriever.retrieve(query=query, top_k=4, as_of=as_of_dt)
+        except PolicyIndexUnavailableError as e:
+            return {
+                "status": "index_unavailable",
+                "error_code": "POLICY_INDEX_UNAVAILABLE",
+                "message": f"Kho chính sách chưa sẵn sàng ({e}). Không được trả lời nội dung chính sách.",
+                "results": [],
+            }
+        except SQLAlchemyError as e:
+            logger.error("policy_retrieval_db_error error=%s", e)
+            return {
+                "status": "db_error",
+                "error_code": "POLICY_DB_ERROR",
+                "message": "Không thể tra cứu cơ sở dữ liệu chính sách lúc này. Không được trả lời nội dung chính sách.",
+                "results": [],
+            }
+
+        if not matches:
+            return {
+                "status": "no_evidence",
+                "message": (
+                    f"Không tìm thấy điều khoản chính sách nào phù hợp với '{query}'. "
+                    "Không được trả lời từ trí nhớ: hãy nói rõ chưa có thông tin và đề nghị chuyển nhân viên nếu khách cần."
+                ),
+                "results": [],
+            }
+
+        if retrieved_clauses is not None:
+            retrieved_clauses.extend(m["clause_id"] for m in matches)
+        return {
+            "status": "success",
+            "query": query,
+            "as_of": as_of_dt.isoformat(),
+            "results": matches,
+            "policy_versions": sorted({m["version"] for m in matches}),
+            "note": "Chỉ dùng nội dung điều khoản trả về làm căn cứ; điều khoản không trả lời trực tiếp câu hỏi thì không được dùng.",
+        }
 
     # Tool 2: lookup_order_guest
     async def lookup_order_guest(order_code: str) -> dict[str, Any]:
@@ -357,7 +399,7 @@ def create_tools(
         return {
             "ticket_code": ticket.code,
             "status": "open",
-            "message": "Đã tạo phiếu hỗ trợ và chuyển tiếp cho nhân viên chăm sóc khách hàng.",
+            "message": f"Đã tạo phiếu hỗ trợ #{ticket.code} và chuyển tiếp yêu cầu đến chuyên viên chăm sóc khách hàng. Chuyên viên sẽ liên hệ lại với bạn trong vòng 30 phút.",
             "estimated_response_minutes": 30,
         }
 

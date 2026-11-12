@@ -1,0 +1,64 @@
+id: MT-RETURN-001
+group: S_slots
+tags:
+- slots
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: slot.customer@example.test
+fixtures:
+  orders:
+  - code: SL-710001
+    status: delivered
+    delivered_at: -2d
+    payment_method: ewallet
+    items:
+    - key: ao
+      sku: TS-AO-S-XANH
+      qty: 1
+      unit_price: 250000
+  - code: SL-710002
+    status: delivered
+    delivered_at: -5d
+    payment_method: ewallet
+    items:
+    - key: ao
+      sku: TS-AO-M-TRANG
+      qty: 1
+      unit_price: 300000
+    - key: quan
+      sku: TS-QUAN-L-DEN
+      qty: 1
+      unit_price: 400000
+user:
+  goal: Trả cái áo trong đơn thứ hai, trả lời bằng câu ngắn qua nhiều lượt
+  script:
+  - say: Mình muốn trả hàng
+  - say: đơn thứ hai
+  - say: cái áo bị rách chỉ
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Xác nhận tạo yêu cầu
+staff: []
+expect:
+  db:
+    return_requests:
+    - order: SL-710002
+      reason_code: defective
+      status: pending_review
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - [check_return_eligibility, propose_return]
+  required_tool_args:
+    get_order:
+      order_code: SL-710002
+    propose_return:
+      order_code: SL-710002
+      reason_code: defective
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền

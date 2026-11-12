@@ -13,57 +13,57 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
   onEscalate,
 }) => {
   return (
-    <div className="bg-gradient-to-r from-purple-100/90 via-purple-50/80 to-white rounded-3xl p-6 border border-purple-200/60 relative overflow-hidden shadow-xs">
+    <div className="bg-gradient-to-r from-[#DACAFB] via-[#E5D9FC] to-[#F4EEFE] px-10 pt-3 pb-3.5 relative overflow-hidden flex-shrink-0">
       {/* 3D Robot Mascot Image from provided assets */}
-      <div className="absolute right-4 top-1/2 -translate-y-1/2 hidden sm:flex items-center justify-center w-36 h-36 pointer-events-none select-none">
-        <div className="absolute w-28 h-28 rounded-full bg-purple-300/30 blur-xl"></div>
+      <div className="absolute right-10 top-1/2 -translate-y-1/2 hidden sm:flex items-center justify-center w-56 h-56 pointer-events-none select-none">
+        <div className="absolute w-40 h-40 rounded-full bg-purple-300/40 blur-2xl"></div>
         <img
           src="/images/mascot/robot-support.png"
           alt="ShopSupport AI Robot"
-          className="w-32 h-32 object-contain relative z-10 drop-shadow-md transition-transform hover:scale-105"
+          className="w-52 h-52 object-contain relative z-10 drop-shadow-xl transition-transform hover:scale-105"
         />
       </div>
 
-      <div className="max-w-lg relative z-10 space-y-3">
-        <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+      <div className="max-w-3xl relative z-10 space-y-2">
+        <h1 className="text-[34px] leading-tight font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
           <span>Xin chào!</span>
-          <span className="text-2xl">👋</span>
+          <span className="text-3xl">👋</span>
         </h1>
-        <p className="text-xs md:text-sm text-slate-600 leading-relaxed font-normal">
+        <p className="text-[15px] text-slate-800 leading-snug font-normal max-w-xl">
           Tôi là trợ lý AI của ShopSupport, sẵn sàng hỗ trợ bạn 24/7 về đơn hàng, chính sách, đổi trả và các vấn đề khác.
         </p>
 
         {/* 4 Quick prompt chips */}
-        <div className="flex flex-wrap gap-2 pt-1">
+        <div className="flex flex-wrap gap-3 pt-2">
           <button
             onClick={onOpenOtpModal}
-            className="px-3.5 py-2 bg-white/95 hover:bg-white text-slate-700 hover:text-purple-700 rounded-2xl text-xs font-semibold flex items-center gap-1.5 border border-purple-200/80 shadow-xs transition hover:shadow-sm"
+            className="px-5 py-2.5 bg-white hover:bg-[#FBF8FF] text-slate-900 hover:text-purple-700 rounded-full text-[15px] font-semibold flex items-center gap-2.5 shadow-pill transition hover:-translate-y-px"
           >
-            <Zap className="w-3.5 h-3.5 text-purple-600" />
+            <Zap className="w-5 h-5 text-purple-700" />
             <span>Tra cứu đơn hàng</span>
           </button>
 
           <button
             onClick={() => onQuickPrompt('Mình muốn đổi trả đơn hàng SL-8F3D9K vì tai nghe bị rè một bên.')}
-            className="px-3.5 py-2 bg-white/95 hover:bg-white text-slate-700 hover:text-purple-700 rounded-2xl text-xs font-semibold flex items-center gap-1.5 border border-purple-200/80 shadow-xs transition hover:shadow-sm"
+            className="px-5 py-2.5 bg-white hover:bg-[#FBF8FF] text-slate-900 hover:text-purple-700 rounded-full text-[15px] font-semibold flex items-center gap-2.5 shadow-pill transition hover:-translate-y-px"
           >
-            <Package className="w-3.5 h-3.5 text-purple-600" />
+            <Package className="w-5 h-5 text-purple-700" />
             <span>Đổi trả / Hoàn tiền</span>
           </button>
 
           <button
             onClick={() => onQuickPrompt('Chính sách đổi trả hàng tại shop quy định như thế nào?')}
-            className="px-3.5 py-2 bg-white/95 hover:bg-white text-slate-700 hover:text-purple-700 rounded-2xl text-xs font-semibold flex items-center gap-1.5 border border-purple-200/80 shadow-xs transition hover:shadow-sm"
+            className="px-5 py-2.5 bg-white hover:bg-[#FBF8FF] text-slate-900 hover:text-purple-700 rounded-full text-[15px] font-semibold flex items-center gap-2.5 shadow-pill transition hover:-translate-y-px"
           >
-            <FileText className="w-3.5 h-3.5 text-purple-600" />
+            <FileText className="w-5 h-5 text-purple-700" />
             <span>Hỏi về chính sách</span>
           </button>
 
           <button
             onClick={onEscalate}
-            className="px-3.5 py-2 bg-white/95 hover:bg-white text-slate-700 hover:text-purple-700 rounded-2xl text-xs font-semibold flex items-center gap-1.5 border border-purple-200/80 shadow-xs transition hover:shadow-sm"
+            className="px-5 py-2.5 bg-white hover:bg-[#FBF8FF] text-slate-900 hover:text-purple-700 rounded-full text-[15px] font-semibold flex items-center gap-2.5 shadow-pill transition hover:-translate-y-px"
           >
-            <HelpCircle className="w-3.5 h-3.5 text-purple-600" />
+            <HelpCircle className="w-5 h-5 text-purple-700" />
             <span>Hỗ trợ khác</span>
           </button>
         </div>

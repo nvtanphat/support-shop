@@ -52,20 +52,20 @@ flowchart LR
 
 ## 3. Kết quả Đánh giá Nghiệm thu (Quality Gates)
 
-Đo kiểm thực tế trên bộ 32 kịch bản kiểm thử độc lập (Evaluation Harness) và toàn bộ bộ test tự động:
+Số liệu đã đo trong lần audit 12/11/2026 (chi tiết, giới hạn và mục `NOT VERIFIED` ở [`docs/eval-report.md`](docs/eval-report.md)):
 
 | Nhóm kiểm thử | Công cụ / Tiêu chí | Kết quả thực tế | Trạng thái |
 |---|---|:---:|:---:|
 | **An toàn & Tài chính** | Vi phạm IDOR, hoàn tiền sai, rò rỉ PII, phát biểu sai S5 | **0 vi phạm** | **ĐẠT** |
-| **Mô hình chuẩn (Oracle)** | 32 kịch bản smoke (10 nhóm nghiệp vụ) | **32/32 (100.0%)** | **ĐẠT** |
-| **Mô hình thật (LangGraph)** | Gemini 3.5 Flash Lite trên 32 kịch bản | **31/32 (96.9%)** | **ĐẠT** |
-| **Tính độc lập (Null Agent)** | Chỉ từ chối mặc định, không thực thi giao dịch | **15.6%** | **ĐẠT** |
+| **Mô hình chuẩn (Oracle)** | 40 kịch bản (có kiểm tra tool, tham số, thứ tự, hỏi thiếu thông tin) | **40/40** | **ĐẠT** |
+| **Mô hình thật (LangGraph)** | Gemini 3.5 Flash Lite | run1 35/38; run2 dừng ở 23/40 (23/23 PASS, Gemini trả 504) | **NOT VERIFIED** |
+| **Tính độc lập (Null Agent)** | Chỉ từ chối mặc định, không thực thi giao dịch | **6/40 (15.0%)** | **ĐẠT** |
 | **Code Quality & Lint** | Ruff Linter & Formatter | **0 lỗi / 0 cảnh báo** | **ĐẠT** |
-| **Type Safety** | Mypy Strict Mode (105 source files) | **0 lỗi** | **ĐẠT** |
-| **Backend Unit & Integration** | Pytest (bao gồm concurrency, hypothesis, resilience) | **57/57 PASS** | **ĐẠT** |
+| **Type Safety** | Mypy | **0 lỗi (109 source files)** | **ĐẠT** |
+| **Backend Unit & Integration** | Pytest (unit, integration, API, resilience) | **107/107 PASS** | **ĐẠT** |
 | **Frontend Unit Tests** | Vitest Component Tests | **5/5 PASS** | **ĐẠT** |
-| **Frontend E2E Journeys** | Playwright Chromium Headless (5 user journeys) | **5/5 PASS** | **ĐẠT** |
-| **Frontend Build** | TypeScript + Vite Production Build | **0 lỗi (3.46s)** | **ĐẠT** |
+| **Frontend E2E Journeys** | Playwright Chromium Headless | chưa chạy trong lần audit này | **NOT VERIFIED** |
+| **Frontend Build** | TypeScript + Vite Production Build | **0 lỗi** | **ĐẠT** |
 
 Chi tiết báo cáo đo kiểm: [`docs/eval-report.md`](docs/eval-report.md).
 
@@ -92,7 +92,7 @@ shop-support-agent/
 │   └── tests/                      # Vitest unit tests và Playwright E2E specs
 ├── config/                         # Cấu hình tập trung (policy rules, models, system prompt)
 ├── docs/                           # Tài liệu kỹ thuật, ADRs, eval report
-├── evals/                          # Bộ đánh giá độc lập (32 kịch bản, oracle, null agent, graders)
+├── evals/                          # Bộ đánh giá độc lập (40 kịch bản, oracle, null agent, graders)
 └── docker-compose.yml              # Container Postgres 17 + pgvector, Phoenix, Mailpit
 ```
 
@@ -170,7 +170,7 @@ npm --prefix frontend test -- --run
 # 4. Chạy kiểm thử luồng người dùng trình duyệt thực tế (Playwright E2E)
 npm --prefix frontend run test:e2e
 
-# 5. Chạy đánh giá bộ 32 kịch bản nghiệp vụ (Oracle Agent chuẩn)
+# 5. Chạy đánh giá bộ 40 kịch bản nghiệp vụ (Oracle Agent chuẩn)
 uv run python -m evals.harness.runner --agent oracle
 
 # 6. Chạy đánh giá Agent LangGraph thực tế với LLM

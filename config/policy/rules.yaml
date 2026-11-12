@@ -65,3 +65,6 @@ risk_flags:
     order_total_vnd: 2000000
 
 pending_action_ttl_minutes: 30
+
+shipping:
+  standard_delivery_days: [2, 5]

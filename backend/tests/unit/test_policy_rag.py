@@ -64,7 +64,7 @@ async def test_policy_retrieval_benchmark_r1_and_r2():
     assert len(standard_queries) == 40
     assert len(unaccented_queries) == 40
 
-    retriever = HybridRetriever(session=None)  # Uses in-memory generator cache
+    retriever = HybridRetriever(in_memory=True)  # Uses in-memory generator cache
 
     # Benchmark Standard Queries (R1)
     std_hits = 0
@@ -92,7 +92,7 @@ async def test_policy_retrieval_benchmark_r1_and_r2():
 
     # Section 14.6 Quality Gates: R1 >= 95%, R2 >= 90%
     assert r1_recall >= 0.95, f"R1 standard recall@4 is {r1_recall*100:.1f}%, expected >= 95%"
-    assert r2_recall >= 0.90, f"R2 unaccented recall@4 is {r2_recall*100:.1f}%, expected >= 90%"
+    assert r2_recall >= 0.95, f"R2 unaccented recall@4 is {r2_recall*100:.1f}%, expected >= 95%"
 
 
 @pytest.mark.asyncio
@@ -120,3 +120,129 @@ async def test_policy_indexing_and_db_retrieval():
         assert "POL-RETURN-02" in clause_ids
 
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_retriever_raises_on_db_failure():
+    """Verify that DB failures are never swallowed silently with except Exception: pass."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from sqlalchemy.exc import OperationalError
+
+    mock_session = MagicMock()
+    mock_session.execute = AsyncMock(side_effect=OperationalError("DB connection failed", None, None))
+
+    retriever = HybridRetriever(session=mock_session)
+    with pytest.raises(OperationalError):
+        await retriever.retrieve("đổi trả hàng lỗi", top_k=2)
+
+
+@pytest.mark.asyncio
+async def test_retriever_returns_empty_when_no_relevant_evidence():
+    """Verify retriever returns empty list when query has no relevant policy match."""
+    retriever = HybridRetriever(in_memory=True)
+    results = await retriever.retrieve("zzzxxyyyy qwerty asdfghjkl random string without any sense", top_k=2)
+    assert len(results) == 0
+
+
+@pytest.mark.asyncio
+async def test_retriever_provenance_and_version():
+    """Verify retrieved results retain policy version and provenance metadata."""
+    retriever = HybridRetriever(in_memory=True)
+    results = await retriever.retrieve("chính sách hoàn tiền ví điện tử", top_k=1)
+    assert len(results) > 0
+    first = results[0]
+    assert "version" in first
+    assert "score" in first
+    assert "clause_id" in first
+    assert first["version"] == "2026-11-01"
+
+
+
+# ---------------------------------------------------------------------------
+# search_policy tool: failure modes are distinct and never fall back silently
+# ---------------------------------------------------------------------------
+async def _policy_tool(session):  # type: ignore[no-untyped-def]
+    import uuid
+
+    from shopagent.agent.tools.definitions import create_tools
+    from shopagent.core.principal import Principal
+
+    tools = create_tools(session, Principal.guest(), uuid.uuid4(), retrieved_clauses=[])
+    return next(t for t in tools if t.name == "search_policy")
+
+
+async def _memory_session():  # type: ignore[no-untyped-def]
+    from shopagent.infra.db.tables import Base
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    return engine, async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+
+def test_retriever_requires_explicit_offline_mode() -> None:
+    with pytest.raises(ValueError):
+        HybridRetriever()
+
+
+@pytest.mark.asyncio
+async def test_search_policy_reports_empty_index_instead_of_no_evidence() -> None:
+    engine, factory = await _memory_session()
+    async with factory() as session:
+        tool = await _policy_tool(session)
+        result = await tool.ainvoke({"query": "đổi trả hàng lỗi"})
+    await engine.dispose()
+    assert result["status"] == "index_unavailable"
+    assert result["results"] == []
+
+
+@pytest.mark.asyncio
+async def test_search_policy_reports_database_failure() -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    from sqlalchemy.exc import OperationalError
+
+    session = MagicMock()
+    session.execute = AsyncMock(side_effect=OperationalError("down", None, None))
+    tool = await _policy_tool(session)
+    result = await tool.ainvoke({"query": "đổi trả hàng lỗi"})
+    assert result["status"] == "db_error"
+    assert result["results"] == []
+
+
+@pytest.mark.asyncio
+async def test_search_policy_rejects_invalid_as_of_instead_of_ignoring_it() -> None:
+    engine, factory = await _memory_session()
+    async with factory() as session:
+        tool = await _policy_tool(session)
+        result = await tool.ainvoke({"query": "đổi trả hàng lỗi", "as_of": "hôm qua"})
+    await engine.dispose()
+    assert result["error_code"] == "INVALID_AS_OF"
+
+
+@pytest.mark.asyncio
+async def test_search_policy_returns_provenance_and_only_effective_clauses() -> None:
+    from datetime import UTC, datetime
+
+    from shopagent.infra.db.tables import PolicyChunkModel
+    from shopagent.rag.indexer import index_policies
+    from sqlalchemy import update
+
+    engine, factory = await _memory_session()
+    async with factory() as session:
+        await index_policies(session)
+        tool = await _policy_tool(session)
+        current = await tool.ainvoke({"query": "đổi ý trả hàng mất phí bao nhiêu"})
+        assert current["status"] == "success"
+        assert current["policy_versions"] == ["2026-11-01"]
+        first = current["results"][0]
+        assert first["version"] and first["effective_from"] and "effective_to" in first
+
+        # Expire every clause in the past: today's question must find nothing effective.
+        await session.execute(update(PolicyChunkModel).values(effective_to=datetime(2026, 1, 1, tzinfo=UTC)))
+        await session.commit()
+        expired = await tool.ainvoke({"query": "đổi ý trả hàng mất phí bao nhiêu"})
+    await engine.dispose()
+    assert expired["status"] == "no_evidence"

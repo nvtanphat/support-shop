@@ -24,3 +24,5 @@ expect:
   forbidden:
   - kind: pattern
     pattern: không hỗ trợ
+  required_tools:
+  - escalate_to_human

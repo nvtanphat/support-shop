@@ -89,77 +89,77 @@ export const App: React.FC = () => {
       <EnvironmentBanner />
 
       {/* Main Top Header matching ShopSupport AI style */}
-      <header className="bg-white/95 backdrop-blur-md border-b border-purple-100/80 sticky top-0 z-40 shadow-xs">
-        <div className="max-w-[1520px] mx-auto px-4 lg:px-8 h-18 flex items-center justify-between gap-4">
+      <header className="bg-white sticky top-0 z-40 shadow-[0_1px_0_#EFE9FB,0_8px_24px_-16px_rgba(109,40,217,0.25)]">
+        <div className="max-w-[1680px] mx-auto px-6 lg:px-10 h-[64px] flex items-center justify-between gap-4">
           
           {/* Left Brand Logo */}
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('assistant')}>
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-purple-200 overflow-hidden p-1.5">
+            <div className="w-11 h-11 flex items-center justify-center overflow-hidden">
               <img
                 src="/images/brand/shopping-bag-icon.png"
                 alt="ShopSupport Logo"
-                className="w-full h-full object-contain filter drop-shadow-sm"
+                className="w-full h-full object-contain"
               />
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="font-extrabold text-slate-900 tracking-tight text-lg">
+              <span className="font-extrabold text-slate-900 tracking-tight text-xl">
                 ShopSupport AI
               </span>
-              <Sparkles className="w-4 h-4 text-purple-600 fill-purple-600 animate-pulse" />
+              <Sparkles className="w-5 h-5 text-purple-700 fill-purple-700" />
             </div>
           </div>
 
           {/* Center Navigation Pill Tabs */}
-          <nav className="hidden md:flex items-center bg-slate-100/80 p-1.5 rounded-2xl text-xs font-semibold gap-1 border border-slate-200/50">
+          <nav className="hidden md:flex items-center bg-transparent p-0 rounded-2xl text-[15px] font-semibold gap-2">
             <button
               onClick={() => handleTabClick('assistant')}
-              className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 ${
+              className={`px-4 py-2.5 rounded-2xl transition-all flex items-center gap-2 ${
                 activeTab === 'assistant'
-                  ? 'bg-purple-100/90 text-purple-800 shadow-xs font-bold'
-                  : 'text-slate-600 hover:text-purple-700 hover:bg-white/60'
+                  ? 'bg-[#E4D8FB] text-purple-800 font-bold'
+                  : 'text-slate-700 hover:text-purple-700 hover:bg-[#F4EEFF]'
               }`}
             >
-              <Bot className="w-4 h-4 text-purple-600" />
+              <Bot className="w-4 h-4 text-purple-700" />
               <span>Trợ lý AI</span>
             </button>
 
             <button
               onClick={() => handleTabClick('lookup')}
-              className="px-4 py-2 rounded-xl text-slate-600 hover:text-purple-700 hover:bg-white/60 transition-all flex items-center gap-2"
+              className="px-4 py-2.5 rounded-2xl text-slate-700 hover:text-purple-700 hover:bg-[#F4EEFF] transition-all flex items-center gap-2"
             >
-              <Package className="w-4 h-4 text-slate-500" />
+              <Package className="w-5 h-5 text-slate-600" />
               <span>Tra cứu đơn hàng</span>
             </button>
 
             <button
               onClick={() => handleTabClick('policy')}
-              className="px-4 py-2 rounded-xl text-slate-600 hover:text-purple-700 hover:bg-white/60 transition-all flex items-center gap-2"
+              className="px-4 py-2.5 rounded-2xl text-slate-700 hover:text-purple-700 hover:bg-[#F4EEFF] transition-all flex items-center gap-2"
             >
-              <FileText className="w-4 h-4 text-slate-500" />
+              <FileText className="w-5 h-5 text-slate-600" />
               <span>Chính sách</span>
             </button>
 
             <button
               onClick={() => handleTabClick('returns')}
-              className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 ${
+              className={`px-4 py-2.5 rounded-2xl transition-all flex items-center gap-2 ${
                 activeTab === 'returns'
-                  ? 'bg-purple-100/90 text-purple-800 shadow-xs font-bold'
-                  : 'text-slate-600 hover:text-purple-700 hover:bg-white/60'
+                  ? 'bg-[#E4D8FB] text-purple-800 font-bold'
+                  : 'text-slate-700 hover:text-purple-700 hover:bg-[#F4EEFF]'
               }`}
             >
-              <RefreshCw className="w-4 h-4 text-slate-500" />
+              <RefreshCw className="w-5 h-5 text-slate-600" />
               <span>Đổi trả</span>
             </button>
 
             <button
               onClick={() => handleTabClick('contact')}
-              className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 ${
+              className={`px-4 py-2.5 rounded-2xl transition-all flex items-center gap-2 ${
                 activeTab === 'contact'
-                  ? 'bg-purple-100/90 text-purple-800 shadow-xs font-bold'
-                  : 'text-slate-600 hover:text-purple-700 hover:bg-white/60'
+                  ? 'bg-[#E4D8FB] text-purple-800 font-bold'
+                  : 'text-slate-700 hover:text-purple-700 hover:bg-[#F4EEFF]'
               }`}
             >
-              <Headphones className="w-4 h-4 text-slate-500" />
+              <Headphones className="w-5 h-5 text-slate-600" />
               <span>Liên hệ</span>
             </button>
 
@@ -181,7 +181,7 @@ export const App: React.FC = () => {
           {/* Right Action Icons & User Profile */}
           <div className="flex items-center gap-3">
             <button
-              className="w-10 h-10 rounded-xl hover:bg-purple-50 text-slate-600 hover:text-purple-600 flex items-center justify-center transition"
+              className="w-10 h-10 rounded-xl hover:bg-purple-50 text-slate-900 hover:text-purple-700 flex items-center justify-center transition"
               title="Tìm kiếm"
             >
               <Search className="w-5 h-5" />
@@ -189,12 +189,12 @@ export const App: React.FC = () => {
 
             <div className="relative">
               <button
-                className="w-10 h-10 rounded-xl hover:bg-purple-50 text-slate-600 hover:text-purple-600 flex items-center justify-center transition"
+                className="w-10 h-10 rounded-xl hover:bg-purple-50 text-slate-600 hover:text-purple-700 flex items-center justify-center transition"
                 title="Giỏ hàng"
               >
                 <ShoppingCart className="w-5 h-5" />
               </button>
-              <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-purple-600 text-white text-[10px] font-bold flex items-center justify-center shadow-xs">
+              <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-purple-700 text-white text-[10px] font-bold flex items-center justify-center shadow-xs">
                 1
               </span>
             </div>
@@ -203,7 +203,7 @@ export const App: React.FC = () => {
               <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
                 <div className="hidden sm:flex flex-col text-right">
                   <span className="text-xs font-bold text-slate-900 leading-tight">Lan Nguyễn</span>
-                  <span className="text-[10px] font-semibold text-purple-600">Khách hàng VIP</span>
+                  <span className="text-[10px] font-semibold text-purple-700">Khách hàng VIP</span>
                 </div>
                 <button
                   onClick={handleLogout}
@@ -216,9 +216,9 @@ export const App: React.FC = () => {
             ) : (
               <button
                 onClick={() => setShowLoginModal(true)}
-                className="flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-purple-700 bg-white hover:bg-purple-50 px-4 py-2.5 rounded-xl transition border border-purple-200/80 shadow-xs"
+                className="flex items-center gap-2 text-[15px] font-bold text-slate-900 hover:text-purple-700 bg-white hover:bg-[#F7F3FF] px-5 py-2.5 rounded-full transition shadow-pill"
               >
-                <UserIcon className="w-4 h-4 text-purple-600" />
+                <UserIcon className="w-5 h-5 text-slate-900" />
                 <span>Đăng nhập</span>
               </button>
             )}
@@ -227,7 +227,7 @@ export const App: React.FC = () => {
       </header>
 
       {/* Main Container Area */}
-      <main className="flex-1 max-w-[1520px] w-full mx-auto p-4 lg:p-6 flex flex-col min-h-0">
+      <main className="flex-1 max-w-[1680px] w-full mx-auto px-6 lg:px-10 py-4 flex flex-col min-h-0">
         {activeTab === 'staff' ? (
           <StaffPortal />
         ) : conversationId ? (
@@ -238,7 +238,7 @@ export const App: React.FC = () => {
           />
         ) : (
           <div className="py-24 text-center text-purple-500 text-sm flex flex-col items-center gap-3">
-            <div className="w-8 h-8 rounded-full border-2 border-purple-600 border-t-transparent animate-spin"></div>
+            <div className="w-8 h-8 rounded-full border-2 border-purple-700 border-t-transparent animate-spin"></div>
             <span>Đang khởi tạo phiên làm việc với ShopSupport AI...</span>
           </div>
         )}
@@ -305,7 +305,7 @@ export const App: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-md shadow-purple-200 transition"
+                  className="flex-1 py-2.5 text-xs font-semibold text-white bg-purple-700 hover:bg-purple-700 rounded-xl shadow-md shadow-purple-200 transition"
                 >
                   Đăng nhập
                 </button>

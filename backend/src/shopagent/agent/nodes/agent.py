@@ -1,4 +1,4 @@
-"""Node 3: agent - Main reasoning loop with tool binding, execution, timeout, and anti-thrashing."""
+"""Node 3: agent - tool-calling loop with tool-first enforcement and a deterministic end state."""
 
 from __future__ import annotations
 
@@ -7,148 +7,196 @@ import json
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
-import jinja2
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
+from langchain_core.messages.tool import ToolCall
 from langchain_core.runnables import RunnableConfig
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shopagent.agent.context_window import prune_messages_token_aware
+from shopagent.agent.prompt import render_system_prompt
+from shopagent.agent.slot_guard import (
+    GroundingContext,
+    find_ungrounded_slot,
+    recent_order_codes,
+    serialize_result,
+)
 from shopagent.agent.state import AgentState
+from shopagent.agent.tool_requirements import (
+    ToolRequirement,
+    derive_requirements,
+    steering_message,
+    unmet_requirements,
+)
 from shopagent.agent.tools.registry import ToolRegistry
-from shopagent.core.clock import get_clock
-from shopagent.core.config import CONFIG_DIR
+from shopagent.core.config import get_models_config
 from shopagent.core.principal import Principal
 from shopagent.core.text import extract_text_content
 from shopagent.infra.llm.factory import get_chat_model
 
 logger = logging.getLogger(__name__)
 
-_TEMPLATE_DIR = CONFIG_DIR / "prompts"
-_PROCEDURES_DIR = CONFIG_DIR / "procedures"
-
-_jinja_env = jinja2.Environment(
-    loader=jinja2.FileSystemLoader(str(_TEMPLATE_DIR)),
-    autoescape=jinja2.select_autoescape(["html", "xml"]),
-)
+_MAX_DUPLICATE_CALLS = 2
+_MAX_STEERING_ROUNDS = 2
+_LLM_ATTEMPTS = 3
 
 
-def _load_procedures() -> str:
-    """Load and concatenate all markdown procedures."""
-    if not _PROCEDURES_DIR.exists():
-        return ""
-    procedures = []
-    for f in sorted(_PROCEDURES_DIR.glob("*.md")):
-        procedures.append(f.read_text(encoding="utf-8"))
-    return "\n\n".join(procedures)
+@dataclass(frozen=True)
+class LoopBudget:
+    """Limits of one agent turn, read from config/models.yaml (budgets)."""
+
+    max_iterations: int
+    max_input_tokens: int
+    turn_timeout_s: float
+    tool_timeout_s: float
+    synthesis_timeout_s: float
+
+    @classmethod
+    def from_config(cls) -> LoopBudget:
+        cfg = get_models_config().get("budgets", {})
+        return cls(
+            max_iterations=int(cfg.get("max_agent_iterations", 6)),
+            max_input_tokens=int(cfg.get("max_input_tokens_per_turn", 12000)),
+            turn_timeout_s=float(cfg.get("turn_timeout_s", 90)),
+            tool_timeout_s=float(cfg.get("tool_timeout_s", 12)),
+            synthesis_timeout_s=float(cfg.get("synthesis_timeout_s", 20)),
+        )
 
 
-_ALL_PROCEDURES = _load_procedures()
+def _latest_user_text(messages: list[BaseMessage]) -> str:
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            return extract_text_content(msg.content)
+    return ""
 
 
-def estimate_message_tokens(msg: BaseMessage) -> int:
-    """Approximate token count for a single message."""
-    content = str(msg.content or "")
-    tokens = max(1, len(content) // 3)
-    if hasattr(msg, "tool_calls") and msg.tool_calls:
+def _normalize_ai_message(raw: Any) -> AIMessage:
+    """Coerce provider output into an AIMessage with plain-text content and an id."""
+    if isinstance(raw, AIMessage):
+        msg = raw
+        if not isinstance(msg.content, str):
+            msg.content = extract_text_content(msg.content)
+    else:
+        msg = AIMessage(content=extract_text_content(getattr(raw, "content", "")))
+    if not msg.id:
+        msg.id = f"ai-{uuid.uuid4()}"
+    return msg
+
+
+def _bind_tools(llm: Any, tools: list[Any]) -> Any:
+    """Bind tools; models without tool support (the deterministic test model) run tool-less."""
+    if not tools:
+        return llm
+    try:
+        return llm.bind_tools(tools)
+    except NotImplementedError:
+        return llm
+
+
+async def _invoke_llm(
+    primary: Any, fallback_tools: list[Any], call_input: list[BaseMessage]
+) -> AIMessage | None:
+    """Call the primary model with retries, then the fallback model. None means unavailable."""
+    for attempt in range(_LLM_ATTEMPTS):
         try:
-            tokens += len(json.dumps(msg.tool_calls)) // 3
-        except Exception:
-            tokens += 50
-    return tokens + 4  # overhead per message
+            return _normalize_ai_message(await primary.ainvoke(call_input))
+        except Exception as exc:
+            logger.warning("llm_call_failed attempt=%d error=%s", attempt + 1, exc)
+            if attempt < _LLM_ATTEMPTS - 1:
+                await asyncio.sleep(0.5 * (attempt + 1))
+    try:
+        fallback = _bind_tools(get_chat_model("agent_fallback"), fallback_tools)
+        return _normalize_ai_message(await fallback.ainvoke(call_input))
+    except Exception as exc:
+        logger.error("llm_fallback_failed error=%s", exc)
+        return None
 
 
-def prune_messages_token_aware(
-    messages: list[BaseMessage],
-    max_input_tokens: int = 10000,
-) -> list[BaseMessage]:
-    """Group messages into atomic conversational units to prevent splitting tool-call pairs.
-    
-    Ensures:
-    1. AIMessage with tool_calls and all corresponding ToolMessages are never severed.
-    2. Total tokens stay strictly within budget (default <= 10.000 tokens).
-    3. The most recent user request and its context are always preserved.
-    """
-    if not messages:
-        return []
+async def _run_tool_call(
+    call: ToolCall,
+    tools_by_name: dict[str, Any],
+    sig_counts: dict[str, int],
+    tool_timeout_s: float,
+    grounding: GroundingContext,
+) -> Any:
+    """Execute one tool call with duplicate protection and a timeout."""
+    name = call["name"]
+    args = call.get("args", {})
+    tool = tools_by_name.get(name)
+    if tool is None:
+        return {
+            "error_code": "TOOL_NOT_FOUND",
+            "message": f"Công cụ '{name}' không tồn tại hoặc không được phép dùng cho vai trò này.",
+        }
 
-    # 1. Group into atomic units (preserving AIMessage + ToolMessages pairs)
-    units: list[list[BaseMessage]] = []
-    i = 0
-    n = len(messages)
-    while i < n:
-        msg = messages[i]
-        if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
-            unit: list[BaseMessage] = [msg]
-            i += 1
-            while i < n and isinstance(messages[i], ToolMessage):
-                unit.append(messages[i])
-                i += 1
-            units.append(unit)
-        else:
-            units.append([msg])
-            i += 1
+    missing_slot = find_ungrounded_slot(name, args, grounding)
+    if missing_slot is not None:
+        logger.info("tool_rejected_ungrounded tool=%s slot=%s", name, missing_slot["slot"])
+        return missing_slot
 
-    # 2. Accumulate units from newest to oldest within max_input_tokens
-    selected_units: list[list[BaseMessage]] = []
-    accumulated_tokens = 0
-
-    for unit in reversed(units):
-        unit_tokens = sum(estimate_message_tokens(m) for m in unit)
-        if selected_units and (accumulated_tokens + unit_tokens > max_input_tokens):
-            break
-        selected_units.append(unit)
-        accumulated_tokens += unit_tokens
-
-    # Reverse back to chronological order and flatten
-    selected_units.reverse()
-    result: list[BaseMessage] = []
-    for unit in selected_units:
-        result.extend(unit)
-
-    return result
+    signature = f"{name}:{json.dumps(args, sort_keys=True, default=str)}"
+    sig_counts[signature] = sig_counts.get(signature, 0) + 1
+    if sig_counts[signature] > _MAX_DUPLICATE_CALLS:
+        return {
+            "error_code": "DUPLICATE_CALL",
+            "message": f"Công cụ '{name}' đã được gọi nhiều lần với cùng tham số. "
+            "Hãy dùng kết quả đã có hoặc hỏi thêm khách.",
+        }
+    try:
+        return await asyncio.wait_for(tool.ainvoke(args), timeout=tool_timeout_s)
+    except TimeoutError:
+        logger.error("tool_timeout tool=%s timeout_s=%s", name, tool_timeout_s)
+        return {"error_code": "TOOL_TIMEOUT", "message": f"Công cụ '{name}' phản hồi quá lâu."}
+    except Exception as exc:
+        logger.warning("tool_failed tool=%s error=%s", name, exc)
+        return {"error_code": "TOOL_EXECUTION_ERROR", "message": str(exc)}
 
 
-def render_system_prompt(state: AgentState) -> str:
-    """Render the system prompt template with dynamic context."""
-    template = _jinja_env.get_template("system.md.j2")
-    clock = state.get("clock") or get_clock().now()
-    principal = state.get("principal")
-    dynamic_context = state.get("dynamic_context") or {}
-
-    role_val = principal.role.value if principal else "guest"
-    p_id = str(principal.customer_id) if principal and principal.customer_id else "guest"
-
-    active_action = dynamic_context.get("active_pending_action")
-
-    return template.render(
-        store_name="ShopLab",
-        procedures=_ALL_PROCEDURES,
-        current_time=clock.strftime("%d/%m/%Y %H:%M:%S UTC"),
-        principal_role=role_val,
-        principal_id=p_id,
-        active_proposal=active_action,
-        active_cases=None,
+async def _synthesize_final(
+    llm: Any, sys_msg: SystemMessage, working: list[BaseMessage], timeout_s: float
+) -> AIMessage | None:
+    """Ask the tool-less model for a final answer from the tool results already gathered."""
+    instruction = HumanMessage(
+        content=(
+            "[HỆ THỐNG - không phải lời khách] Hãy trả lời khách đầy đủ, rõ ràng, lịch sự chỉ dựa trên "
+            "kết quả công cụ đã có. Không gọi thêm công cụ. Nếu thiếu dữ liệu, nói rõ phần còn thiếu."
+        )
     )
+    try:
+        resp = await asyncio.wait_for(
+            llm.ainvoke([sys_msg, *working, instruction]), timeout=timeout_s
+        )
+    except Exception as exc:
+        logger.warning("synthesis_failed error=%s", exc)
+        return None
+    final = _normalize_ai_message(resp)
+    final.tool_calls = []
+    return final if extract_text_content(final.content).strip() else None
 
 
 async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
-    """Execute LLM agent loop with bound tools up to max 6 iterations with timeout & loop prevention."""
+    """Run the bounded tool loop and report how the turn ended in `turn_status`."""
     session = config.get("configurable", {}).get("session")
     if not session or not isinstance(session, AsyncSession):
         raise ValueError("AsyncSession must be provided in config['configurable']['session']")
 
-    start_turn = time.perf_counter()
+    budget = LoopBudget.from_config()
+    started = time.monotonic()
     principal = state.get("principal") or Principal.guest()
     conv_id_str = state.get("conversation_id")
     conv_id = uuid.UUID(conv_id_str) if conv_id_str else uuid.uuid4()
 
-    retrieved_clauses = list(state.get("retrieved_clauses", []))
+    retrieved_clauses: list[str] = list(state.get("retrieved_clauses", []))
     proposed_actions: list[dict[str, Any]] = []
-
-    # Get authorized tools for this principal
-    registry = ToolRegistry(session)
-    tools = registry.get_tools(
+    tools = ToolRegistry(session).get_tools(
         principal=principal,
         conversation_id=conv_id,
         retrieved_clauses=retrieved_clauses,
@@ -156,144 +204,84 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
     )
     tools_by_name = {t.name: t for t in tools}
 
-    # Prepare chat model
     llm = get_chat_model("agent_primary")
-    if tools:
-        try:
-            llm_with_tools = llm.bind_tools(tools)
-        except Exception:
-            llm_with_tools = llm
-    else:
-        llm_with_tools = llm
-
-    # System prompt
-    sys_prompt = render_system_prompt(state)
-    sys_msg = SystemMessage(content=sys_prompt)
-
-    # Conversation history managed by token-aware context trimmer (budget <= 10.000 input tokens)
+    llm_with_tools = _bind_tools(llm, tools)
+    sys_msg = SystemMessage(content=render_system_prompt(state))
     history = list(state.get("messages", []))
-    working_messages = prune_messages_token_aware(history, max_input_tokens=10000)
+    working = prune_messages_token_aware(history, max_input_tokens=budget.max_input_tokens)
 
+    dynamic_context = state.get("dynamic_context") or {}
+    requirements = derive_requirements(_latest_user_text(history), tools_by_name)
     new_messages: list[BaseMessage] = []
-    recorded_tool_calls: list[dict[str, Any]] = []
+    recorded: list[dict[str, Any]] = []
     sig_counts: dict[str, int] = {}
+    steering_rounds = 0
+    turn_status = "incomplete"
+    unmet: list[ToolRequirement] = []
 
-    max_iterations = 6
-    for iteration in range(max_iterations):
-        call_input = [sys_msg, *working_messages]
-        ai_response = None
-
-        # Retry transient errors up to 2 times, then switch to agent_fallback
-        for attempt in range(3):
-            try:
-                ai_response = await llm_with_tools.ainvoke(call_input)
-                break
-            except Exception as e:
-                logger.warning("Lỗi gọi LLM lần %d (vòng %d): %s", attempt + 1, iteration + 1, e)
-                if attempt < 2:
-                    await asyncio.sleep(0.5 * (attempt + 1))
-                else:
-                    try:
-                        fallback_llm = get_chat_model("agent_fallback")
-                        if tools:
-                            try:
-                                fallback_with_tools = fallback_llm.bind_tools(tools)
-                            except Exception:
-                                fallback_with_tools = fallback_llm
-                        else:
-                            fallback_with_tools = fallback_llm
-                        ai_response = await fallback_with_tools.ainvoke(call_input)
-                    except Exception as fb_err:
-                        logger.error("Gọi fallback LLM cũng thất bại: %s", fb_err)
-                        ai_response = AIMessage(
-                            content="Dạ hiện tại hệ thống AI đang tạm thời gián đoạn kết nối. Quý khách vui lòng thử lại sau giây lát hoặc bấm nút gặp nhân viên để được hỗ trợ trực tiếp ạ."
-                        )
-
-        if not ai_response:
-            ai_response = AIMessage(
-                content="Dạ em có thể hỗ trợ quý khách thông tin gì thêm về đơn hàng hoặc chính sách cửa hàng ạ?"
-            )
-
-        if isinstance(ai_response, AIMessage) and not isinstance(ai_response.content, str):
-            ai_response.content = extract_text_content(ai_response.content)
-
-        working_messages.append(ai_response)
-        new_messages.append(ai_response)
-
-        # Check if the model called any tools
-        tool_calls = getattr(ai_response, "tool_calls", None)
-        if not tool_calls:
-            # Model responded with final text
+    for iteration in range(budget.max_iterations):
+        if time.monotonic() - started > budget.turn_timeout_s:
+            logger.error("turn_timeout elapsed_s=%.1f", time.monotonic() - started)
             break
 
-        # Execute each tool call
-        for call in tool_calls:
-            tool_name = call.get("name")
-            tool_args = call.get("args", {})
-            call_id = call.get("id") or str(uuid.uuid4())
+        ai = await _invoke_llm(llm_with_tools, tools, [sys_msg, *working])
+        if ai is None:
+            turn_status = "degraded"
+            break
+        working.append(ai)
 
-            target_tool = tools_by_name.get(tool_name)
-            if not target_tool:
-                res_content = {
-                    "error_code": "TOOL_NOT_FOUND",
-                    "message": f"Công cụ '{tool_name}' không tồn tại hoặc không được phép dùng cho vai trò của bạn.",
-                }
-            else:
-                # Anti-thrashing check
-                try:
-                    call_sig = f"{tool_name}:{json.dumps(tool_args, sort_keys=True)}"
-                except Exception:
-                    call_sig = f"{tool_name}:{str(tool_args)}"
+        if not ai.tool_calls:
+            unmet = unmet_requirements(requirements, recorded)
+            if not unmet:
+                new_messages.append(ai)
+                turn_status = "completed"
+                break
+            is_last = iteration == budget.max_iterations - 1
+            if steering_rounds >= _MAX_STEERING_ROUNDS or is_last:
+                turn_status = "requirements_unmet"
+                break
+            # The non-compliant answer stays out of persisted history.
+            steering_rounds += 1
+            working.append(HumanMessage(content=f"[HỆ THỐNG - không phải lời khách]\n{steering_message(unmet)}"))
+            continue
 
-                sig_counts[call_sig] = sig_counts.get(call_sig, 0) + 1
-                if sig_counts[call_sig] > 2:
-                    res_content = {
-                        "error_code": "DUPLICATE_CALL",
-                        "message": f"Công cụ '{tool_name}' đã được gọi trước đó với cùng tham số. Vui lòng sử dụng thông tin đã có để giải đáp hoặc hỏi thêm thông tin từ khách hàng.",
-                    }
-                else:
-                    # Execute tool with strict 12-second timeout
-                    try:
-                        res_content = await asyncio.wait_for(target_tool.ainvoke(tool_args), timeout=12.0)
-                    except TimeoutError:
-                        logger.error("Công cụ '%s' hết thời gian chờ (12s)", tool_name)
-                        res_content = {
-                            "error_code": "TOOL_TIMEOUT",
-                            "message": f"Công cụ '{tool_name}' phản hồi quá lâu (hơn 12s).",
-                        }
-                    except Exception as e:
-                        logger.warning("Lỗi thực thi công cụ '%s': %s", tool_name, e)
-                        res_content = {"error_code": "TOOL_EXECUTION_ERROR", "message": str(e)}
-
-            recorded_tool_calls.append({
-                "tool": tool_name,
-                "args": tool_args,
-                "result": res_content,
-            })
-
+        new_messages.append(ai)
+        for call in ai.tool_calls:
+            grounding = GroundingContext([*history, *new_messages], recent_order_codes(dynamic_context))
+            result = await _run_tool_call(call, tools_by_name, sig_counts, budget.tool_timeout_s, grounding)
+            recorded.append({"tool": call.get("name"), "args": call.get("args", {}), "result": result})
             tool_msg = ToolMessage(
-                content=json.dumps(res_content, ensure_ascii=False) if not isinstance(res_content, str) else res_content,
-                name=tool_name,
-                tool_call_id=call_id,
+                content=serialize_result(result),
+                name=call.get("name"),
+                tool_call_id=call.get("id") or str(uuid.uuid4()),
             )
-            working_messages.append(tool_msg)
+            working.append(tool_msg)
             new_messages.append(tool_msg)
 
-    elapsed = time.perf_counter() - start_turn
+    if turn_status == "incomplete" and recorded:
+        final = await _synthesize_final(llm, sys_msg, working, budget.synthesis_timeout_s)
+        if final is not None:
+            unmet = unmet_requirements(requirements, recorded)
+            if unmet:
+                turn_status = "requirements_unmet"
+            else:
+                new_messages.append(final)
+                turn_status = "synthesized"
+    if turn_status == "incomplete":
+        turn_status = "degraded"
+
     logger.info(
-        "Agent turn completed | conv_id=%s | tools_called=%d | duration=%.2fs",
-        conv_id_str,
-        len(recorded_tool_calls),
-        elapsed,
+        "agent_turn_done conv_id=%s status=%s tools=%d unmet=%d duration_s=%.2f",
+        conv_id_str, turn_status, len(recorded), len(unmet), time.monotonic() - started,
     )
 
     update: dict[str, Any] = {
         "messages": new_messages,
-        "retrieved_clauses": list(set(retrieved_clauses)),
-        "tool_calls": recorded_tool_calls,
+        "retrieved_clauses": sorted(set(retrieved_clauses)),
+        "tool_calls": recorded,
+        "turn_status": turn_status,
+        "unmet_requirements": [r.key for r in unmet] if turn_status == "requirements_unmet" else [],
     }
-
     if proposed_actions:
         update["pending_action"] = proposed_actions[-1]
-
     return update

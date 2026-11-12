@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.infra.db.tables import PolicyChunkModel
@@ -23,10 +23,33 @@ def _cosine_similarity(v1: list[float], v2: list[float]) -> float:
     return max(0.0, dot)
 
 
-class HybridRetriever:
-    """Retrieves top-k relevant policy clauses using BM25 lexical + Cosine semantic RRF."""
+def _format_datetime(dt: Any) -> str | None:
+    """Safely format an optional datetime or string into ISO string."""
+    if dt is None:
+        return None
+    if hasattr(dt, "isoformat"):
+        return str(dt.isoformat())
+    return str(dt)
 
-    def __init__(self, session: AsyncSession | None = None) -> None:
+
+class PolicyIndexUnavailableError(RuntimeError):
+    """The policy index holds no clauses at all: retrieval cannot say anything about policy.
+
+    This is different from "no relevant evidence", which means the index works but nothing
+    in it answers the question.
+    """
+
+
+class HybridRetriever:
+    """Retrieves top-k relevant policy clauses using BM25 lexical + Cosine semantic RRF.
+
+    Production code passes a database session. `in_memory=True` is an explicit offline mode for
+    benchmarks; it is never selected implicitly when a database call fails.
+    """
+
+    def __init__(self, session: AsyncSession | None = None, *, in_memory: bool = False) -> None:
+        if session is None and not in_memory:
+            raise ValueError("HybridRetriever needs a database session, or in_memory=True for offline benchmarks")
         self.session = session
         self.embedder = get_embedding_provider()
         self._in_memory_cache: list[dict[str, Any]] | None = None
@@ -74,31 +97,33 @@ class HybridRetriever:
         return self._in_memory_cache
 
     async def _fetch_chunks(self, as_of: datetime | None = None) -> list[dict[str, Any]]:
-        """Fetch policy chunks from DB, or fallback to in-memory generated clauses."""
+        """Fetch policy chunks from the database, or from the generated clauses in offline mode."""
         if self.session is not None:
-            try:
-                stmt = select(PolicyChunkModel)
-                if as_of:
-                    stmt = stmt.where(
-                        PolicyChunkModel.effective_from <= as_of,
-                        (PolicyChunkModel.effective_to.is_(None) | (PolicyChunkModel.effective_to > as_of)),
-                    )
-                res = await self.session.execute(stmt)
-                db_chunks = res.scalars().all()
-                if db_chunks:
-                    return [
-                        {
-                            "clause_id": c.clause_id,
-                            "topic": c.topic,
-                            "text": c.text,
-                            "text_unaccent": c.text_unaccent,
-                            "tokens": tokenize_unaccent(c.text_unaccent),
-                            "embedding": c.embedding,
-                        }
-                        for c in db_chunks
-                    ]
-            except Exception:
-                pass
+            total = (await self.session.execute(select(func.count()).select_from(PolicyChunkModel))).scalar_one()
+            if total == 0:
+                raise PolicyIndexUnavailableError("policy_chunks is empty: run the policy indexer")
+            stmt = select(PolicyChunkModel)
+            if as_of:
+                stmt = stmt.where(
+                    PolicyChunkModel.effective_from <= as_of,
+                    (PolicyChunkModel.effective_to.is_(None) | (PolicyChunkModel.effective_to > as_of)),
+                )
+            res = await self.session.execute(stmt)
+            db_chunks = res.scalars().all()
+            return [
+                {
+                    "clause_id": c.clause_id,
+                    "topic": c.topic,
+                    "version": c.version,
+                    "effective_from": _format_datetime(c.effective_from),
+                    "effective_to": _format_datetime(c.effective_to),
+                    "text": c.text,
+                    "text_unaccent": c.text_unaccent,
+                    "tokens": tokenize_unaccent(c.text_unaccent),
+                    "embedding": c.embedding,
+                }
+                for c in db_chunks
+            ]
 
         return self._get_in_memory_chunks(as_of=as_of)
 
@@ -126,9 +151,12 @@ class HybridRetriever:
 
         # 1. Lexical Scoring (BM25 token overlap + exact match boost)
         lexical_scores = []
+        max_overlap = 0
         for idx, c in enumerate(chunks):
             c_tokens = set(c["tokens"])
             overlap = len(query_tokens.intersection(c_tokens))
+            if overlap > max_overlap:
+                max_overlap = overlap
             bonus = 0.0
             # Phrase / exact substring match boost
             if query_unaccent in c["text_unaccent"]:
@@ -136,15 +164,22 @@ class HybridRetriever:
             score = overlap + bonus
             lexical_scores.append((idx, score))
 
+        # 2. Semantic Scoring (Cosine similarity)
+        semantic_scores = []
+        max_sim = 0.0
+        for idx, c in enumerate(chunks):
+            sim = _cosine_similarity(query_emb, c["embedding"])
+            if sim > max_sim:
+                max_sim = sim
+            semantic_scores.append((idx, sim))
+
+        # If zero token overlap and no phrase match, treat as no relevant evidence
+        if max_overlap == 0:
+            return []
+
         # Sort lexical descending
         lexical_scores.sort(key=lambda x: x[1], reverse=True)
         lexical_ranks = {item[0]: rank for rank, item in enumerate(lexical_scores)}
-
-        # 2. Semantic Scoring (Cosine similarity)
-        semantic_scores = []
-        for idx, c in enumerate(chunks):
-            sim = _cosine_similarity(query_emb, c["embedding"])
-            semantic_scores.append((idx, sim))
 
         # Sort semantic descending
         semantic_scores.sort(key=lambda x: x[1], reverse=True)
@@ -167,6 +202,9 @@ class HybridRetriever:
             results.append({
                 "clause_id": c["clause_id"],
                 "topic": c["topic"],
+                "version": c["version"],
+                "effective_from": _format_datetime(c.get("effective_from")),
+                "effective_to": _format_datetime(c.get("effective_to")),
                 "text": c["text"],
                 "score": round(score, 4),
             })

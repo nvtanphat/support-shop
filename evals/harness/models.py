@@ -62,6 +62,15 @@ class RequiredFact:
     note: str = ""
 
 
+# Assertion vocabulary. Anything outside these sets is a scenario error, never a silent pass.
+SUPPORTED_REQUIRED_FACT_KINDS = frozenset({"amount_vnd", "clause", "status", "pattern", "asks_for"})
+SUPPORTED_FORBIDDEN_KINDS = frozenset({"claim", "pattern", "tool"})
+SUPPORTED_DB_TABLES = frozenset({"orders", "return_requests", "refunds", "approval_requests", "tickets"})
+SUPPORTED_EXPECT_KEYS = frozenset(
+    {"db", "required_facts", "forbidden", "max_tool_calls", "required_tools", "required_tool_args", "tool_ordering"}
+)
+
+
 @dataclass
 class ForbiddenPattern:
     kind: str  # claim | pattern | tool
@@ -74,6 +83,9 @@ class ScenarioExpectation:
     required_facts: list[RequiredFact] = field(default_factory=list)
     forbidden: list[ForbiddenPattern] = field(default_factory=list)
     max_tool_calls: int = 10
+    required_tools: list[str] = field(default_factory=list)
+    required_tool_args: dict[str, dict[str, Any]] = field(default_factory=dict)
+    tool_ordering: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass

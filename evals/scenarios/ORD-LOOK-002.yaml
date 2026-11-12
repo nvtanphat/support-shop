@@ -32,3 +32,8 @@ expect:
   - kind: status
     value: delivered
   forbidden: []
+  required_tools:
+  - get_order
+  required_tool_args:
+    get_order:
+      order_code: SL-100002

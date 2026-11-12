@@ -41,7 +41,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           className="inline-flex items-center gap-1 mx-1 px-2 py-0.5 bg-purple-100 hover:bg-purple-200 text-purple-800 text-xs font-mono font-semibold rounded-md border border-purple-300 transition shadow-2xs"
           title="Bấm để xem nguyên văn điều khoản chính sách"
         >
-          <ShieldCheck className="w-3 h-3 text-purple-600" />
+          <ShieldCheck className="w-3 h-3 text-purple-700" />
           <span>[{clauseId}]</span>
         </button>
       );
@@ -68,10 +68,14 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     );
   };
 
+  const timeLabel = message.created_at
+    ? new Date(message.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+    : '';
+
   return (
-    <div className={`flex gap-3 items-end ${isCust ? 'justify-end' : 'justify-start'}`}>
+    <div className={`flex gap-3 items-start ${isCust ? 'justify-end' : 'justify-start'}`}>
       {!isCust && (
-        <div className="w-10 h-10 rounded-2xl overflow-hidden flex items-center justify-center flex-shrink-0 shadow-sm mb-1 bg-purple-50 border border-purple-100">
+        <div className="w-12 h-12 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0 bg-white shadow-pill">
           {isAsst ? (
             <img
               src="/images/avatars/ai-assistant-avatar.png"
@@ -90,43 +94,40 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         </div>
       )}
 
-      <div className="max-w-[85%] md:max-w-[80%] space-y-1">
+      <div className="max-w-[90%] md:max-w-[85%] space-y-1">
         {!isCust && (
-          <div className="flex items-center gap-2 px-1 text-xs">
-            <span className="font-bold text-slate-900">
+          <div className="flex items-center gap-2 px-1 text-sm">
+            <span className="font-bold text-slate-900 text-base">
               {isStaff ? 'Chuyên viên ShopSupport' : 'ShopSupport AI'}
             </span>
             {isAsst && (
-              <span className="bg-purple-600 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-md flex items-center gap-1">
+              <span className="bg-purple-700 text-white text-xs font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
                 <Sparkles className="w-2.5 h-2.5" />
                 <span>AI</span>
               </span>
             )}
+            {timeLabel && <span className="ml-auto text-sm text-slate-600">{timeLabel}</span>}
           </div>
         )}
 
         <div
-          className={`p-4 rounded-3xl text-sm ${
+          className={`px-5 py-3 rounded-3xl text-[15px] leading-relaxed ${
             isCust
-              ? 'bg-purple-50 text-slate-900 border border-purple-200/70 rounded-br-xs shadow-xs'
+              ? 'bg-[#EEE8FC] text-slate-900 rounded-br-lg'
               : isStaff
               ? 'bg-indigo-50 text-indigo-950 border border-indigo-200 rounded-bl-xs shadow-xs'
-              : 'bg-white text-slate-800 border border-slate-200/80 rounded-bl-xs shadow-xs'
+              : 'bg-transparent text-slate-800 px-1 py-1'
           }`}
         >
           {renderContent()}
+          {isCust && timeLabel && <div className="text-right text-sm text-purple-700/80 mt-0.5">{timeLabel}</div>}
         </div>
 
-        <div className={`text-[10px] text-slate-400 px-2 ${isCust ? 'text-right' : 'text-left'}`}>
-          {message.created_at
-            ? new Date(message.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-            : ''}
-        </div>
       </div>
 
       {isCust && (
-        <div className="w-10 h-10 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center flex-shrink-0 border border-purple-200 mb-1">
-          <User className="w-5 h-5" />
+        <div className="w-14 h-14 rounded-2xl bg-[#EEE8FC] text-purple-700 flex items-center justify-center flex-shrink-0">
+          <User className="w-7 h-7" strokeWidth={1.5} />
         </div>
       )}
     </div>

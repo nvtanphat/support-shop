@@ -1,0 +1,22 @@
+# ADR 018 - Điều khiển lượt hội thoại của Agent (tool-first, kết thúc xác định, slot grounding)
+
+Trạng thái: chấp nhận. Giữ nguyên kiến trúc single-agent LangGraph 5 node (ADR 004); ADR này chỉ bổ sung cơ chế kiểm soát bên trong node `agent` và `verify_output`.
+
+## Bối cảnh
+
+Audit phát hiện: system prompt là hàng rào duy nhất cho việc gọi tool; vòng lặp cuối có thể kết thúc bằng tool call hoặc nội dung rỗng và vẫn được `verify_output` phát đi; tham số tool có thể do model suy đoán; retriever từng nuốt lỗi DB và lùi về dữ liệu in-memory; scenario eval có assertion không bao giờ được chạy.
+
+## Quyết định
+
+1. **Tool-first xác định** (`agent/tool_requirements.py`). Từ tin nhắn mới nhất của khách suy ra các tool bắt buộc: yêu cầu gặp nhân viên thì `escalate_to_human` (phải tạo được ticket), nhắc mã đơn thì một tool dữ liệu đơn khớp đúng mã, hỏi chính sách (không kèm mã đơn) thì `search_policy` hoặc `check_return_eligibility`. Model trả lời mà chưa đủ tool thì bị nhắc tối đa 2 lần; câu trả lời không tuân thủ không vào lịch sử. Hết lượt nhắc mà vẫn thiếu thì `turn_status = requirements_unmet` và khách nhận câu an toàn, không có lời hứa suông. Câu chào hay câu hỏi chung không bị ép gọi tool.
+2. **Kết thúc xác định**. `turn_status` thuộc `completed | synthesized | requirements_unmet | degraded`. Hết `max_agent_iterations` khi tool result chưa được tổng hợp thì gọi một lượt tổng hợp không tool; lỗi hoặc timeout thì `degraded`. `verify_output` không bao giờ lấy AIMessage của lượt trước, từ chối tin nhắn còn `tool_calls` hoặc rỗng. Ngân sách (`max_agent_iterations`, `turn_timeout_s`, `tool_timeout_s`, `synthesis_timeout_s`, `max_input_tokens_per_turn`) nằm trong `config/models.yaml`.
+3. **Slot grounding** (`agent/slot_guard.py`). `order_code` phải xuất hiện trong lời khách, danh sách đơn gần đây (nạp từ DB) hoặc kết quả tool trước đó; `item_id` phải có trong kết quả `get_order`; `reason_code`, `resolution` phải thuộc enum nghiệp vụ; đổi hàng cần `exchange_sku`. Vi phạm trả `MISSING_SLOT` kèm hướng dẫn hỏi khách, tool không chạy.
+4. **RAG**. `HybridRetriever` bắt buộc có session hoặc `in_memory=True` (chế độ benchmark offline tường minh). Lỗi DB truyền lên tool thành `db_error`; chỉ mục rỗng là `index_unavailable`; không có điều khoản phù hợp là `no_evidence`. `as_of` mặc định là clock hiện tại, `as_of` sai là lỗi `INVALID_AS_OF`. Mỗi kết quả mang `version`, `effective_from`, `effective_to`.
+5. **Bằng chứng số liệu**. `verify_output` chặn số kèm đơn vị (đ, k, ngày, %, giờ...) không xuất hiện trong tool result, lời khách hay context đã nạp.
+6. **Trạng thái theo lượt**. `load_context` đặt lại `retrieved_clauses`, `tool_calls`, `turn_status`, `verified_output`, `error`; `persist_emit` ghi lại bản đã xác minh vào lịch sử hội thoại bằng message cùng `id` (hoặc thêm message mới khi lượt không có câu trả lời cuối).
+7. **Eval**. Assertion lạ ở `required_facts`, `forbidden`, `db`, hoặc khóa `expect` làm scenario không nạp được hoặc làm lượt chấm FAIL. Thêm `required_tools`, `required_tool_args`, `tool_ordering`, `asks_for`, và kiểm tra `order` của return request.
+
+## Hạn chế đã biết
+
+- Bộ nhúng từ vựng băm (`FastLexicalEmbedding`) không tách được câu hỏi ngoài phạm vi khỏi câu hỏi trong phạm vi bằng ngưỡng điểm (đo trên 80 câu hỏi dương và 20 câu âm, các ngưỡng độ phủ từ và độ hiếm của token đều làm mất câu dương hoặc không loại được câu âm). Việc từ chối câu hỏi ngoài phạm vi vì vậy dựa vào model, prompt và kiểm tra số liệu, và được đo ở eval đầu-cuối chứ không ở tầng retrieval.
+- Slot `reason_code`/`resolution` chỉ được kiểm tra thuộc enum, chưa kiểm tra được khách có thực sự nói lý do đó.

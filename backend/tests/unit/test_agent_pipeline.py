@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import ValidationError
 from shopagent.agent.graph import build_agent_graph
 from shopagent.agent.nodes.persist_emit import persist_emit_node
@@ -64,13 +64,39 @@ async def test_screen_input_adversarial_injection():
 async def test_verify_output_valid_citations():
     state: AgentState = {
         "messages": [
-            AIMessage(content="Cửa hàng hỗ trợ đổi trả hàng lỗi theo chính sách [POL-RETURN-01] trong 15 ngày.")
+            ToolMessage(
+                content='{"results": [{"clause_id": "POL-RETURN-01", "text": "đổi trả hàng lỗi trong 15 ngày"}]}',
+                tool_call_id="t1",
+            ),
+            AIMessage(content="Cửa hàng hỗ trợ đổi trả hàng lỗi theo chính sách [POL-RETURN-01] trong 15 ngày."),
         ],
         "retrieved_clauses": ["POL-RETURN-01"],
     }
     res = verify_output_node(state)
     assert "error" not in res
     assert "[POL-RETURN-01]" in res["verified_output"]
+
+
+def test_verify_output_blocks_number_without_source() -> None:
+    state: AgentState = {
+        "messages": [AIMessage(content="Hàng lỗi được đổi trả trong 45 ngày và hoàn 1.200.000đ.")],
+        "retrieved_clauses": [],
+        "tool_calls": [{"tool": "search_policy", "result": {"results": [{"text": "đổi trả trong 15 ngày"}]}}],
+    }
+    res = verify_output_node(state)
+    assert "UNSUPPORTED_NUMBER" in res["error"]
+    assert "45" not in res["verified_output"]
+
+
+def test_verify_output_accepts_numbers_from_tool_results_and_customer() -> None:
+    state: AgentState = {
+        "messages": [
+            HumanMessage(content="Đơn của mình 440k đúng không?"),
+            AIMessage(content="Dạ khoản hoàn là 440.000 đ, gửi hàng trong 7 ngày ạ."),
+        ],
+        "tool_calls": [{"tool": "check_return_eligibility", "result": {"refund": 440000, "ship_back_days": 7}}],
+    }
+    assert "error" not in verify_output_node(state)
 
 
 @pytest.mark.asyncio
@@ -85,7 +111,8 @@ async def test_verify_output_unverified_citation_blocked():
     assert "error" in res
     assert "Verification failed" in res["error"]
     # Replaced with safe fallback
-    assert "chuyên viên hỗ trợ" in res["verified_output"]
+    assert "không đưa ra thông tin chưa kiểm chứng" in res["verified_output"]
+    assert "POL-" not in res["verified_output"]
 
 
 @pytest.mark.asyncio
@@ -99,7 +126,8 @@ async def test_verify_output_false_completion_claim_blocked():
     res = verify_output_node(state)
     assert "error" in res
     assert "FALSE_COMPLETION_CLAIM" in res["error"]
-    assert "chuyên viên hỗ trợ" in res["verified_output"]
+    assert "không đưa ra thông tin chưa kiểm chứng" in res["verified_output"]
+    assert "POL-" not in res["verified_output"]
 
 
 @pytest.mark.asyncio
@@ -114,7 +142,7 @@ async def test_verify_output_pii_blocking():
     res_card = verify_output_node(state_card)
     assert "error" in res_card
     assert "PII_LEAK" in res_card["error"]
-    assert "chuyên viên hỗ trợ" in res_card["verified_output"]
+    assert "không đưa ra thông tin chưa kiểm chứng" in res_card["verified_output"]
 
     # Citizen ID (CCCD 12 digits)
     state_cccd: AgentState = {
@@ -352,7 +380,7 @@ async def test_persist_emit_turn_idempotency_and_multi_turn_repeated_content():
 async def test_token_aware_context_pruning_preserves_tool_call_pairs():
     """Verify prune_messages_token_aware never separates an AIMessage tool call from its ToolMessage."""
     from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-    from shopagent.agent.nodes.agent import prune_messages_token_aware
+    from shopagent.agent.context_window import prune_messages_token_aware
 
     # Create a history with 3 complete turns, including a tool exchange in turn 2
     tc_id = "call_abc123"
@@ -398,7 +426,7 @@ async def test_postgres_checkpointer_force_raise_in_production():
 @pytest.mark.asyncio
 async def test_rag_as_of_temporal_filtering():
     """Verify HybridRetriever with as_of timestamp filters policy chunks according to validity window."""
-    retriever = HybridRetriever()
+    retriever = HybridRetriever(in_memory=True)
 
     # Query with future timestamp
     dt_future = datetime(2026, 11, 15, tzinfo=UTC)
@@ -410,3 +438,84 @@ async def test_rag_as_of_temporal_filtering():
     res_ancient = await retriever.retrieve("đổi trả", top_k=3, as_of=dt_ancient)
     # Must be empty because policies were not effective in 2020
     assert len(res_ancient) == 0
+
+
+@pytest.mark.asyncio
+async def test_verify_output_never_returns_empty_string():
+    """Verify verify_output_node provides a safe fallback rather than returning empty output."""
+    state_empty_content: AgentState = {
+        "messages": [AIMessage(content="")],
+        "retrieved_clauses": [],
+    }
+    res1 = verify_output_node(state_empty_content)
+    assert res1.get("verified_output")
+    assert len(res1["verified_output"].strip()) > 0
+
+    state_no_ai_msg: AgentState = {
+        "messages": [HumanMessage(content="Xin chào")],
+        "retrieved_clauses": [],
+    }
+    res2 = verify_output_node(state_no_ai_msg)
+    assert res2.get("verified_output")
+    assert len(res2["verified_output"].strip()) > 0
+
+
+@pytest.mark.asyncio
+async def test_verify_output_blocks_unexecuted_verbal_escalation_promise():
+    """Verify unfulfilled verbal escalation promise is blocked if escalate_to_human wasn't called."""
+    state: AgentState = {
+        "messages": [
+            AIMessage(content="Em đã chuyển thông tin cho chuyên viên hỗ trợ rồi ạ.")
+        ],
+        "retrieved_clauses": [],
+        "tool_calls": [],  # escalate_to_human was never called!
+    }
+    res = verify_output_node(state)
+    assert "error" in res
+    assert "VERBAL_PROMISE_WITHOUT_TOOL" in res["error"] or "FALSE_COMPLETION_CLAIM" in res["error"]
+
+
+@pytest.mark.asyncio
+async def test_recent_orders_and_policy_version_in_system_prompt():
+    """Verify render_system_prompt renders recent orders and policy version."""
+    from shopagent.agent.prompt import render_system_prompt
+
+    state: AgentState = {
+        "messages": [],
+        "principal": Principal.authenticated_customer(customer_id=uuid.uuid4()),
+        "dynamic_context": {
+            "policy_version": "2026-11-01",
+            "recent_orders": [
+                {
+                    "code": "SL-999999",
+                    "status": "delivered",
+                    "total": 350000,
+                    "placed_at": "2026-11-10T08:00:00",
+                }
+            ],
+        },
+    }
+    prompt = render_system_prompt(state)
+    assert "SL-999999" in prompt
+    assert "2026-11-01" in prompt
+    assert "Đơn thứ 1" in prompt or "đơn thứ nhất" in prompt or "SL-999999" in prompt
+
+
+
+@pytest.mark.asyncio
+async def test_system_prompt_carries_no_customer_identity() -> None:
+    """The model needs order codes and status, not who the customer is."""
+    from shopagent.agent.prompt import render_system_prompt
+
+    customer_id = uuid.uuid4()
+    state: AgentState = {
+        "messages": [],
+        "principal": Principal.authenticated_customer(customer_id=customer_id),
+        "dynamic_context": {
+            "customer": {"id": str(customer_id), "full_name": "Nguyễn Văn Riêng Tư", "tier": "gold"},
+            "recent_orders": [],
+        },
+    }
+    prompt = render_system_prompt(state)
+    assert str(customer_id) not in prompt
+    assert "Riêng Tư" not in prompt

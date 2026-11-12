@@ -23,6 +23,7 @@ from shopagent.infra.db.tables import (
     ProductVariantModel,
     StaffUserModel,
 )
+from shopagent.rag.indexer import index_policies
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from evals.harness.graders import (
@@ -30,10 +31,15 @@ from evals.harness.graders import (
     grade_db_state,
     grade_forbidden_patterns,
     grade_required_facts,
+    grade_tool_execution,
 )
 from evals.harness.langgraph_agent import LangGraphAgent
 from evals.harness.metrics import EvalSummary, compute_eval_metrics
 from evals.harness.models import (
+    SUPPORTED_DB_TABLES,
+    SUPPORTED_EXPECT_KEYS,
+    SUPPORTED_FORBIDDEN_KINDS,
+    SUPPORTED_REQUIRED_FACT_KINDS,
     ForbiddenPattern,
     RequiredFact,
     Scenario,
@@ -100,11 +106,37 @@ def load_scenario_from_yaml(path: Path) -> Scenario:
         for fp in expect_data.get("forbidden", [])
     ]
 
+    ordering_raw = expect_data.get("tool_ordering", [])
+    tool_ordering = [
+        (item[0], item[1]) if isinstance(item, (list, tuple)) and len(item) == 2 else (item.get("first"), item.get("second"))
+        for item in ordering_raw
+    ]
+
+    unknown_keys = set(expect_data) - SUPPORTED_EXPECT_KEYS
+    unknown_tables = set(expect_data.get("db", {})) - SUPPORTED_DB_TABLES
+    unknown_facts = {rf.kind for rf in req_facts} - SUPPORTED_REQUIRED_FACT_KINDS
+    unknown_forbidden = {fp.kind for fp in forbidden_patterns} - SUPPORTED_FORBIDDEN_KINDS
+    problems = [
+        f"{label}: {sorted(bad)}"
+        for label, bad in (
+            ("unknown expect keys", unknown_keys),
+            ("unknown db tables", unknown_tables),
+            ("unknown required_fact kinds", unknown_facts),
+            ("unknown forbidden kinds", unknown_forbidden),
+        )
+        if bad
+    ]
+    if problems:
+        raise ValueError(f"Scenario {data.get('id', path.name)} has unsupported assertions: {'; '.join(problems)}")
+
     expect = ScenarioExpectation(
         db=expect_data.get("db", {}),
         required_facts=req_facts,
         forbidden=forbidden_patterns,
         max_tool_calls=expect_data.get("max_tool_calls", 10),
+        required_tools=expect_data.get("required_tools", []),
+        required_tool_args=expect_data.get("required_tool_args", {}),
+        tool_ordering=tool_ordering,
     )
 
     return Scenario(
@@ -126,6 +158,9 @@ async def setup_scenario_fixtures(
     clock_dt: datetime,
 ) -> tuple[Principal, list[OrderModel]]:
     """Insert scenario-specific fixture records into database."""
+    # 0. Index policies into DB
+    await index_policies(session)
+
     # 1. Staff users
     agent_staff = StaffUserModel(
         id=uuid.UUID(int=1),
@@ -395,8 +430,15 @@ async def run_scenario(
             all_tool_calls, conversation_events, assistant_replies
         )
 
-        all_errors = db_errors + facts_errors + forb_errors
-        passed = db_passed and facts_passed and forb_passed and inv_passed
+        tools_passed, tools_errors = grade_tool_execution(
+            tool_calls=all_tool_calls,
+            required_tools=scenario.expect.required_tools,
+            required_args=scenario.expect.required_tool_args,
+            ordering_constraints=scenario.expect.tool_ordering,
+        )
+
+        all_errors = db_errors + facts_errors + forb_errors + tools_errors + inv_errors
+        passed = db_passed and facts_passed and forb_passed and inv_passed and tools_passed
 
         return ScenarioRunResult(
             scenario_id=scenario.id,

@@ -6,7 +6,7 @@ import logging
 import uuid
 from typing import Any
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -196,4 +196,25 @@ async def persist_emit_node(state: AgentState, config: RunnableConfig) -> dict[s
             logger.error("Failed to persist turn: %s", e, exc_info=True)
             raise
 
-    return {"verified_output": verified_output}
+    update: dict[str, Any] = {"verified_output": verified_output}
+    history_message = _history_message_for(state.get("messages", []), verified_output)
+    if history_message is not None:
+        update["messages"] = [history_message]
+    return update
+
+
+def _history_message_for(messages: list[BaseMessage], verified_output: str) -> AIMessage | None:
+    """Return the message that makes the conversation history match what the customer saw.
+
+    A completed turn ends with a final AIMessage: replace it (same id) when verification changed
+    its text. Any other ending (deflection, degraded turn, unmet requirement) has no customer-facing
+    assistant message yet, so one is appended.
+    """
+    if not verified_output:
+        return None
+    last = messages[-1] if messages else None
+    if isinstance(last, AIMessage) and not last.tool_calls:
+        if last.content == verified_output:
+            return None
+        return AIMessage(content=verified_output, id=last.id)
+    return AIMessage(content=verified_output, id=f"ai-{uuid.uuid4()}")

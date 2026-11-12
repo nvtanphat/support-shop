@@ -155,7 +155,7 @@ export const GuestOtpModal: React.FC<GuestOtpModalProps> = ({
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-md shadow-purple-200"
+              className="w-full py-2.5 bg-purple-700 hover:bg-purple-700 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-md shadow-purple-200"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Gửi mã OTP qua SMS'}
             </button>
@@ -179,7 +179,7 @@ export const GuestOtpModal: React.FC<GuestOtpModalProps> = ({
 
             {otp && (
               <div className="bg-purple-50 border border-purple-100 rounded-xl p-2.5 text-xs text-purple-700 flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-purple-600 flex-shrink-0" />
+                <Sparkles className="w-4 h-4 text-purple-700 flex-shrink-0" />
                 <span>Mã OTP mô phỏng đã được nạp tự động: <strong>{otp}</strong></span>
               </div>
             )}
@@ -195,7 +195,7 @@ export const GuestOtpModal: React.FC<GuestOtpModalProps> = ({
               <button
                 type="submit"
                 disabled={loading || otp.length < 6}
-                className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-md shadow-purple-200"
+                className="flex-1 py-2.5 bg-purple-700 hover:bg-purple-700 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-md shadow-purple-200"
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Xác thực & Xem đơn'}
               </button>

@@ -36,3 +36,8 @@ expect:
   forbidden:
   - kind: claim
     pattern: đã giao
+  required_tools:
+  - get_order
+  required_tool_args:
+    get_order:
+      order_code: SL-100001

@@ -48,7 +48,7 @@ export const CitationModal: React.FC<CitationModalProps> = ({ clauseId, onClose 
               <Calendar className="w-3.5 h-3.5 text-purple-500" /> Phiên bản: 01/11/2026
             </span>
             <span className="flex items-center gap-1 text-purple-700 font-semibold">
-              <ShieldCheck className="w-3.5 h-3.5 text-purple-600" /> Bất biến S4/S5 xác thực
+              <ShieldCheck className="w-3.5 h-3.5 text-purple-700" /> Bất biến S4/S5 xác thực
             </span>
           </div>
         </div>
@@ -56,7 +56,7 @@ export const CitationModal: React.FC<CitationModalProps> = ({ clauseId, onClose 
         <div className="flex justify-end">
           <button
             onClick={onClose}
-            className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold shadow-md shadow-purple-200 transition"
+            className="px-5 py-2.5 bg-purple-700 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold shadow-md shadow-purple-200 transition"
           >
             Đã hiểu
           </button>

@@ -98,7 +98,7 @@ disallow_untyped_defs = true
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["backend/tests"]
-pythonpath = ["backend/src"]
+pythonpath = ["backend/src", "."]
 
 [tool.poe.tasks]
 test = "pytest backend/tests"

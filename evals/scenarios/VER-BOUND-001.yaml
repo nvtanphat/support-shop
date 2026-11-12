@@ -39,3 +39,13 @@ expect:
   forbidden:
   - kind: claim
     pattern: đã hết hạn
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - [check_return_eligibility, propose_return]
+  required_tool_args:
+    propose_return:
+      order_code: SL-800001
+      reason_code: change_of_mind

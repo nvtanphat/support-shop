@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.agent.state import AgentState
 from shopagent.core.clock import get_clock
+from shopagent.core.config import get_rules_config
 from shopagent.infra.db.tables import CustomerModel, OrderModel, PendingActionModel
 
 
@@ -29,7 +30,7 @@ async def load_context_node(state: AgentState, config: RunnableConfig) -> dict[s
         "customer": None,
         "active_pending_action": None,
         "recent_orders": [],
-        "policy_version": "2026-11-01",
+        "policy_version": str(get_rules_config()["version"]),
     }
 
     if principal and principal.is_authenticated_customer and principal.customer_id:
@@ -41,7 +42,6 @@ async def load_context_node(state: AgentState, config: RunnableConfig) -> dict[s
                 "id": str(cust.id),
                 "full_name": cust.full_name,
                 "tier": cust.tier,
-                "email": cust.email,
             }
 
         # Active pending action in this conversation
@@ -97,4 +97,11 @@ async def load_context_node(state: AgentState, config: RunnableConfig) -> dict[s
         "dynamic_context": dynamic_context,
         "clock": clock,
         "pending_action": dynamic_context.get("active_pending_action"),
+        # Per-turn outputs are reset so nothing from the previous turn can leak into this one.
+        "retrieved_clauses": [],
+        "tool_calls": [],
+        "turn_status": "incomplete",
+        "unmet_requirements": [],
+        "verified_output": None,
+        "error": None,
     }

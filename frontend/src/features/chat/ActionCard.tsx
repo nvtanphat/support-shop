@@ -79,7 +79,7 @@ export const ActionCard: React.FC<ActionCardProps> = ({
     <div className="bg-white border-2 border-purple-400/90 rounded-2xl p-5 my-3 shadow-md transition-all">
       <div className="flex items-center justify-between border-b border-purple-100 pb-3 mb-3">
         <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse"></span>
+          <span className="w-2.5 h-2.5 rounded-full bg-purple-700 animate-pulse"></span>
           <h4 className="font-bold text-slate-900 text-sm md:text-base">
             {action.preview.title || 'Đề xuất xử lý'}
           </h4>
@@ -124,7 +124,7 @@ export const ActionCard: React.FC<ActionCardProps> = ({
       {/* Evidence & Approval Notices */}
       {action.preview.requires_evidence && isProposed && (
         <div className="bg-purple-50 text-purple-800 text-xs p-2.5 rounded-xl mb-3 flex items-start gap-2 border border-purple-200">
-          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-purple-600" />
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-purple-700" />
           <span>
             Yêu cầu cung cấp bằng chứng hình ảnh/video sản phẩm sau khi bấm xác nhận.
           </span>
@@ -151,7 +151,7 @@ export const ActionCard: React.FC<ActionCardProps> = ({
           <button
             onClick={handleConfirm}
             disabled={loading}
-            className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2.5 px-4 rounded-xl text-sm flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-md shadow-purple-200"
+            className="flex-1 bg-purple-700 hover:bg-purple-700 text-white font-semibold py-2.5 px-4 rounded-xl text-sm flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-md shadow-purple-200"
           >
             <CheckCircle2 className="w-4 h-4" />
             <span>Xác nhận</span>

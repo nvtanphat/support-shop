@@ -23,3 +23,5 @@ expect:
   forbidden:
   - kind: claim
     pattern: đã hoàn tiền
+  required_tools:
+  - search_policy

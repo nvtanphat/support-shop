@@ -285,16 +285,17 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
   };
 
   return (
-    <div className="flex gap-6 h-[calc(100vh-8.5rem)] w-full">
+    <div className="flex gap-6 h-[calc(100vh-7.5rem)] w-full">
       {/* Left/Center Column: Chat Window */}
-      <div className="flex-1 min-w-0 flex flex-col h-full bg-white rounded-3xl border border-purple-100/90 shadow-sm overflow-hidden">
+      <div className="flex-1 min-w-0 flex flex-col h-full bg-white/95 rounded-[28px] border border-[#E8E0FA] shadow-card overflow-hidden">
+        <HeroBanner
+          onQuickPrompt={executeSendMessage}
+          onOpenOtpModal={() => setIsOtpModalOpen(true)}
+          onEscalate={handleEscalate}
+        />
+
         {/* Messages Stream */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5">
-          <HeroBanner
-            onQuickPrompt={executeSendMessage}
-            onOpenOtpModal={() => setIsOtpModalOpen(true)}
-            onEscalate={handleEscalate}
-          />
+        <div className="flex-1 overflow-y-auto px-6 md:px-10 py-3 space-y-3">
 
           {messages.map((msg) => (
             <MessageItem

@@ -33,3 +33,8 @@ expect:
       status: cancelled
   required_facts: []
   forbidden: []
+  required_tools:
+  - propose_cancel_order
+  required_tool_args:
+    propose_cancel_order:
+      order_code: SL-200001

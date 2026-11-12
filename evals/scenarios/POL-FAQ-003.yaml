@@ -19,3 +19,5 @@ expect:
   - kind: status
     value: 1-3 ngày
   forbidden: []
+  required_tools:
+  - search_policy

@@ -31,5 +31,7 @@ expect:
   - kind: clause
     id: POL-RETURN-02
   forbidden:
+  - kind: tool
+    pattern: propose_return
   - kind: pattern
     pattern: tạo đề xuất thành công

@@ -22,6 +22,12 @@ interface OrderContextSidebarProps {
   onOpenOtp?: () => void;
 }
 
+const RELATED_POLICIES = [
+  { clauseId: 'POL-RET-ELIG', label: 'Điều kiện đổi trả' },
+  { clauseId: 'POL-REF-METH', label: 'Thời gian hoàn tiền' },
+  { clauseId: 'POL-CAN-PACK', label: 'Quy định hủy đơn' },
+] as const;
+
 export const OrderContextSidebar: React.FC<OrderContextSidebarProps> = ({
   orderCode,
   onQuickPrompt,
@@ -89,19 +95,19 @@ export const OrderContextSidebar: React.FC<OrderContextSidebarProps> = ({
       : order?.payment_method || '—';
 
   return (
-    <div className="w-80 xl:w-96 hidden lg:flex flex-col gap-5 h-full overflow-y-auto">
+    <div className="w-80 xl:w-[420px] hidden lg:flex flex-col gap-5 h-full overflow-y-auto">
       {/* Card 1: Dynamic Order Details */}
-      <div className="bg-white rounded-3xl p-5 border border-purple-100 shadow-sm space-y-4 relative">
+      <div className="bg-white/95 rounded-[28px] p-6 border border-[#ECE6FA] shadow-card space-y-4 relative">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Package className="w-5 h-5 text-purple-600" />
-            <h3 className="font-bold text-slate-900 text-sm">
+            <Package className="w-5 h-5 text-purple-700" />
+            <h3 className="font-bold text-slate-900 text-lg">
               Đơn hàng {orderCode}
             </h3>
           </div>
           {order && (
-            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold px-2.5 py-0.5 rounded-full flex items-center gap-1">
-              <Check className="w-3 h-3 stroke-[3]" />
+            <span className="bg-[#DDF6E5] text-[#15803D] text-sm font-bold px-3.5 py-1 rounded-full flex items-center gap-1.5">
+              <Check className="w-4 h-4 stroke-[3]" />
               <span>{statusStr}</span>
             </span>
           )}
@@ -109,14 +115,14 @@ export const OrderContextSidebar: React.FC<OrderContextSidebarProps> = ({
 
         {loading ? (
           <div className="py-8 flex flex-col items-center justify-center gap-2 text-slate-400">
-            <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
+            <Loader2 className="w-6 h-6 animate-spin text-purple-700" />
             <span className="text-xs">Đang tải thông tin đơn hàng...</span>
           </div>
         ) : order ? (
           <>
             {/* Real Product Row */}
-            <div className="flex items-center gap-3 pt-1">
-              <div className="w-14 h-14 rounded-2xl bg-purple-50 border border-purple-100 flex items-center justify-center p-1.5 flex-shrink-0 overflow-hidden">
+            <div className="flex items-center gap-3 pt-1 pb-4 border-b border-[#EEE8FB]">
+              <div className="w-16 h-16 rounded-2xl bg-white border border-[#ECE6FA] flex items-center justify-center p-1.5 flex-shrink-0 overflow-hidden">
                 <img
                   src="/images/products/wireless-headphones.png"
                   alt={productName}
@@ -124,40 +130,38 @@ export const OrderContextSidebar: React.FC<OrderContextSidebarProps> = ({
                 />
               </div>
               <div className="flex-1 min-w-0">
-                <h4 className="font-bold text-slate-900 text-xs truncate" title={productName}>
+                <h4 className="font-bold text-slate-900 text-sm leading-snug line-clamp-2" title={productName}>
                   {productName}
                 </h4>
-                <div className="flex items-center justify-between text-xs text-slate-500 mt-1">
-                  <span>x{qty}</span>
-                  <span className="font-bold text-slate-900">{totalStr}</span>
-                </div>
               </div>
+              <span className="text-sm text-slate-900">x{qty}</span>
+              <span className="text-sm font-bold text-slate-900 whitespace-nowrap">{totalStr}</span>
             </div>
 
             {/* Meta rows from real backend data */}
-            <div className="space-y-2 text-xs pt-2 border-t border-slate-100">
-              <div className="flex items-center justify-between text-slate-600">
-                <span className="flex items-center gap-1.5 text-slate-400">
-                  <Calendar className="w-3.5 h-3.5" />
+            <div className="text-sm divide-y divide-[#EEE8FB]">
+              <div className="flex items-center justify-between text-slate-600 py-3">
+                <span className="flex items-center gap-2 text-slate-700">
+                  <Calendar className="w-5 h-5" />
                   <span>Ngày đặt hàng</span>
                 </span>
-                <span className="font-semibold text-slate-800">{placedDateStr}</span>
+                <span className="font-medium text-slate-900">{placedDateStr}</span>
               </div>
 
-              <div className="flex items-center justify-between text-slate-600">
-                <span className="flex items-center gap-1.5 text-slate-400">
-                  <Truck className="w-3.5 h-3.5" />
+              <div className="flex items-center justify-between text-slate-600 py-3">
+                <span className="flex items-center gap-2 text-slate-700">
+                  <Truck className="w-5 h-5" />
                   <span>Ngày giao hàng</span>
                 </span>
-                <span className="font-semibold text-slate-800">{deliveredDateStr}</span>
+                <span className="font-medium text-slate-900">{deliveredDateStr}</span>
               </div>
 
-              <div className="flex items-center justify-between text-slate-600">
-                <span className="flex items-center gap-1.5 text-slate-400">
-                  <CreditCard className="w-3.5 h-3.5" />
-                  <span>Phương thức thanh toán</span>
+              <div className="flex items-center justify-between text-slate-600 py-3">
+                <span className="flex items-center gap-2 text-slate-700">
+                  <CreditCard className="w-5 h-5" />
+                  <span className="whitespace-nowrap">Phương thức thanh toán</span>
                 </span>
-                <span className="font-medium text-slate-800 truncate max-w-[140px] text-right" title={paymentStr}>
+                <span className="font-medium text-slate-900 text-right" title={paymentStr}>
                   {paymentStr}
                 </span>
               </div>
@@ -166,36 +170,36 @@ export const OrderContextSidebar: React.FC<OrderContextSidebarProps> = ({
             {/* Action button */}
             <button
               onClick={() => onQuickPrompt(`Tạo yêu cầu đổi trả cho đơn hàng ${orderCode}`)}
-              className="w-full py-2.5 px-4 rounded-xl border-2 border-purple-600 text-purple-700 hover:bg-purple-50 font-bold text-xs flex items-center justify-center gap-2 transition shadow-2xs cursor-pointer"
+              className="w-full py-3.5 px-4 rounded-2xl border-[1.5px] border-purple-700 text-purple-700 hover:bg-purple-50 font-bold text-base flex items-center justify-center gap-2.5 transition cursor-pointer"
             >
-              <RotateCcw className="w-4 h-4 text-purple-600" />
+              <RotateCcw className="w-5 h-5 text-purple-700" />
               <span>Yêu cầu đổi trả</span>
             </button>
           </>
         ) : (
           /* Unauthorized or Unverified State */
-          <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 space-y-3">
-            <div className="flex items-center gap-2 text-amber-800">
-              <ShieldAlert className="w-4 h-4 text-amber-600 flex-shrink-0" />
-              <h4 className="font-bold text-xs">Chi tiết đơn hàng được bảo mật</h4>
+          <div className="bg-[#F6F1FF] border border-[#E4D9FB] rounded-2xl p-4 space-y-3">
+            <div className="flex items-center gap-2 text-purple-900">
+              <ShieldAlert className="w-4 h-4 text-purple-700 flex-shrink-0" />
+              <h4 className="font-bold text-sm">Chi tiết đơn hàng được bảo mật</h4>
             </div>
-            <p className="text-xs text-amber-700 leading-relaxed">
+            <p className="text-xs text-slate-700 leading-relaxed">
               {error ? `${error}. ` : ''}Để bảo vệ thông tin đơn hàng <strong>{orderCode}</strong>, quý khách vui lòng xác thực OTP qua số điện thoại mua hàng để xem thông tin chi tiết.
             </p>
             {onOpenOtp ? (
               <button
                 onClick={onOpenOtp}
-                className="w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                className="w-full py-2.5 px-3 bg-gradient-to-br from-[#6D28D9] to-[#4C1D95] hover:from-[#5B21B6] hover:to-[#3B0F8C] text-white rounded-2xl font-bold text-sm transition flex items-center justify-center gap-1.5 shadow-chip cursor-pointer"
               >
-                <KeyRound className="w-3.5 h-3.5" />
+                <KeyRound className="w-5 h-5" />
                 <span>Xác thực OTP tra cứu</span>
               </button>
             ) : (
               <button
                 onClick={() => onQuickPrompt(`Tôi muốn xác thực OTP cho đơn hàng ${orderCode}`)}
-                className="w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                className="w-full py-2.5 px-3 bg-gradient-to-br from-[#6D28D9] to-[#4C1D95] hover:from-[#5B21B6] hover:to-[#3B0F8C] text-white rounded-2xl font-bold text-sm transition flex items-center justify-center gap-1.5 shadow-chip cursor-pointer"
               >
-                <KeyRound className="w-3.5 h-3.5" />
+                <KeyRound className="w-5 h-5" />
                 <span>Yêu cầu gửi OTP</span>
               </button>
             )}
@@ -204,62 +208,30 @@ export const OrderContextSidebar: React.FC<OrderContextSidebarProps> = ({
       </div>
 
       {/* Card 2: Related Policies */}
-      <div className="bg-white rounded-3xl p-5 border border-purple-100 shadow-sm space-y-3">
+      <div className="bg-white/95 rounded-[28px] p-6 border border-[#ECE6FA] shadow-card space-y-3">
         <div className="flex items-center gap-2">
-          <BookOpen className="w-5 h-5 text-purple-600" />
-          <h3 className="font-bold text-slate-900 text-sm">
+          <BookOpen className="w-5 h-5 text-purple-700" />
+          <h3 className="font-bold text-slate-900 text-lg">
             Chính sách liên quan
           </h3>
         </div>
 
-        <div className="space-y-1.5 pt-1">
-          <button
-            onClick={() => onSelectClause('POL-RET-ELIG')}
-            className="w-full text-left p-3 rounded-2xl hover:bg-purple-50/60 border border-transparent hover:border-purple-100 transition flex items-center justify-between group cursor-pointer"
-          >
-            <div className="flex items-center gap-2.5">
-              <FileText className="w-4 h-4 text-slate-400 group-hover:text-purple-600 transition" />
-              <div>
-                <span className="font-semibold text-slate-800 group-hover:text-purple-900 text-xs block">
-                  Điều kiện đổi trả 7 ngày
+        <div className="divide-y divide-[#EEE8FB]">
+          {RELATED_POLICIES.map((policy) => (
+            <button
+              key={policy.clauseId}
+              onClick={() => onSelectClause(policy.clauseId)}
+              className="w-full text-left py-3 hover:bg-[#F7F3FF] transition flex items-center justify-between group cursor-pointer"
+            >
+              <span className="flex items-center gap-3">
+                <span className="w-10 h-10 rounded-xl bg-[#F4F0FC] flex items-center justify-center flex-shrink-0">
+                  <FileText className="w-5 h-5 text-slate-900" />
                 </span>
-                <span className="text-[11px] text-slate-400">Điều 3.1 &bull; Chính sách đổi trả</span>
-              </div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-purple-600 group-hover:translate-x-0.5 transition" />
-          </button>
-
-          <button
-            onClick={() => onSelectClause('POL-REF-METH')}
-            className="w-full text-left p-3 rounded-2xl hover:bg-purple-50/60 border border-transparent hover:border-purple-100 transition flex items-center justify-between group cursor-pointer"
-          >
-            <div className="flex items-center gap-2.5">
-              <FileText className="w-4 h-4 text-slate-400 group-hover:text-purple-600 transition" />
-              <div>
-                <span className="font-semibold text-slate-800 group-hover:text-purple-900 text-xs block">
-                  Thời gian hoàn tiền
-                </span>
-                <span className="text-[11px] text-slate-400">Điều 4.2 &bull; Quy trình hoàn tiền</span>
-              </div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-purple-600 group-hover:translate-x-0.5 transition" />
-          </button>
-
-          <button
-            onClick={() => onSelectClause('POL-CAN-PACK')}
-            className="w-full text-left p-3 rounded-2xl hover:bg-purple-50/60 border border-transparent hover:border-purple-100 transition flex items-center justify-between group cursor-pointer"
-          >
-            <div className="flex items-center gap-2.5">
-              <FileText className="w-4 h-4 text-slate-400 group-hover:text-purple-600 transition" />
-              <div>
-                <span className="font-semibold text-slate-800 group-hover:text-purple-900 text-xs block">
-                  Quy định hủy đơn
-                </span>
-                <span className="text-[11px] text-slate-400">Điều 2.1 &bull; Hủy đơn hàng</span>
-              </div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-purple-600 group-hover:translate-x-0.5 transition" />
-          </button>
+                <span className="font-medium text-slate-900 text-base">{policy.label}</span>
+              </span>
+              <ChevronRight className="w-5 h-5 text-slate-900 group-hover:translate-x-0.5 transition" />
+            </button>
+          ))}
         </div>
       </div>
     </div>

@@ -20,3 +20,5 @@ expect:
     - reason_code: customer_request
   required_facts: []
   forbidden: []
+  required_tools:
+  - escalate_to_human

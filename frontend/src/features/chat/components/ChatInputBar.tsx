@@ -21,59 +21,58 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
   mode,
 }) => {
   return (
-    <div className="p-3 md:p-4 bg-white/90 backdrop-blur-md border-t border-purple-100">
-      <form
-        onSubmit={onSend}
-        className="flex items-center gap-2 bg-white rounded-2xl border border-purple-200/80 px-2.5 py-1.5 shadow-sm focus-within:ring-2 focus-within:ring-purple-400 focus-within:border-transparent transition"
-      >
+    <div className="px-6 md:px-10 py-2.5 bg-white/90 backdrop-blur-md">
+      <div className="flex items-center gap-3">
         {/* Plus Button */}
         <button
           type="button"
           onClick={onOpenOtpModal}
-          className="w-10 h-10 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-600 flex items-center justify-center transition flex-shrink-0"
+          className="w-14 h-14 rounded-2xl bg-white hover:bg-[#F7F3FF] text-slate-900 flex items-center justify-center transition flex-shrink-0 shadow-pill"
           title="Tra cứu đơn hàng hoặc xác minh OTP"
         >
-          <Plus className="w-5 h-5" />
+          <Plus className="w-6 h-6" />
         </button>
 
-        {/* Main Text Input */}
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={
-            mode === 'ai'
-              ? 'Nhập câu hỏi hoặc yêu cầu hỗ trợ...'
-              : 'Nhân viên đang tiếp nhận cuộc trò chuyện này...'
-          }
-          className="flex-1 px-3 py-2 text-sm bg-transparent border-none focus:outline-none text-slate-800 placeholder-slate-400"
-        />
-
-        {/* Shortcut Badge */}
-        <span className="hidden lg:inline-flex text-[11px] font-semibold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-lg">
-          Ctrl + Enter Gửi nhanh
-        </span>
-
-        {/* Mic Button */}
-        <button
-          type="button"
-          className="w-9 h-9 rounded-xl hover:bg-purple-50 text-slate-400 hover:text-purple-600 flex items-center justify-center transition flex-shrink-0"
-          title="Nhập bằng giọng nói"
+        <form
+          onSubmit={onSend}
+          className="flex-1 flex items-center gap-3 bg-white rounded-[22px] border-2 border-purple-700 pl-5 pr-2 py-1.5 shadow-[0_0_0_4px_rgba(167,139,250,0.22),0_10px_28px_-12px_rgba(109,40,217,0.4)] transition"
         >
-          <Mic className="w-5 h-5" />
-        </button>
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={
+              mode === 'ai'
+                ? 'Nhập câu hỏi hoặc yêu cầu hỗ trợ...'
+                : 'Nhân viên đang tiếp nhận cuộc trò chuyện này...'
+            }
+            className="flex-1 py-2.5 text-base bg-transparent border-none focus:outline-none text-slate-900 placeholder-slate-500"
+          />
 
-        {/* Send Button */}
-        <button
-          type="submit"
-          disabled={!input.trim() || loading}
-          className="w-10 h-10 rounded-xl bg-purple-600 hover:bg-purple-700 text-white flex items-center justify-center shadow-md shadow-purple-200 transition disabled:opacity-40 flex-shrink-0"
-          title="Gửi tin nhắn"
-        >
-          <Send className="w-4 h-4 -rotate-12" />
-        </button>
-      </form>
+          <span className="hidden lg:inline-flex items-center gap-2 text-sm text-slate-600">
+            <kbd className="font-sans px-2.5 py-1 rounded-lg bg-[#F1EEF8] text-slate-700 text-xs font-medium">Ctrl + Enter</kbd>
+            <span>Gửi nhanh</span>
+          </span>
+
+          <button
+            type="button"
+            className="w-10 h-10 rounded-xl hover:bg-purple-50 text-purple-700 flex items-center justify-center transition flex-shrink-0"
+            title="Nhập bằng giọng nói"
+          >
+            <Mic className="w-6 h-6" />
+          </button>
+
+          <button
+            type="submit"
+            disabled={!input.trim() || loading}
+            className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#6D28D9] to-[#4C1D95] hover:from-[#5B21B6] hover:to-[#3B0F8C] text-white flex items-center justify-center shadow-cta transition disabled:cursor-not-allowed flex-shrink-0"
+            title="Gửi tin nhắn"
+          >
+            <Send className="w-6 h-6 -rotate-12" />
+          </button>
+        </form>
+      </div>
     </div>
   );
 };
