@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -16,6 +17,7 @@ from shopagent.rag.chunker import (
 )
 from shopagent.rag.embeddings import get_embedding_provider
 from shopagent.rag.generator import generate_policy_clauses
+from shopagent.rag.reranker import Reranker, get_configured_reranker
 
 
 def _cosine_similarity(v1: list[float], v2: list[float]) -> float:
@@ -47,12 +49,28 @@ class HybridRetriever:
     benchmarks; it is never selected implicitly when a database call fails.
     """
 
-    def __init__(self, session: AsyncSession | None = None, *, in_memory: bool = False) -> None:
+    def __init__(
+        self,
+        session: AsyncSession | None = None,
+        *,
+        in_memory: bool = False,
+        reranker: Reranker | None = None,
+        rerank_candidates: int = 10,
+    ) -> None:
         if session is None and not in_memory:
             raise ValueError("HybridRetriever needs a database session, or in_memory=True for offline benchmarks")
         self.session = session
+        self._explicit_reranker = reranker
+        self._explicit_candidates = rerank_candidates
         self.embedder = get_embedding_provider()
         self._in_memory_cache: list[dict[str, Any]] | None = None
+
+    def _resolve_reranker(self) -> tuple[Reranker | None, int]:
+        """An explicitly injected reranker, else the configured one; failure to load raises."""
+        if self._explicit_reranker is not None:
+            return self._explicit_reranker, self._explicit_candidates
+        configured = get_configured_reranker()
+        return configured if configured is not None else (None, self._explicit_candidates)
 
     def _get_in_memory_chunks(self, as_of: datetime | None = None) -> list[dict[str, Any]]:
         if self._in_memory_cache is None:
@@ -195,6 +213,17 @@ class HybridRetriever:
             rrf_list.append((idx, rrf_score))
 
         rrf_list.sort(key=lambda x: x[1], reverse=True)
+
+        reranker, candidates = self._resolve_reranker()
+        if reranker is not None:
+            pool = rrf_list[: max(top_k, candidates)]
+            rerank_scores = await asyncio.to_thread(
+                reranker.scores, query, [chunks[idx]["text"] for idx, _ in pool]
+            )
+            rrf_list = [
+                (idx, score)
+                for (idx, _), score in sorted(zip(pool, rerank_scores, strict=True), key=lambda p: p[1], reverse=True)
+            ]
 
         results = []
         for idx, score in rrf_list[:top_k]:

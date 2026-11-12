@@ -1,0 +1,57 @@
+"""Optional multilingual cross-encoder reranking for policy retrieval.
+
+Measured on evals/retrieval/benchmark_v2.yaml (test split, 37 answerable queries) it lifts
+Recall@1 from 0.57 to 0.95 at about 2 s per query on CPU, so it is opt-in via
+config/app.yaml (`retrieval.reranker.enabled`). When enabled, a missing dependency or model is a
+hard error: retrieval never silently falls back to the weaker ranking.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import Protocol
+
+from shopagent.core.config import get_app_config
+
+
+class Reranker(Protocol):
+    def scores(self, query: str, texts: Sequence[str]) -> list[float]: ...
+
+
+class RerankerUnavailableError(RuntimeError):
+    """Reranking is enabled but cannot run (dependency or model missing).
+
+    Kept apart from PolicyIndexUnavailableError to avoid an import cycle; the search tool maps both
+    to the same `index_unavailable` outcome.
+    """
+
+
+class CrossEncoderReranker:
+    def __init__(self, model_name: str) -> None:
+        try:
+            from fastembed.rerank.cross_encoder import TextCrossEncoder  # type: ignore[import-not-found]
+
+            self._model = TextCrossEncoder(model_name=model_name)
+        except Exception as exc:  # ImportError, download or ONNX load failure
+            raise RerankerUnavailableError(
+                f"reranker '{model_name}' unavailable ({exc}); install the 'rerank' extra or disable "
+                "retrieval.reranker.enabled"
+            ) from exc
+
+    def scores(self, query: str, texts: Sequence[str]) -> list[float]:
+        return [float(x) for x in self._model.rerank(query, list(texts))]
+
+
+_cached: tuple[str, Reranker] | None = None
+
+
+def get_configured_reranker() -> tuple[Reranker, int] | None:
+    """The reranker and its candidate count when enabled in config, else None."""
+    global _cached
+    cfg = (get_app_config().get("retrieval") or {}).get("reranker") or {}
+    if not cfg.get("enabled"):
+        return None
+    model = str(cfg["model"])
+    if _cached is None or _cached[0] != model:
+        _cached = (model, CrossEncoderReranker(model))
+    return _cached[1], int(cfg.get("candidates", 10))

@@ -1,0 +1,49 @@
+id: MT-INTENT-001
+group: S_slots
+tags:
+- multi_turn
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: ctx.customer@example.test
+fixtures:
+  orders:
+  - code: SL-710001
+    status: delivered
+    delivered_at: -2d
+    payment_method: ewallet
+    items:
+    - key: ao
+      sku: TS-AO-S-XANH
+      qty: 1
+      unit_price: 250000
+  - code: SL-710002
+    status: delivered
+    delivered_at: -5d
+    payment_method: ewallet
+    items:
+    - key: ao
+      sku: TS-AO-M-TRANG
+      qty: 1
+      unit_price: 300000
+    - key: quan
+      sku: TS-QUAN-L-DEN
+      qty: 1
+      unit_price: 400000
+user:
+  goal: Bắt đầu trả hàng rồi đổi ý sang hỏi giao hàng, không xác nhận đề xuất
+  script:
+  - say: Mình muốn trả cái áo đơn SL-710001 vì bị lỗi
+  - say: Thôi khỏi nhé. Shop giao hàng mất bao lâu vậy?
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: clause
+    id: POL-SHIP-01
+  required_tools:
+  - search_policy
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền

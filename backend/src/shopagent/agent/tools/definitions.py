@@ -31,6 +31,7 @@ from shopagent.infra.db.tables import (
     ShipmentModel,
     TicketModel,
 )
+from shopagent.rag.reranker import RerankerUnavailableError
 from shopagent.rag.retriever import HybridRetriever, PolicyIndexUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -131,7 +132,7 @@ def create_tools(
             as_of_dt = get_clock().now()
         try:
             matches = await retriever.retrieve(query=query, top_k=4, as_of=as_of_dt)
-        except PolicyIndexUnavailableError as e:
+        except (PolicyIndexUnavailableError, RerankerUnavailableError) as e:
             return {
                 "status": "index_unavailable",
                 "error_code": "POLICY_INDEX_UNAVAILABLE",

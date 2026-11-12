@@ -150,7 +150,9 @@ class OracleAgent:
 
         # 2. Return & Refund Request (slot filling: order, item, reason - never guessed)
         is_return_turn = any(w in msg_lower for w in ("trả", "đổi trả", "hoàn tiền", "đổi ý", "lỗi", "hỏng"))
-        is_policy_question = any(w in msg_lower for w in self._POLICY_WORDS) and not order_code
+        is_policy_question = any(w in msg_lower for w in self._POLICY_WORDS) and not re.search(r"SL-\w+", user_message, re.IGNORECASE)
+        if is_policy_question:
+            self._pending_intent = None
         if (is_return_turn and not is_policy_question) or self._pending_intent == "return":
             self._pending_intent = "return"
             if not order_code:
@@ -289,8 +291,8 @@ class OracleAgent:
                 None,
             )
 
-        # 4. Order Lookup / Tracking
-        if order_code:
+        # 4. Order Lookup / Tracking (a policy question is not an order lookup, even with an order in context)
+        if order_code and not is_policy_question:
             try:
                 order_dict = await self.order_service.get_order_for_principal(self.principal, order_code)
                 tool_calls.append({"tool": "get_order", "args": {"order_code": order_code}, "result": order_dict})
@@ -310,6 +312,12 @@ class OracleAgent:
         # 5. Policy Inquiries
         if any(w in msg_lower for w in self._POLICY_WORDS):
             tool_calls.append({"tool": "search_policy", "args": {"query": user_message}, "result": {"status": "success", "results": []}})
+        if "giao hàng" in msg_lower and any(w in msg_lower for w in self._POLICY_WORDS):
+            return (
+                "Theo chính sách vận chuyển [POL-SHIP-01], thời gian giao hàng tiêu chuẩn từ 2 đến 5 ngày làm việc.",
+                tool_calls,
+                None,
+            )
         if any(w in msg_lower for w in ("bao nhiêu ngày", "hạn", "thời gian", "mấy ngày", "quy định", "chính sách", "phí", "bao lâu", "đổi size", "size", "chật")):
             if any(w in msg_lower for w in ("ví điện tử", "ewallet", "tiền hoàn")):
                 return (

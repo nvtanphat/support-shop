@@ -246,3 +246,42 @@ async def test_search_policy_returns_provenance_and_only_effective_clauses() -> 
         expired = await tool.ainvoke({"query": "đổi ý trả hàng mất phí bao nhiêu"})
     await engine.dispose()
     assert expired["status"] == "no_evidence"
+
+
+# ---------------------------------------------------------------------------
+# Optional reranking: reorders candidates, and a broken reranker is an error, not a fallback
+# ---------------------------------------------------------------------------
+class PreferClause:
+    """Stub cross-encoder that scores one clause above all others."""
+
+    def __init__(self, clause_text_marker: str) -> None:
+        self.marker = clause_text_marker
+
+    def scores(self, query, texts):  # type: ignore[no-untyped-def]
+        return [10.0 if self.marker in t else 0.0 for t in texts]
+
+
+@pytest.mark.asyncio
+async def test_reranker_reorders_candidates_and_keeps_provenance() -> None:
+    plain = HybridRetriever(in_memory=True)
+    before = await plain.retrieve("đổi trả hàng", top_k=4)
+    assert before[0]["clause_id"] != "POL-REFUND-02"
+
+    reranked = HybridRetriever(in_memory=True, reranker=PreferClause("Hạn mức duyệt"))
+    after = await reranked.retrieve("đổi trả hàng", top_k=4)
+    assert after[0]["clause_id"] == "POL-REFUND-02"
+    assert after[0]["version"] and "effective_from" in after[0]
+
+
+@pytest.mark.asyncio
+async def test_enabled_but_missing_reranker_is_an_explicit_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    from shopagent.rag import reranker as reranker_module
+
+    def broken(model_name: str):  # type: ignore[no-untyped-def]
+        raise reranker_module.RerankerUnavailableError("model missing")
+
+    monkeypatch.setattr(reranker_module, "get_app_config", lambda: {"retrieval": {"reranker": {"enabled": True, "model": "x"}}})
+    monkeypatch.setattr(reranker_module, "CrossEncoderReranker", broken)
+    monkeypatch.setattr(reranker_module, "_cached", None)
+    with pytest.raises(reranker_module.RerankerUnavailableError):
+        await HybridRetriever(in_memory=True).retrieve("đổi trả hàng", top_k=2)

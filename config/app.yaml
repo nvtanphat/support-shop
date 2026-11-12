@@ -30,3 +30,11 @@ allowed_link_domains:
   - "shoplab.test"
   - "sandbox.vnpayment.vn"
   - "mailpit.local"
+
+# Cross-encoder reranking of policy retrieval. Off by default: it needs the optional `rerank` extra
+# and a ~570 MB model, and costs ~2 s per policy lookup on CPU. See docs/eval-report.md for the benchmark.
+retrieval:
+  reranker:
+    enabled: false
+    model: "BAAI/bge-reranker-v2-m3-int8"
+    candidates: 10
