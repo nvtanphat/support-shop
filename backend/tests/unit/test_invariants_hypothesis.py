@@ -2,43 +2,27 @@
 
 from __future__ import annotations
 
-import random
-from typing import Any
 import uuid
-from hypothesis import HealthCheck, given, settings
+
 import hypothesis.strategies as st
 import pytest
-
-from shopagent.core.principal import Principal, PrincipalRole
+from hypothesis import HealthCheck, given, settings
 from shopagent.domain.models.entities import Order, OrderItem
 from shopagent.domain.models.enums import (
-    ApprovalGate,
-    ApprovalStatus,
     OrderStatus,
     PaymentMethod,
     PaymentStatus,
-    ProductCategory,
     RefundStatus,
     ReturnReason,
-    ReturnResolution,
-    ReturnStatus,
 )
-from shopagent.domain.policies.engine import determine_refund_approval
 from shopagent.domain.policies.refund_calc import (
     calculate_allocated_discounts,
     calculate_refund_amount,
 )
-from shopagent.domain.policies.rules import PolicyRules
 from shopagent.domain.services.approvals import check_role_hierarchy
 from shopagent.domain.state_machines import (
-    APPROVAL_TRANSITIONS,
-    ORDER_TRANSITIONS,
     REFUND_TRANSITIONS,
-    RETURN_TRANSITIONS,
-    transition_approval_status,
-    transition_order_status,
     transition_refund_status,
-    transition_return_status,
 )
 
 
@@ -65,13 +49,13 @@ def test_invariant_1_and_accounting_integrity_property(
     prices = item_prices[:n]
     qtys = item_qtys[:n]
 
-    subtotal = sum(p * q for p, q in zip(prices, qtys))
+    subtotal = sum(p * q for p, q in zip(prices, qtys, strict=False))
     discount_total = (subtotal * discount_pct) // 100
     shipping_fee = 30000 if subtotal < 500000 else 0
     total = subtotal - discount_total + shipping_fee
     paid_amount = total
 
-    items_dict = [{"qty": q, "unit_price": p} for p, q in zip(prices, qtys)]
+    items_dict = [{"qty": q, "unit_price": p} for p, q in zip(prices, qtys, strict=False)]
     allocated_discounts = calculate_allocated_discounts(items_dict, discount_total)
 
     # Accounting integrity check

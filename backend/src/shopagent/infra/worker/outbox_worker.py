@@ -5,14 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any
-
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from datetime import timedelta
 
 from shopagent.core.clock import get_clock
 from shopagent.infra.db.tables import AuditLogModel, OutboxEventModel, RefundModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +100,7 @@ async def run_outbox_worker(
             try:
                 await asyncio.wait_for(stop_event.wait(), timeout=poll_interval)
                 break
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
         else:
             await asyncio.sleep(poll_interval)

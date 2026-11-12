@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import uuid
+from datetime import UTC, datetime
+
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy import select
-
 from shopagent.agent.graph import build_agent_graph
 from shopagent.agent.nodes.persist_emit import persist_emit_node
 from shopagent.agent.nodes.screen_input import screen_input_node
@@ -24,9 +22,6 @@ from shopagent.core.clock import get_clock
 from shopagent.core.principal import Principal
 from shopagent.infra.db.tables import (
     Base,
-    ConversationEventModel,
-    ConversationModel,
-    CustomerModel,
     MessageModel,
     OrderModel,
     RefundModel,
@@ -34,6 +29,8 @@ from shopagent.infra.db.tables import (
     TicketModel,
 )
 from shopagent.rag.retriever import HybridRetriever
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
 @pytest.mark.asyncio
@@ -354,8 +351,8 @@ async def test_persist_emit_turn_idempotency_and_multi_turn_repeated_content():
 @pytest.mark.asyncio
 async def test_token_aware_context_pruning_preserves_tool_call_pairs():
     """Verify prune_messages_token_aware never separates an AIMessage tool call from its ToolMessage."""
-    from shopagent.agent.nodes.agent import prune_messages_token_aware
     from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+    from shopagent.agent.nodes.agent import prune_messages_token_aware
 
     # Create a history with 3 complete turns, including a tool exchange in turn 2
     tc_id = "call_abc123"
@@ -404,12 +401,12 @@ async def test_rag_as_of_temporal_filtering():
     retriever = HybridRetriever()
 
     # Query with future timestamp
-    dt_future = datetime(2026, 11, 15, tzinfo=timezone.utc)
+    dt_future = datetime(2026, 11, 15, tzinfo=UTC)
     res_future = await retriever.retrieve("đổi trả", top_k=3, as_of=dt_future)
     assert len(res_future) > 0
 
     # Query with distant past timestamp before store policy took effect (e.g. year 2020)
-    dt_ancient = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    dt_ancient = datetime(2020, 1, 1, tzinfo=UTC)
     res_ancient = await retriever.retrieve("đổi trả", top_k=3, as_of=dt_ancient)
     # Must be empty because policies were not effective in 2020
     assert len(res_ancient) == 0

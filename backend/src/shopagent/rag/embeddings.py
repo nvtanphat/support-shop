@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Sequence
-import unicodedata
+from collections.abc import Sequence
 
 from shopagent.rag.chunker import remove_vietnamese_accents, tokenize_unaccent
 

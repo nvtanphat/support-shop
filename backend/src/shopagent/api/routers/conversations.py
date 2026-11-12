@@ -5,13 +5,15 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
-from typing import AsyncGenerator
 import uuid
+from collections.abc import AsyncGenerator
+from typing import Any
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from langchain_core.messages import HumanMessage
-from sse_starlette.sse import EventSourceResponse
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sse_starlette.sse import EventSourceResponse
 
 from shopagent.agent.graph import get_agent_graph
 from shopagent.agent.state import AgentState
@@ -28,6 +30,7 @@ from shopagent.domain.services.tickets import TicketService
 from shopagent.infra.db.tables import (
     ConversationEventModel,
     ConversationModel,
+    IdempotencyKeyModel,
     MessageModel,
     PendingActionModel,
 )
@@ -37,8 +40,7 @@ router = APIRouter(tags=["Conversations"])
 _conv_locks: dict[uuid.UUID, asyncio.Lock] = {}
 
 
-def get_conversation_lock(conv_id: uuid.UUID) -> asyncio.Lock:
-    """Get or create an asyncio Lock to serialize concurrent requests for a conversation."""
+def _get_conv_lock(conv_id: uuid.UUID) -> asyncio.Lock:
     if conv_id not in _conv_locks:
         _conv_locks[conv_id] = asyncio.Lock()
     return _conv_locks[conv_id]
@@ -73,12 +75,11 @@ def verify_conversation_access(
     # If conversation is a guest conversation (conv.customer_id is None)
     # Both unauthenticated visitors and logged-in customers must provide the matching guest_token to access a guest session
     effective_token = guest_token or principal.guest_token
-    if conv.guest_token:
-        if not effective_token or effective_token != conv.guest_token:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Yêu cầu mã định danh phiên khách vãng lai hợp lệ để truy cập cuộc trò chuyện.",
-            )
+    if conv.guest_token and (not effective_token or effective_token != conv.guest_token):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Yêu cầu mã định danh phiên khách vãng lai hợp lệ để truy cập cuộc trò chuyện.",
+        )
 
 
 @router.post("/conversations", response_model=ConversationDto)
@@ -196,20 +197,40 @@ async def send_message(
     session: AsyncSession = Depends(get_db_session),
 ):
     """Send customer message and invoke LangGraph Agent pipeline with authorization and turn idempotency."""
-    stmt = select(ConversationModel).where(ConversationModel.id == conversation_id)
-    res = await session.execute(stmt)
-    conv = res.scalar_one_or_none()
-    if not conv:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy cuộc trò chuyện.")
+    async with _get_conv_lock(conversation_id):
+        stmt = (
+            select(ConversationModel)
+            .where(ConversationModel.id == conversation_id)
+            .with_for_update()
+        )
+        res = await session.execute(stmt)
+        conv = res.scalar_one_or_none()
+        if not conv:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy cuộc trò chuyện.")
 
-    verify_conversation_access(conv, principal, x_guest_token or guest_token)
+        verify_conversation_access(conv, principal, x_guest_token or guest_token)
 
-    async with get_conversation_lock(conversation_id):
         # Resolve turn idempotency key
         turn_id = x_idempotency_key or req.idempotency_key
 
-        # Check if request was already executed with this idempotency key
+        # Check if request was already executed with this idempotency key in IdempotencyKeyModel or events
         if turn_id:
+            stmt_idemp = select(IdempotencyKeyModel).where(
+                IdempotencyKeyModel.key == f"turn:{conversation_id}:{turn_id}"
+            )
+            res_idemp = await session.execute(stmt_idemp)
+            cached_rec = res_idemp.scalar_one_or_none()
+            if cached_rec:
+                pl = cached_rec.response_digest
+                return {
+                    "status": "success",
+                    "verified_output": pl.get("verified_output", ""),
+                    "assistant_message": pl.get("verified_output", ""),
+                    "citations": pl.get("citations", []),
+                    "pending_action": pl.get("pending_action"),
+                    "tool_calls": [],
+                }
+
             stmt_prior = (
                 select(ConversationEventModel)
                 .where(
@@ -217,13 +238,11 @@ async def send_message(
                     ConversationEventModel.type == "message.completed",
                 )
                 .order_by(ConversationEventModel.seq.desc())
-                .limit(10)
             )
             res_prior = await session.execute(stmt_prior)
             for ev in res_prior.scalars().all():
                 pl = ev.payload or {}
                 if pl.get("turn_id") == turn_id:
-                    # Idempotent replay: return cached response
                     return {
                         "status": "success",
                         "verified_output": pl.get("content", ""),
@@ -235,11 +254,8 @@ async def send_message(
 
         # If conversation is with human staff, save user message and do not invoke AI
         if conv.mode in ("waiting_human", "human"):
-            stmt_seq = select(func.coalesce(func.max(MessageModel.seq), 0)).where(
-                MessageModel.conversation_id == conversation_id
-            )
-            res_seq = await session.execute(stmt_seq)
-            seq = res_seq.scalar_one() + 1
+            conv.last_message_seq += 1
+            seq = conv.last_message_seq
             msg = MessageModel(
                 conversation_id=conversation_id,
                 seq=seq,
@@ -272,8 +288,28 @@ async def send_message(
             }
         }
 
-        output = await graph.ainvoke(initial_state, config=config)
-        await session.commit()
+        try:
+            output = await graph.ainvoke(initial_state, config=config)
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            if turn_id:
+                stmt_idemp_check = select(IdempotencyKeyModel).where(
+                    IdempotencyKeyModel.key == f"turn:{conversation_id}:{turn_id}"
+                )
+                res_idemp_c = await session.execute(stmt_idemp_check)
+                rec_c = res_idemp_c.scalar_one_or_none()
+                if rec_c:
+                    pl = rec_c.response_digest
+                    return {
+                        "status": "success",
+                        "verified_output": pl.get("verified_output", ""),
+                        "assistant_message": pl.get("verified_output", ""),
+                        "citations": pl.get("citations", []),
+                        "pending_action": pl.get("pending_action"),
+                        "tool_calls": [],
+                    }
+            raise
 
         verified = output.get("verified_output") or ""
         return {

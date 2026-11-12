@@ -100,9 +100,8 @@ def _normalize_and_validate(
     transitions: dict[Any, set[Any]],
     entity_name: str,
 ) -> None:
-    curr_attr = "mode" if hasattr(curr_val, "mode") else ("status" if hasattr(curr_val, "status") else None)
-    is_model = curr_attr is not None
-    raw_curr = getattr(curr_val, curr_attr) if is_model else curr_val
+    curr_attr: str | None = "mode" if hasattr(curr_val, "mode") else ("status" if hasattr(curr_val, "status") else None)
+    raw_curr = getattr(curr_val, curr_attr) if curr_attr is not None else curr_val
 
     curr_enum = enum_cls(raw_curr.value if hasattr(raw_curr, "value") else raw_curr)
     nxt_enum = enum_cls(nxt_val.value if hasattr(nxt_val, "value") else nxt_val)
@@ -113,7 +112,7 @@ def _normalize_and_validate(
             f"Không thể chuyển trạng thái {entity_name} từ '{curr_enum.value}' sang '{nxt_enum.value}'.",
             error_code=f"INVALID_{entity_name.upper()}_STATE_TRANSITION",
         )
-    if is_model:
+    if curr_attr is not None:
         setattr(curr_val, curr_attr, nxt_enum.value)
 
 

@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 import uuid
-import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from datetime import datetime, timedelta
 
+import pytest
 from shopagent.core.clock import Clock, set_global_clock
 from shopagent.core.principal import Principal, PrincipalRole
 from shopagent.domain.models.enums import (
-    ApprovalGate,
-    ApprovalStatus,
     OrderStatus,
     PaymentMethod,
     PaymentStatus,
@@ -24,7 +21,6 @@ from shopagent.domain.models.enums import (
 from shopagent.domain.services.actions import ActionService
 from shopagent.domain.services.approvals import ApprovalService
 from shopagent.domain.services.cancellations import CancellationService
-from shopagent.domain.services.refunds import RefundService
 from shopagent.domain.services.returns import ReturnService
 from shopagent.domain.services.warehouse import WarehouseService
 from shopagent.infra.db.repositories.approval_repo import ApprovalRepository
@@ -33,7 +29,6 @@ from shopagent.infra.db.repositories.refund_repo import RefundRepository
 from shopagent.infra.db.repositories.return_repo import ReturnRepository
 from shopagent.infra.db.tables import (
     Base,
-    CustomerCredentialsModel,
     CustomerModel,
     OrderItemModel,
     OrderModel,
@@ -42,7 +37,7 @@ from shopagent.infra.db.tables import (
     StaffUserModel,
 )
 from shopagent.infra.outbox.dispatcher import OutboxDispatcher
-from shopagent.infra.payments.simulated import SimulatedPaymentGateway
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
 @pytest.fixture

@@ -91,10 +91,7 @@ def calculate_refund_amount(
             continue
         line_gross = item.unit_price * return_qty
         # Proportion of allocated discount corresponding to returned quantity
-        if item.qty > 0:
-            line_discount = int((item.allocated_discount * return_qty) / item.qty)
-        else:
-            line_discount = 0
+        line_discount = int(item.allocated_discount * return_qty / item.qty) if item.qty > 0 else 0
 
         line_net = max(0, line_gross - line_discount)
 
@@ -117,10 +114,7 @@ def calculate_refund_amount(
     subtotal_net = max(0, total_gross - total_discount)
 
     # Return shipping fee deduction
-    if reason == ReturnReason.CHANGE_OF_MIND:
-        shipping_deduction = customer_shipping_fee_vnd
-    else:
-        shipping_deduction = 0
+    shipping_deduction = customer_shipping_fee_vnd if reason == ReturnReason.CHANGE_OF_MIND else 0
 
     final_amount = max(0, subtotal_net - shipping_deduction)
 

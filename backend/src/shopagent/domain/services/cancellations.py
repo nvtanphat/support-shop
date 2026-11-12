@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from typing import Any
 import uuid
+from datetime import timedelta
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.core.clock import get_clock, to_utc
 from shopagent.core.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
-from shopagent.core.ids import generate_action_code, generate_refund_code, generate_uuid
+from shopagent.core.ids import generate_refund_code, generate_uuid
 from shopagent.core.principal import Principal
 from shopagent.core.security import compute_preview_hash
 from shopagent.domain.models.enums import (
@@ -29,7 +29,11 @@ from shopagent.infra.db.repositories.audit_repo import AuditRepository
 from shopagent.infra.db.repositories.order_repo import OrderRepository
 from shopagent.infra.db.repositories.outbox_repo import OutboxRepository
 from shopagent.infra.db.repositories.refund_repo import RefundRepository
-from shopagent.infra.db.tables import ApprovalRequestModel, OrderModel, PendingActionModel, RefundModel
+from shopagent.infra.db.tables import (
+    ApprovalRequestModel,
+    PendingActionModel,
+    RefundModel,
+)
 
 
 class CancellationService:

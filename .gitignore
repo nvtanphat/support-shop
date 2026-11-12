@@ -35,6 +35,8 @@ wheels/
 .coverage.*
 htmlcov/
 coverage.xml
+frontend/test-results/
+frontend/playwright-report/
 
 # Node & Frontend
 node_modules/

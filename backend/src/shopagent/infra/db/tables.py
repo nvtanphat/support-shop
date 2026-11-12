@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Any
-import uuid
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -18,15 +19,14 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    JSON,
     Uuid,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-
-JSON_TYPE = JSON().with_variant(JSONB, "postgresql")
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from shopagent.core.ids import generate_uuid
+
+JSON_TYPE = JSON().with_variant(JSONB, "postgresql")
 
 
 class Base(DeclarativeBase):
@@ -346,6 +346,7 @@ class ConversationModel(Base):
     summary: Mapped[str] = mapped_column(Text, default="")
     prompt_hash: Mapped[str] = mapped_column(String(64), default="")
     last_event_seq: Mapped[int] = mapped_column(Integer, default=0)
+    last_message_seq: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -365,6 +366,10 @@ class MessageModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     conversation = relationship("ConversationModel", back_populates="messages")
+
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "seq", name="uq_message_conv_seq"),
+    )
 
 
 class ConversationEventModel(Base):

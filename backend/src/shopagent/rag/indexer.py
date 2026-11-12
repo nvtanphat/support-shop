@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Any
-import uuid
+
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,7 +48,7 @@ async def index_policies(session: AsyncSession, rules: dict[str, Any] | None = N
     embeddings = embedder.embed_documents(texts)
 
     saved_chunks = []
-    for c, emb in zip(chunks, embeddings):
+    for c, emb in zip(chunks, embeddings, strict=False):
         chunk_model = PolicyChunkModel(
             id=c["id"],
             document_id=doc.id,

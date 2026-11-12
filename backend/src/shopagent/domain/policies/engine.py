@@ -11,7 +11,6 @@ from shopagent.domain.models.entities import Order, OrderItem
 from shopagent.domain.models.enums import (
     ApprovalGate,
     OrderStatus,
-    ReturnFlag,
     ReturnReason,
     ReturnResolution,
 )

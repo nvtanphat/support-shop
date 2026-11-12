@@ -2,12 +2,11 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
+from shopagent.core.config import get_settings
+from shopagent.infra.db.tables import Base
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-
-from shopagent.core.config import get_settings
-from shopagent.infra.db.tables import Base
 
 config = context.config
 

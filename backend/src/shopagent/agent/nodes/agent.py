@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from pathlib import Path
 import time
-from typing import Any
 import uuid
+from typing import Any
+
 import jinja2
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
@@ -21,7 +21,6 @@ from shopagent.core.config import CONFIG_DIR
 from shopagent.core.principal import Principal
 from shopagent.core.text import extract_text_content
 from shopagent.infra.llm.factory import get_chat_model
-
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +79,7 @@ def prune_messages_token_aware(
     while i < n:
         msg = messages[i]
         if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
-            unit = [msg]
+            unit: list[BaseMessage] = [msg]
             i += 1
             while i < n and isinstance(messages[i], ToolMessage):
                 unit.append(messages[i])
@@ -135,8 +134,8 @@ def render_system_prompt(state: AgentState) -> str:
 
 async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
     """Execute LLM agent loop with bound tools up to max 6 iterations with timeout & loop prevention."""
-    session: AsyncSession = config.get("configurable", {}).get("session")
-    if not session:
+    session = config.get("configurable", {}).get("session")
+    if not session or not isinstance(session, AsyncSession):
         raise ValueError("AsyncSession must be provided in config['configurable']['session']")
 
     start_turn = time.perf_counter()
@@ -256,7 +255,7 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
                     # Execute tool with strict 12-second timeout
                     try:
                         res_content = await asyncio.wait_for(target_tool.ainvoke(tool_args), timeout=12.0)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         logger.error("Công cụ '%s' hết thời gian chờ (12s)", tool_name)
                         res_content = {
                             "error_code": "TOOL_TIMEOUT",

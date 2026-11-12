@@ -3,19 +3,23 @@
 from __future__ import annotations
 
 from datetime import datetime
-import math
 from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.infra.db.tables import PolicyChunkModel
-from shopagent.rag.chunker import build_chunks_from_clauses, remove_vietnamese_accents, tokenize_unaccent
+from shopagent.rag.chunker import (
+    build_chunks_from_clauses,
+    remove_vietnamese_accents,
+    tokenize_unaccent,
+)
 from shopagent.rag.embeddings import get_embedding_provider
 from shopagent.rag.generator import generate_policy_clauses
 
 
 def _cosine_similarity(v1: list[float], v2: list[float]) -> float:
-    dot = sum(a * b for a, b in zip(v1, v2))
+    dot = sum(a * b for a, b in zip(v1, v2, strict=False))
     return max(0.0, dot)
 
 
@@ -33,7 +37,7 @@ class HybridRetriever:
             chunks = build_chunks_from_clauses(clauses)
             texts = [c["text"] for c in chunks]
             embeddings = self.embedder.embed_documents(texts)
-            for c, emb in zip(chunks, embeddings):
+            for c, emb in zip(chunks, embeddings, strict=False):
                 c["embedding"] = emb
             self._in_memory_cache = chunks
 

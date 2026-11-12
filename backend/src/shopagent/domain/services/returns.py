@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from typing import Any
 import uuid
+from datetime import timedelta
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,8 +12,6 @@ from shopagent.core.clock import get_clock, to_utc
 from shopagent.core.config import get_rules_config
 from shopagent.core.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from shopagent.core.ids import (
-    generate_action_code,
-    generate_refund_code,
     generate_return_code,
     generate_uuid,
 )
@@ -24,10 +22,11 @@ from shopagent.domain.models.enums import (
     ApprovalGate,
     ApprovalStatus,
     OrderStatus,
+    PaymentMethod,
+    PaymentStatus,
     PendingActionStatus,
     PendingActionType,
     ProductCategory,
-    RefundStatus,
     ReturnFlag,
     ReturnReason,
     ReturnResolution,
@@ -35,14 +34,8 @@ from shopagent.domain.models.enums import (
 )
 from shopagent.domain.policies.engine import (
     check_return_eligibility,
-    determine_refund_approval,
 )
-from shopagent.domain.policies.risk import evaluate_risk_flags
 from shopagent.domain.policies.rules import PolicyRules
-from shopagent.domain.state_machines import (
-    transition_refund_status,
-    transition_return_status,
-)
 from shopagent.infra.db.repositories.action_repo import ActionRepository
 from shopagent.infra.db.repositories.approval_repo import ApprovalRepository
 from shopagent.infra.db.repositories.audit_repo import AuditRepository
@@ -52,10 +45,8 @@ from shopagent.infra.db.repositories.refund_repo import RefundRepository
 from shopagent.infra.db.repositories.return_repo import ReturnRepository
 from shopagent.infra.db.tables import (
     ApprovalRequestModel,
-    OrderItemModel,
     OrderModel,
     PendingActionModel,
-    RefundModel,
     ReturnItemModel,
     ReturnRequestModel,
 )
@@ -98,8 +89,8 @@ class ReturnService:
             code=o.code,
             customer_id=o.customer_id,
             status=OrderStatus(o.status),
-            payment_method=o.payment_method,
-            payment_status=o.payment_status,
+            payment_method=PaymentMethod(o.payment_method),
+            payment_status=PaymentStatus(o.payment_status),
             subtotal=o.subtotal,
             discount_total=o.discount_total,
             shipping_fee=o.shipping_fee,

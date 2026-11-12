@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
 import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.api.deps import get_db_session, require_staff_role
@@ -40,12 +40,12 @@ async def list_approvals(
             {
                 "id": str(a.id),
                 "gate": a.gate,
-                "target_type": a.target_type,
-                "target_id": str(a.target_id),
+                "target_type": a.subject_type,
+                "target_id": str(a.subject_id),
                 "status": a.status,
                 "required_role": a.required_role,
-                "risk_flags": a.risk_flags,
-                "created_at": a.created_at.isoformat(),
+                "risk_flags": [],
+                "created_at": a.requested_at.isoformat(),
             }
             for a in approvals
         ]
@@ -62,14 +62,14 @@ async def make_approval_decision(
     """Staff decides on an approval request."""
     service = ApprovalService(session)
     if req.decision == "approve":
-        result = await service.approve(principal, approval_id, note=req.note)
+        result_model = await service.decide_approval(principal, approval_id, decision="approved", note=req.note)
     elif req.decision == "reject":
-        result = await service.reject(principal, approval_id, note=req.note)
+        result_model = await service.decide_approval(principal, approval_id, decision="rejected", note=req.note)
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quyết định phải là 'approve' hoặc 'reject'.")
 
     await session.commit()
-    return result
+    return {"status": result_model.status, "approval_id": str(result_model.id)}
 
 
 @router.get("/tickets")
@@ -135,17 +135,18 @@ async def staff_send_message(
     session: AsyncSession = Depends(get_db_session),
 ):
     """Staff agent sends message directly to customer in takeover mode."""
-    stmt_c = select(ConversationModel).where(ConversationModel.id == conversation_id)
+    stmt_c = (
+        select(ConversationModel)
+        .where(ConversationModel.id == conversation_id)
+        .with_for_update()
+    )
     res_c = await session.execute(stmt_c)
     conv = res_c.scalar_one_or_none()
     if not conv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy cuộc trò chuyện.")
 
-    stmt_seq = select(func.coalesce(func.max(MessageModel.seq), 0)).where(
-        MessageModel.conversation_id == conversation_id
-    )
-    res_seq = await session.execute(stmt_seq)
-    seq = res_seq.scalar_one() + 1
+    conv.last_message_seq += 1
+    seq = conv.last_message_seq
 
     msg = MessageModel(
         conversation_id=conversation_id,

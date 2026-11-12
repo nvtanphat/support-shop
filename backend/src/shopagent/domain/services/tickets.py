@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
 import uuid
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.core.clock import get_clock
 from shopagent.core.errors import ConflictError, ForbiddenError, NotFoundError
 from shopagent.core.ids import generate_ticket_code, generate_uuid
-from shopagent.core.principal import Principal, PrincipalRole
+from shopagent.core.principal import Principal
 from shopagent.infra.db.repositories.audit_repo import AuditRepository
 from shopagent.infra.db.repositories.conversation_repo import ConversationRepository
 from shopagent.infra.db.repositories.outbox_repo import OutboxRepository

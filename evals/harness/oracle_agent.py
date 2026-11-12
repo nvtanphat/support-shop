@@ -5,30 +5,22 @@ from __future__ import annotations
 import re
 import uuid
 from typing import Any
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
-from evals.harness.models import Scenario
 from shopagent.core.principal import Principal
 from shopagent.domain.models.enums import (
-    OrderStatus,
-    PaymentStatus,
     ReturnReason,
-    ReturnResolution,
 )
-from shopagent.domain.policies.engine import check_return_eligibility
 from shopagent.domain.policies.rules import PolicyRules
 from shopagent.domain.services.actions import ActionService
 from shopagent.domain.services.cancellations import CancellationService
 from shopagent.domain.services.orders import OrderService
 from shopagent.domain.services.returns import ReturnService
 from shopagent.domain.services.tickets import TicketService
-from shopagent.infra.db.repositories.action_repo import ActionRepository
-from shopagent.infra.db.repositories.approval_repo import ApprovalRepository
-from shopagent.infra.db.repositories.order_repo import OrderRepository
-from shopagent.infra.db.repositories.return_repo import ReturnRepository
-from shopagent.infra.db.repositories.ticket_repo import TicketRepository
 from shopagent.infra.db.tables import OrderItemModel, OrderModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from evals.harness.models import Scenario
 
 
 class OracleAgent:
@@ -173,38 +165,37 @@ class OracleAgent:
                         )
 
         # 3. Cancellation Request
-        if any(w in msg_lower for w in ("hủy", "hủy đơn", "cancel")):
-            if order_code:
-                stmt = select(OrderModel).where(OrderModel.code == order_code)
-                res = await self.session.execute(stmt)
-                order_model = res.scalar_one_or_none()
-                if order_model:
-                    try:
-                        prop_res = await self.cancellation_service.propose_cancellation(
-                            principal=self.principal,
-                            conversation_id=uuid.UUID(conversation_id),
-                            order_code=order_code,
-                            reason="Khách hàng yêu cầu hủy đơn",
-                        )
-                        tool_calls.append({"tool": "propose_cancel_order", "args": {"order_code": order_code}})
-                        p_dict = {
-                            "id": prop_res["action_id"],
-                            "type": prop_res["type"],
-                            "preview_hash": prop_res["preview_hash"],
-                            "preview": prop_res["preview"],
-                        }
-                        return (
-                            f"Em đã tạo đề xuất hủy đơn hàng {order_code}. "
-                            "Quý khách vui lòng bấm nút 'Xác nhận hủy đơn' bên dưới để hoàn tất.",
-                            tool_calls,
-                            p_dict,
-                        )
-                    except Exception as err:
-                        return (
-                            f"Đơn hàng {order_code} đang ở trạng thái {order_model.status}, không thể hủy trực tiếp.",
-                            tool_calls,
-                            None,
-                        )
+        if order_code and any(w in msg_lower for w in ("hủy", "hủy đơn", "cancel")):
+            stmt = select(OrderModel).where(OrderModel.code == order_code)
+            res = await self.session.execute(stmt)
+            order_model = res.scalar_one_or_none()
+            if order_model:
+                try:
+                    prop_res = await self.cancellation_service.propose_cancellation(
+                        principal=self.principal,
+                        conversation_id=uuid.UUID(conversation_id),
+                        order_code=order_code,
+                        reason="Khách hàng yêu cầu hủy đơn",
+                    )
+                    tool_calls.append({"tool": "propose_cancel_order", "args": {"order_code": order_code}})
+                    p_dict = {
+                        "id": prop_res["action_id"],
+                        "type": prop_res["type"],
+                        "preview_hash": prop_res["preview_hash"],
+                        "preview": prop_res["preview"],
+                    }
+                    return (
+                        f"Em đã tạo đề xuất hủy đơn hàng {order_code}. "
+                        "Quý khách vui lòng bấm nút 'Xác nhận hủy đơn' bên dưới để hoàn tất.",
+                        tool_calls,
+                        p_dict,
+                    )
+                except Exception:
+                    return (
+                        f"Đơn hàng {order_code} đang ở trạng thái {order_model.status}, không thể hủy trực tiếp.",
+                        tool_calls,
+                        None,
+                    )
 
         # 3.5 Exchange inquiry
         if any(w in msg_lower for w in ("đổi size", "size", "đổi sang", "chật", "rộng")):
@@ -215,23 +206,22 @@ class OracleAgent:
             )
 
         # 4. Order Lookup / Tracking
-        if order_code or any(w in msg_lower for w in ("đơn hàng", "tra cứu", "vận chuyển", "ở đâu")):
-            if order_code:
-                try:
-                    order_dict = await self.order_service.get_order_for_principal(self.principal, order_code)
-                    tool_calls.append({"tool": "lookup_order", "args": {"order_code": order_code}})
-                    return (
-                        f"Đơn hàng {order_dict['order_code']} hiện có trạng thái: {order_dict['status']}. "
-                        f"Tổng giá trị đơn hàng là {order_dict['total']:,} đ.",
-                        tool_calls,
-                        None,
-                    )
-                except Exception as err:
-                    return (
-                        f"Không tìm thấy hoặc không có quyền truy cập đơn hàng {order_code}: {err}",
-                        tool_calls,
-                        None,
-                    )
+        if order_code:
+            try:
+                order_dict = await self.order_service.get_order_for_principal(self.principal, order_code)
+                tool_calls.append({"tool": "lookup_order", "args": {"order_code": order_code}})
+                return (
+                    f"Đơn hàng {order_dict['order_code']} hiện có trạng thái: {order_dict['status']}. "
+                    f"Tổng giá trị đơn hàng là {order_dict['total']:,} đ.",
+                    tool_calls,
+                    None,
+                )
+            except Exception as err:
+                return (
+                    f"Không tìm thấy hoặc không có quyền truy cập đơn hàng {order_code}: {err}",
+                    tool_calls,
+                    None,
+                )
 
         # 5. Policy Inquiries
         if any(w in msg_lower for w in ("bao nhiêu ngày", "hạn", "thời gian", "mấy ngày", "quy định", "chính sách", "phí", "bao lâu", "đổi size", "size", "chật")):

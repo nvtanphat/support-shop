@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import importlib
-import inspect
-import os
 from pathlib import Path
-import sys
 
 
 def test_domain_layer_has_no_framework_dependencies() -> None:
@@ -40,4 +36,4 @@ def test_domain_layer_has_no_framework_dependencies() -> None:
                     if f"import {forbidden}" in stripped or f"from {forbidden}" in stripped:
                         violations.append(f"{rel_path}:{line_num} -> {stripped}")
 
-    assert not violations, f"Architecture violation: domain/ must not import external frameworks:\n" + "\n".join(violations)
+    assert not violations, "Architecture violation: domain/ must not import external frameworks:\n" + "\n".join(violations)

@@ -8,12 +8,10 @@ PolicyEngine running against this table MUST match 100%.
 from __future__ import annotations
 
 import csv
-from datetime import datetime, timedelta
 import json
-from pathlib import Path
 import uuid
-
-import pytest
+from datetime import datetime, timedelta
+from pathlib import Path
 
 from shopagent.core.clock import get_shop_timezone
 from shopagent.domain.models.entities import Order, OrderItem
@@ -58,13 +56,11 @@ def test_ground_truth_decision_table_against_policy_engine() -> None:
         discount = int(r["order_discount"])
         price = int(r["item_price"])
         qty = int(r["item_qty"])
-        is_full = r["is_full_return"].lower() == "true"
         ship_fee = int(r["shipping_fee"])
         risk = r["risk_flag"]
         risk_flags = [risk] if risk != "none" else []
 
         expected_eligible = r["expected_eligible"].lower() == "true"
-        expected_code = r["expected_decision_code"]
         expected_refund = int(r["expected_refund_amount"])
         expected_role = r["expected_required_role"]
 

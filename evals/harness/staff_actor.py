@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
-from evals.harness.models import StaffAction
 from shopagent.core.principal import Principal, PrincipalRole
 from shopagent.domain.models.enums import ApprovalStatus
 from shopagent.domain.services.approvals import ApprovalService
-from shopagent.infra.db.repositories.approval_repo import ApprovalRepository
-from shopagent.infra.db.tables import ApprovalRequestModel, StaffUserModel
+from shopagent.infra.db.tables import ApprovalRequestModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from evals.harness.models import StaffAction
 
 
 class StaffActor:

@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
-from evals.harness.models import ScriptStep, UserScript
+from evals.harness.models import UserScript
 
 
 class ScriptedUser:

@@ -2,21 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.core.clock import get_clock
-from shopagent.core.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
-from shopagent.core.ids import generate_uuid
+from shopagent.core.errors import ConflictError, ForbiddenError, NotFoundError
 from shopagent.core.principal import Principal, PrincipalRole
 from shopagent.domain.models.enums import (
-    ApprovalGate,
     ApprovalStatus,
     OrderStatus,
-    PaymentStatus,
     RefundStatus,
     ReturnStatus,
 )

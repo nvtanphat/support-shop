@@ -8,11 +8,11 @@ Replaces fragile pickle files with transactional database backends:
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Sequence
 import logging
 import os
-from pathlib import Path
 import sqlite3
+from collections.abc import AsyncIterator, Sequence
+from pathlib import Path
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
@@ -47,10 +47,7 @@ class DurableCheckpointer(SqliteSaver):
         else:
             p = Path(storage_path)
             # If a legacy .pkl filename was supplied, use .sqlite sibling
-            if p.suffix == ".pkl":
-                db_file = p.with_suffix(".sqlite")
-            else:
-                db_file = p
+            db_file = p.with_suffix(".sqlite") if p.suffix == ".pkl" else p
 
         db_file.parent.mkdir(parents=True, exist_ok=True)
         # Create persistent connection with WAL mode for high concurrency
@@ -116,12 +113,13 @@ def create_postgres_checkpointer(sync_url: str, force_raise: bool = False) -> Ba
     rather than silently falling back to SQLite.
     """
     try:
-        from langgraph.checkpoint.postgres import PostgresSaver
         import psycopg
+        from langgraph.checkpoint.postgres import PostgresSaver
+        from psycopg.rows import dict_row
 
         # Clean psycopg url: postgresql+psycopg://... -> postgresql://...
         clean_url = sync_url.replace("postgresql+psycopg://", "postgresql://").replace("postgresql+asyncpg://", "postgresql://")
-        conn = psycopg.connect(clean_url, autocommit=True)
+        conn = psycopg.connect(clean_url, autocommit=True, row_factory=dict_row, connect_timeout=3)
         saver = PostgresSaver(conn)
         saver.setup()
         logger.info("Khởi tạo PostgresSaver thành công với kết nối PostgreSQL.")

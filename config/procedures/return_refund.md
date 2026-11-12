@@ -7,7 +7,7 @@
    - Tình trạng bao bì và hàng hóa.
 2. Kiểm tra điều kiện:
    - Gọi `check_return_eligibility`.
-   - Nếu không đủ điều kiện (quá hạn, hàng final_sale, mở niêm phong mỹ phẩm...): Giải thích rõ lý do kèm mã điều khoản chính sách.
+   - Nếu không đủ điều kiện (quá hạn 7 ngày đổi ý, hàng loại trừ đồ lót/vệ sinh cá nhân hygiene, hàng final_sale, mở niêm phong mỹ phẩm...): BẮT BUỘC gọi `search_policy` tra cứu và trích dẫn rõ mã điều khoản tương ứng (ví dụ `[POL-RETURN-02]` cho đổi ý quá 7 ngày, `[POL-RETURN-03]` cho danh mục loại trừ đồ lót/vệ sinh cá nhân).
    - Nếu đủ điều kiện:
      - Nêu rõ số tiền hoàn ước tính (đã trừ phí chiều về 30.000 đ nếu đổi ý, hoặc phân bổ giảm giá nếu có voucher).
      - Nêu rõ nếu lý do yêu cầu bằng chứng (ảnh/video).

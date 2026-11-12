@@ -8,11 +8,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import hashlib
 import random
-from typing import Any
 import uuid
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,7 +85,7 @@ async def _enforce_db_rate_limit(
         # Ensure latest_record.created_at is timezone-aware
         created_at = latest_record.created_at
         if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
+            created_at = created_at.replace(tzinfo=UTC)
         elapsed = (now_dt - created_at).total_seconds()
         if elapsed < _COOLDOWN_SECONDS:
             remaining = int(_COOLDOWN_SECONDS - elapsed)
@@ -112,7 +113,7 @@ async def request_guest_verification(
     clock = get_clock()
     now_dt = clock.now()
     if now_dt.tzinfo is None:
-        now_dt = now_dt.replace(tzinfo=timezone.utc)
+        now_dt = now_dt.replace(tzinfo=UTC)
 
     clean_req_phone = req.phone.strip().replace(" ", "").replace("-", "")
     phone_hash = _hash_value(clean_req_phone)
@@ -196,7 +197,7 @@ async def verify_guest_otp(
     clock = get_clock()
     now_dt = clock.now()
     if now_dt.tzinfo is None:
-        now_dt = now_dt.replace(tzinfo=timezone.utc)
+        now_dt = now_dt.replace(tzinfo=UTC)
 
     try:
         v_uuid = uuid.UUID(verification_id)
@@ -204,7 +205,7 @@ async def verify_guest_otp(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Phiên xác minh không hợp lệ.",
-        )
+        ) from None
 
     # Query record from DB
     stmt = select(GuestVerificationModel).where(GuestVerificationModel.id == v_uuid)
@@ -227,7 +228,7 @@ async def verify_guest_otp(
     # 2. Expiry Check
     rec_exp = record.expires_at
     if rec_exp.tzinfo is None:
-        rec_exp = rec_exp.replace(tzinfo=timezone.utc)
+        rec_exp = rec_exp.replace(tzinfo=UTC)
 
     if now_dt > rec_exp:
         await session.delete(record)

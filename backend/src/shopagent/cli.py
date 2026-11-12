@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
 import sys
+from datetime import datetime
+
 import click
 
-from shopagent.core.clock import get_clock
-from shopagent.core.logging import setup_logging
 from shopagent.domain.seeder import generate_seed_data
 from shopagent.domain.verifier import verify_dataset
 from shopagent.infra.db.session import async_engine, async_session_factory

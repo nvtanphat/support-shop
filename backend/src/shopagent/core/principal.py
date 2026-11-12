@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum
 import uuid
+from dataclasses import dataclass, field
+from enum import StrEnum
 
 
-class PrincipalRole(str, Enum):
+class PrincipalRole(StrEnum):
     GUEST = "guest"
     CUSTOMER = "customer"
     STAFF_AGENT = "agent"

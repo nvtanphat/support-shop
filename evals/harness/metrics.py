@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
 from evals.harness.models import ScenarioRunResult
 
 
@@ -39,7 +40,7 @@ def compute_eval_metrics(
         if k > runs_per_scenario:
             continue
         passed_all_k = 0
-        for scenario_id, runs in all_runs.items():
+        for _scenario_id, runs in all_runs.items():
             if all(r.passed for r in runs[:k]):
                 passed_all_k += 1
         pass_k_rates[k] = (passed_all_k / total_scenarios) * 100.0

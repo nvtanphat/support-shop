@@ -7,28 +7,21 @@ Deterministic by seed and relative to specified reference timestamp (--now).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 import random
-from typing import Any
 import uuid
+from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.core.ids import (
-    generate_order_code,
-    generate_refund_code,
-    generate_return_code,
     generate_uuid,
 )
 from shopagent.core.security import hash_password
 from shopagent.domain.models.enums import (
-    ApprovalGate,
-    ApprovalStatus,
     OrderStatus,
     PaymentMethod,
     PaymentStatus,
     ProductCategory,
-    RefundStatus,
     ReturnFlag,
     ReturnReason,
     ReturnResolution,
@@ -36,19 +29,13 @@ from shopagent.domain.models.enums import (
 )
 from shopagent.domain.policies.refund_calc import calculate_allocated_discounts
 from shopagent.infra.db.tables import (
-    ApprovalRequestModel,
     CustomerCredentialsModel,
     CustomerModel,
     OrderItemModel,
     OrderModel,
-    PaymentModel,
     ProductModel,
     ProductVariantModel,
-    RefundModel,
-    ReturnItemModel,
     ReturnRequestModel,
-    ShipmentEventModel,
-    ShipmentModel,
     StaffUserModel,
 )
 
@@ -227,13 +214,13 @@ async def generate_seed_data(
         selected_vars = [rng.choice(variants) for _ in range(item_count)]
         qtys = [rng.randint(1, 2) for _ in range(item_count)]
 
-        subtotal = sum(v.price * q for v, q in zip(selected_vars, qtys))
+        subtotal = sum(v.price * q for v, q in zip(selected_vars, qtys, strict=False))
         discount_total = rng.choice([0, 20000, 50000]) if subtotal > 200000 else 0
         shipping_fee = 0 if subtotal >= 500000 else 30000
         total = subtotal - discount_total + shipping_fee
 
         # Compute allocated discounts ensuring exact equality: sum == discount_total
-        items_dict = [{"unit_price": v.price, "qty": q} for v, q in zip(selected_vars, qtys)]
+        items_dict = [{"unit_price": v.price, "qty": q} for v, q in zip(selected_vars, qtys, strict=False)]
         allocated = calculate_allocated_discounts(items_dict, discount_total)
 
         # Payment status
@@ -271,7 +258,7 @@ async def generate_seed_data(
         orders.append(order)
         session.add(order)
 
-        for v, q, alloc in zip(selected_vars, qtys, allocated):
+        for v, q, alloc in zip(selected_vars, qtys, allocated, strict=False):
             it = OrderItemModel(
                 id=generate_uuid(),
                 order_id=order.id,

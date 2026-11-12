@@ -2,36 +2,33 @@
 
 import asyncio
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
+
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
-from sqlalchemy.pool import StaticPool
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
 from shopagent.api.app import app
 from shopagent.api.deps import get_db_session
 from shopagent.core.clock import get_clock
-from shopagent.core.principal import Principal
 from shopagent.core.security import create_access_token
 from shopagent.infra.db.tables import (
     Base,
     ConversationEventModel,
-    ConversationModel,
     CustomerModel,
-    CustomerCredentialsModel,
     MessageModel,
     OrderModel,
+    OutboxEventModel,
     PendingActionModel,
     RefundModel,
-    OutboxEventModel,
 )
 from shopagent.infra.worker.outbox_worker import process_outbox_batch
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 
 @pytest.fixture
 async def res_session_factory():
-    now = get_clock().now()
+    get_clock().now()
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},

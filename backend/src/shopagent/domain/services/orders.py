@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 from typing import Any
-import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.core.errors import ForbiddenError, NotFoundError
 from shopagent.core.principal import Principal
-from shopagent.core.security import mask_phone
 from shopagent.domain.models.enums import OrderStatus
-from shopagent.infra.carriers.port import CarrierPort, ShipmentTrackingInfo
+from shopagent.infra.carriers.port import CarrierPort
 from shopagent.infra.db.repositories.order_repo import OrderRepository
-from shopagent.infra.db.tables import OrderModel
 
 
 class OrderService:

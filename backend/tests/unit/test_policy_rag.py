@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import re
+from pathlib import Path
+
 import pytest
 import yaml
-
 from shopagent.core.config import get_rules_config
 from shopagent.rag.chunker import remove_vietnamese_accents
 from shopagent.rag.generator import _CLAUSE_TEMPLATES, generate_policy_clauses
@@ -98,9 +98,9 @@ async def test_policy_retrieval_benchmark_r1_and_r2():
 @pytest.mark.asyncio
 async def test_policy_indexing_and_db_retrieval():
     """Verify end-to-end indexing into database and retrieval from DB."""
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
     from shopagent.infra.db.tables import Base
     from shopagent.rag.indexer import index_policies
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:

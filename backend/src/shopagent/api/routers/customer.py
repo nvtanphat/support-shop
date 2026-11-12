@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+import contextlib
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shopagent.api.deps import get_current_principal, get_db_session, require_authenticated
 from shopagent.core.errors import AppError, ForbiddenError, NotFoundError
 from shopagent.core.principal import Principal
+from shopagent.domain.models.enums import OrderStatus
 from shopagent.domain.services.orders import OrderService
 from shopagent.infra.db.tables import RefundModel, ReturnRequestModel, TicketModel
 
@@ -27,13 +29,13 @@ async def get_order_by_code(
     clean_code = code.strip().upper()
     try:
         return await order_service.get_order_for_principal(principal, order_code=clean_code)
-    except ForbiddenError as e:
+    except ForbiddenError:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Bạn không có quyền truy cập thông tin đơn hàng này. Vui lòng xác thực OTP qua số điện thoại mua hàng hoặc đăng nhập.",
-        )
+        ) from None
     except NotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
 
 
 @router.get("/me/orders")
@@ -45,7 +47,11 @@ async def get_my_orders(
 ):
     """List authenticated customer orders."""
     order_service = OrderService(session)
-    orders = await order_service.list_orders_for_principal(principal, status=status, limit=limit)
+    status_enum = None
+    if status:
+        with contextlib.suppress(ValueError):
+            status_enum = OrderStatus(status.lower())
+    orders = await order_service.list_orders_for_principal(principal, status=status_enum, limit=limit)
     return {"orders": orders, "count": len(orders)}
 
 
@@ -60,7 +66,7 @@ async def get_my_order_detail(
     try:
         return await order_service.get_order_for_principal(principal, order_code=code)
     except AppError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
 
 
 @router.get("/me/cases")

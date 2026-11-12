@@ -9,16 +9,12 @@ Section 14.3 Requirement:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 import uuid
-from zoneinfo import ZoneInfo
-import pytest
+from datetime import datetime
 
 from shopagent.core.clock import (
     STORE_TIMEZONE,
-    Clock,
     compute_deadline_days_end_of_day,
-    get_shop_timezone,
     to_utc,
 )
 from shopagent.domain.models.entities import Order, OrderItem

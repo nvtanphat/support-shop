@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from typing import Any
+
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from shopagent.agent.checkpoint import get_default_checkpointer

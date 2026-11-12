@@ -1,30 +1,23 @@
 """Unit tests for shopagent.core modules."""
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
-import pytest
 
 from shopagent.core.clock import (
-    Clock,
     STORE_TIMEZONE,
     compute_deadline_days_end_of_day,
 )
 from shopagent.core.ids import (
     generate_order_code,
-    generate_return_code,
-    generate_refund_code,
-    generate_crockford_code,
-)
-from shopagent.core.security import (
-    compute_preview_hash,
-    mask_phone,
-    mask_email,
-    mask_pii_text,
-    sanitize_markdown_links,
-    hash_password,
-    verify_password,
 )
 from shopagent.core.principal import Principal, PrincipalRole
+from shopagent.core.security import (
+    compute_preview_hash,
+    hash_password,
+    mask_email,
+    mask_phone,
+    mask_pii_text,
+    verify_password,
+)
 
 
 def test_clock_deadline_end_of_local_day() -> None:

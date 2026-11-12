@@ -163,7 +163,11 @@ class ApiClient {
     }>(`/orders/${encodeURIComponent(orderCode)}`);
   }
 
-  async sendMessage(conversationId: string, content: string) {
+  async sendMessage(conversationId: string, content: string, turnId?: string) {
+    const headers: Record<string, string> = {};
+    if (turnId) {
+      headers['X-Idempotency-Key'] = turnId;
+    }
     const res = await this.request<{
       status: string;
       verified_output?: string;
@@ -175,7 +179,8 @@ class ApiClient {
       message?: string;
     }>(`/conversations/${conversationId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content }),
+      headers,
+      body: JSON.stringify({ content, idempotency_key: turnId }),
     });
     return {
       ...res,

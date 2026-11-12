@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Any
-import uuid
+
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.core.clock import get_clock
-from shopagent.core.errors import AppError, ForbiddenError, NotFoundError
+from shopagent.core.errors import AppError, ForbiddenError
 from shopagent.core.principal import Principal
 from shopagent.domain.policies.rules import PolicyRules
 from shopagent.domain.services.actions import ActionService
@@ -19,9 +20,7 @@ from shopagent.domain.services.cancellations import CancellationService
 from shopagent.domain.services.orders import OrderService
 from shopagent.domain.services.returns import ReturnService
 from shopagent.domain.services.tickets import TicketService
-from shopagent.rag.retriever import HybridRetriever
 from shopagent.infra.db.tables import (
-    OrderItemModel,
     OrderModel,
     ProductVariantModel,
     RefundModel,
@@ -30,6 +29,7 @@ from shopagent.infra.db.tables import (
     ShipmentModel,
     TicketModel,
 )
+from shopagent.rag.retriever import HybridRetriever
 
 
 # -------------------------------------------------------------------------
@@ -104,10 +104,10 @@ def create_tools(
     order_service = OrderService(session)
     return_service = ReturnService(session)
     cancellation_service = CancellationService(session)
-    action_service = ActionService(session)
+    ActionService(session)
     ticket_service = TicketService(session)
-    policy_rules = PolicyRules()
-    clock = get_clock()
+    PolicyRules()
+    get_clock()
     retriever = HybridRetriever(session)
 
     # Tool 1: search_policy
@@ -228,9 +228,9 @@ def create_tools(
         if case_code:
             code_upper = case_code.strip().upper()
             if code_upper.startswith("RT-"):
-                stmt = select(ReturnRequestModel).where(ReturnRequestModel.code == code_upper)
-                res = await session.execute(stmt)
-                ret = res.scalar_one_or_none()
+                stmt_ret = select(ReturnRequestModel).where(ReturnRequestModel.code == code_upper)
+                res_ret = await session.execute(stmt_ret)
+                ret = res_ret.scalar_one_or_none()
                 if ret:
                     if not principal.can_access_order(ret.customer_id, ret.order_id):
                         return {"error_code": "ORDER_ACCESS_DENIED", "message": "Bạn không có quyền truy cập yêu cầu đổi trả này."}
@@ -243,9 +243,9 @@ def create_tools(
                         "deadline_ship_back": ret.deadline_ship_back.isoformat() if ret.deadline_ship_back else None,
                     }
             elif code_upper.startswith("RF-"):
-                stmt = select(RefundModel).where(RefundModel.code == code_upper)
-                res = await session.execute(stmt)
-                rf = res.scalar_one_or_none()
+                stmt_rf = select(RefundModel).where(RefundModel.code == code_upper)
+                res_rf = await session.execute(stmt_rf)
+                rf = res_rf.scalar_one_or_none()
                 if rf:
                     order = await session.get(OrderModel, rf.order_id)
                     if not order or not principal.can_access_order(order.customer_id, order.id):
@@ -258,9 +258,9 @@ def create_tools(
                         "created_at": rf.created_at.isoformat(),
                     }
             elif code_upper.startswith("TK-"):
-                stmt = select(TicketModel).where(TicketModel.code == code_upper)
-                res = await session.execute(stmt)
-                tk = res.scalar_one_or_none()
+                stmt_tk = select(TicketModel).where(TicketModel.code == code_upper)
+                res_tk = await session.execute(stmt_tk)
+                tk = res_tk.scalar_one_or_none()
                 if tk:
                     is_allowed = (
                         principal.is_staff
@@ -279,9 +279,9 @@ def create_tools(
 
         # If no code, list active cases for customer
         if principal.is_authenticated_customer:
-            stmt = select(ReturnRequestModel).where(ReturnRequestModel.customer_id == principal.customer_id)
-            res = await session.execute(stmt)
-            returns = res.scalars().all()
+            stmt_all_ret = select(ReturnRequestModel).where(ReturnRequestModel.customer_id == principal.customer_id)
+            res_all_ret = await session.execute(stmt_all_ret)
+            returns = res_all_ret.scalars().all()
             return {
                 "active_returns": [{"code": r.code, "status": r.status, "reason": r.reason_code} for r in returns]
             }
@@ -425,7 +425,7 @@ def create_tools(
     t_escalate = StructuredTool.from_function(
         coroutine=escalate_to_human,
         name="escalate_to_human",
-        description="Chuyển cuộc trò chuyện cho nhân viên chăm sóc khách hàng.",
+        description="Bắt buộc gọi công cụ này để tạo Ticket trong cơ sở dữ liệu khi khách báo sự cố thanh toán (trừ tiền 2 lần, không có đơn), khiếu nại tranh chấp hoặc yêu cầu gặp nhân viên hỗ trợ trực tiếp.",
         args_schema=EscalateToHumanInput,
     )
 

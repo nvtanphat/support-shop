@@ -3,20 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+import contextlib
 import sys
+from pathlib import Path
 from typing import Any
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 import yaml
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Windows event loop fix for async psycopg/asyncpg
 if sys.platform == "win32":
-    try:
+    with contextlib.suppress(Exception):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    except Exception:
-        pass
 
 
 def _find_project_root() -> Path:

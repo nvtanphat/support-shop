@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
+
 from langchain_core.messages import AIMessage
 
 from shopagent.agent.state import AgentState

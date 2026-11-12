@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
 import logging
-import traceback
+from datetime import timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 

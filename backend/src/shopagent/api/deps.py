@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import AsyncGenerator
 import uuid
+from collections.abc import AsyncGenerator
+
 from fastapi import Depends, Header, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shopagent.core.errors import AppError, AuthenticationError, ForbiddenError
 from shopagent.core.principal import Principal, PrincipalRole
 from shopagent.core.security import decode_access_token
 from shopagent.infra.db.session import async_session_factory
@@ -65,7 +65,7 @@ async def get_current_principal(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token không hợp lệ hoặc đã hết hạn.",
-            )
+            ) from None
 
     # Guest session fallback (header or query)
     effective_guest_token = guest_token or query_guest_token

@@ -2,21 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.core.clock import get_clock
-from shopagent.core.errors import ForbiddenError, NotFoundError, ValidationError
+from shopagent.core.errors import ForbiddenError, NotFoundError
 from shopagent.core.principal import Principal, PrincipalRole
 from shopagent.domain.state_machines import transition_conversation_mode
 from shopagent.infra.db.repositories.audit_repo import AuditRepository
 from shopagent.infra.db.repositories.conversation_repo import ConversationRepository
 from shopagent.infra.db.repositories.outbox_repo import OutboxRepository
 from shopagent.infra.db.tables import (
-    ConversationEventModel,
     ConversationModel,
     MessageModel,
 )

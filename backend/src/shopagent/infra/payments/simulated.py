@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import secrets
-from typing import Any
 
 from shopagent.infra.payments.port import PaymentGatewayPort, PaymentResult
 

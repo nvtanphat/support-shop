@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from typing import Any
+
 import jinja2
 
 from shopagent.core.config import get_rules_config
-
 
 _CLAUSE_TEMPLATES: list[dict[str, Any]] = [
     {

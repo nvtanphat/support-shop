@@ -1,13 +1,12 @@
 """Unit tests for domain policies, calculations, risk rules, and state machines."""
 
-from datetime import datetime, timedelta
 import uuid
-from zoneinfo import ZoneInfo
-import pytest
+from datetime import datetime, timedelta
 
+import pytest
 from shopagent.core.clock import STORE_TIMEZONE
 from shopagent.core.errors import ConflictError
-from shopagent.domain.models.entities import Customer, Order, OrderItem
+from shopagent.domain.models.entities import Order, OrderItem
 from shopagent.domain.models.enums import (
     ApprovalGate,
     OrderStatus,

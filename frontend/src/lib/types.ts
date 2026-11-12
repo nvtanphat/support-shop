@@ -15,6 +15,7 @@ export interface Message {
   citations: string[];
   author_staff_id?: string | null;
   created_at?: string;
+  turn_id?: string;
 }
 
 export interface PendingAction {

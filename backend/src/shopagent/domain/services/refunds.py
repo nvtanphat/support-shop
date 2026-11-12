@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
 import uuid
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,12 +11,10 @@ from shopagent.core.clock import get_clock
 from shopagent.core.errors import ConflictError, NotFoundError, ValidationError
 from shopagent.core.ids import generate_refund_code, generate_uuid
 from shopagent.domain.models.enums import (
-    ApprovalStatus,
     PaymentStatus,
     RefundStatus,
 )
 from shopagent.domain.state_machines import (
-    transition_order_status,
     transition_refund_status,
 )
 from shopagent.infra.db.repositories.approval_repo import ApprovalRepository
@@ -25,7 +22,7 @@ from shopagent.infra.db.repositories.audit_repo import AuditRepository
 from shopagent.infra.db.repositories.order_repo import OrderRepository
 from shopagent.infra.db.repositories.outbox_repo import OutboxRepository
 from shopagent.infra.db.repositories.refund_repo import RefundRepository
-from shopagent.infra.db.tables import ApprovalRequestModel, OrderModel, RefundModel
+from shopagent.infra.db.tables import RefundModel
 from shopagent.infra.payments.port import PaymentGatewayPort
 
 
@@ -147,12 +144,14 @@ class RefundService:
         # Sum of other processing/succeeded refunds + this refund <= paid_amount
         current_refunded = await self.refund_repo.get_total_refunded_for_order(order.id)
         # If this refund was already in processing, don't double count
-        if refund.status not in (RefundStatus.PROCESSING.value, RefundStatus.SUCCEEDED.value):
-            if current_refunded + refund.amount > order.paid_amount:
-                raise ValidationError(
-                    f"Khoản hoàn tiền ({refund.amount} đ) sẽ làm vượt quá số tiền đã thanh toán ({order.paid_amount} đ).",
-                    error_code="REFUND_EXCEEDS_PAID_AMOUNT",
-                )
+        if (
+            refund.status not in (RefundStatus.PROCESSING.value, RefundStatus.SUCCEEDED.value)
+            and current_refunded + refund.amount > order.paid_amount
+        ):
+            raise ValidationError(
+                f"Khoản hoàn tiền ({refund.amount} đ) sẽ làm vượt quá số tiền đã thanh toán ({order.paid_amount} đ).",
+                error_code="REFUND_EXCEEDS_PAID_AMOUNT",
+            )
 
         # Transition to processing
         prev_status = refund.status

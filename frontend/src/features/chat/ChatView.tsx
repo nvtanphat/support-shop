@@ -113,14 +113,41 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
           content: data.content || '',
           citations: data.citations || [],
           created_at: new Date().toISOString(),
+          turn_id: data.turn_id,
         };
         setMessages((prev) => {
+          // 1. Exact ID duplicate check
           if (newMsg.id && prev.some((m) => m.id === newMsg.id)) {
             return prev;
           }
+          // 2. Turn ID match: upgrade optimistic assistant message to canonical message
+          if (newMsg.turn_id && prev.some((m) => m.turn_id === newMsg.turn_id && m.role === 'assistant')) {
+            return prev.map((m) =>
+              m.turn_id === newMsg.turn_id && m.role === 'assistant' ? { ...newMsg } : m
+            );
+          }
+          // 3. Content match for pending assistant message in current turn
+          if (
+            prev.some(
+              (m) =>
+                m.role === 'assistant' &&
+                m.id.startsWith('asst-') &&
+                m.content.trim() === newMsg.content.trim()
+            )
+          ) {
+            return prev.map((m) =>
+              m.role === 'assistant' &&
+              m.id.startsWith('asst-') &&
+              m.content.trim() === newMsg.content.trim()
+                ? { ...newMsg }
+                : m
+            );
+          }
+          // 4. Sequence number duplicate check
           if (newMsg.seq && prev.some((m) => m.seq === newMsg.seq && m.role === newMsg.role)) {
             return prev;
           }
+          // 5. Fallback: replace trailing optimistic assistant message
           const lastIdx = prev.length - 1;
           if (lastIdx >= 0 && prev[lastIdx].id.startsWith('asst-') && prev[lastIdx].role === 'assistant') {
             const updated = [...prev];
@@ -164,15 +191,17 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
   const executeSendMessage = async (text: string) => {
     if (!text.trim() || loading) return;
 
+    const turnId = `turn-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const userText = text.trim();
     setInput('');
     const tempUserMsg: Message = {
-      id: `temp-${Date.now()}`,
+      id: `temp-${turnId}`,
       seq: messages.length + 1,
       role: 'customer',
       content: userText,
       citations: [],
       created_at: new Date().toISOString(),
+      turn_id: turnId,
     };
     setMessages((prev) => [...prev, tempUserMsg]);
     setLoading(true);
@@ -184,19 +213,26 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
     }
 
     try {
-      const res = await api.sendMessage(conversationId, userText);
+      const res = await api.sendMessage(conversationId, userText, turnId);
       if (res.assistant_message) {
         const assistantMsg: Message = {
-          id: `asst-${Date.now()}`,
+          id: `asst-${turnId}`,
           seq: messages.length + 2,
           role: 'assistant',
           content: res.assistant_message,
           citations: res.citations || [],
           created_at: new Date().toISOString(),
+          turn_id: turnId,
         };
         setMessages((prev) => {
-          const lastMsg = prev[prev.length - 1];
-          if (lastMsg && lastMsg.role === 'assistant' && lastMsg.content === assistantMsg.content) {
+          // If SSE already added the assistant message with this turn_id or identical content:
+          if (
+            prev.some(
+              (m) =>
+                m.role === 'assistant' &&
+                (m.turn_id === turnId || m.content.trim() === assistantMsg.content.trim())
+            )
+          ) {
             return prev;
           }
           return [...prev, assistantMsg];

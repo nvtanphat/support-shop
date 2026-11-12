@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -49,12 +50,18 @@ class ConversationRepository:
         citations: list[str] | None = None,
         author_staff_id: uuid.UUID | None = None,
     ) -> MessageModel:
-        # Determine next seq
-        stmt = select(func.coalesce(func.max(MessageModel.seq), 0)).where(
-            MessageModel.conversation_id == conversation_id
-        )
-        res = await self.session.execute(stmt)
-        next_seq = int(res.scalar_one()) + 1
+        conv_stmt = select(ConversationModel).where(ConversationModel.id == conversation_id).with_for_update()
+        conv_res = await self.session.execute(conv_stmt)
+        conv = conv_res.scalar_one_or_none()
+        if conv:
+            conv.last_message_seq += 1
+            next_seq = conv.last_message_seq
+        else:
+            stmt = select(func.coalesce(func.max(MessageModel.seq), 0)).where(
+                MessageModel.conversation_id == conversation_id
+            )
+            res = await self.session.execute(stmt)
+            next_seq = int(res.scalar_one()) + 1
 
         msg = MessageModel(
             id=generate_uuid(),
@@ -72,11 +79,18 @@ class ConversationRepository:
     async def add_event(
         self, conversation_id: uuid.UUID, event_type: str, payload: dict
     ) -> ConversationEventModel:
-        stmt = select(func.coalesce(func.max(ConversationEventModel.seq), 0)).where(
-            ConversationEventModel.conversation_id == conversation_id
-        )
-        res = await self.session.execute(stmt)
-        next_seq = int(res.scalar_one()) + 1
+        conv_stmt = select(ConversationModel).where(ConversationModel.id == conversation_id).with_for_update()
+        conv_res = await self.session.execute(conv_stmt)
+        conv = conv_res.scalar_one_or_none()
+        if conv:
+            conv.last_event_seq += 1
+            next_seq = conv.last_event_seq
+        else:
+            stmt = select(func.coalesce(func.max(ConversationEventModel.seq), 0)).where(
+                ConversationEventModel.conversation_id == conversation_id
+            )
+            res = await self.session.execute(stmt)
+            next_seq = int(res.scalar_one()) + 1
 
         event = ConversationEventModel(
             id=generate_uuid(),
@@ -86,14 +100,6 @@ class ConversationRepository:
             payload=payload,
         )
         self.session.add(event)
-
-        # Update last_event_seq on conversation
-        conv_stmt = select(ConversationModel).where(ConversationModel.id == conversation_id)
-        conv_res = await self.session.execute(conv_stmt)
-        conv = conv_res.scalar_one_or_none()
-        if conv:
-            conv.last_event_seq = next_seq
-
         await self.session.flush()
         return event
 

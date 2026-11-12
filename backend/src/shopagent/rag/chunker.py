@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Any
 import uuid
-
-from shopagent.rag.generator import generate_policy_clauses
+from typing import Any
 
 
 def remove_vietnamese_accents(text: str) -> str:

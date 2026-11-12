@@ -6,6 +6,7 @@ import asyncio
 import logging
 import signal
 import sys
+from typing import Any
 
 from shopagent.core.logging import setup_logging
 from shopagent.infra.db.session import async_session_factory
@@ -20,9 +21,10 @@ async def main() -> None:
     setup_logging()
     logger.info("Initializing shop-support-agent worker process...")
 
-    dispatcher = OutboxDispatcher(session_factory=async_session_factory, poll_interval_seconds=1.0)
-    scheduler = BackgroundScheduler(session_factory=async_session_factory, interval_seconds=30.0)
-    reconciler = PaymentReconciler(session_factory=async_session_factory, interval_seconds=300.0)
+    sf: Any = async_session_factory
+    dispatcher = OutboxDispatcher(session_factory=sf, poll_interval_seconds=1.0)
+    scheduler = BackgroundScheduler(session_factory=sf, interval_seconds=30.0)
+    reconciler = PaymentReconciler(session_factory=sf, interval_seconds=300.0)
 
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()

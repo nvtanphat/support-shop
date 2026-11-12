@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
 import uuid
+from typing import Any
+
 from langchain_core.runnables import RunnableConfig
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.agent.state import AgentState
 from shopagent.core.clock import get_clock
@@ -15,8 +16,8 @@ from shopagent.infra.db.tables import CustomerModel, OrderModel, PendingActionMo
 
 async def load_context_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
     """Load dynamic facts (Principal, tier, pending actions, recent orders, clock)."""
-    session: AsyncSession = config.get("configurable", {}).get("session")
-    if not session:
+    session = config.get("configurable", {}).get("session")
+    if not session or not isinstance(session, AsyncSession):
         raise ValueError("AsyncSession must be provided in config['configurable']['session']")
     principal = state.get("principal")
     clock = state.get("clock") or get_clock().now()
@@ -53,7 +54,7 @@ async def load_context_node(state: AgentState, config: RunnableConfig) -> dict[s
                         PendingActionModel.conversation_id == c_uuid,
                         PendingActionModel.status == "proposed",
                     )
-                    .order_by(PendingActionModel.created_at.desc())
+                    .order_by(PendingActionModel.presented_at.desc())
                 )
                 res_act = await session.execute(stmt_act)
                 acts = res_act.scalars().all()

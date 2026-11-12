@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
 import uuid
+from typing import Any
+
 from langchain_core.tools import StructuredTool
 from sqlalchemy.ext.asyncio import AsyncSession
 

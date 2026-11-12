@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
-from typing import Any
 import uuid
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shopagent.api.deps import get_current_principal, get_db_session, require_authenticated
+from shopagent.api.deps import get_db_session, require_authenticated
 from shopagent.api.schemas.models import CancelActionRequest, ConfirmActionRequest
 from shopagent.core.config import PROJECT_ROOT
 from shopagent.core.errors import AppError
@@ -46,7 +46,7 @@ async def confirm_action(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error_code": e.error_code, "message": str(e)},
-        )
+        ) from e
 
 
 @router.post("/actions/{action_id}/cancel")
@@ -71,7 +71,7 @@ async def cancel_action(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error_code": e.error_code, "message": str(e)},
-        )
+        ) from e
 
 
 @router.post("/returns/{code}/evidence")

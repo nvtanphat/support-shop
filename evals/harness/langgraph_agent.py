@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
-import uuid
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from langchain_core.messages import BaseMessage, HumanMessage
 from shopagent.agent.graph import build_agent_graph
 from shopagent.agent.state import AgentState
 from shopagent.core.clock import get_clock
 from shopagent.core.principal import Principal
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class LangGraphAgent:

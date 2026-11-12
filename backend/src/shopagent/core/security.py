@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 import hashlib
 import json
 import re
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-import jwt
 
 _ph = PasswordHasher()
 
@@ -87,10 +87,7 @@ def mask_email(email: str) -> str:
     if len(parts) != 2:
         return "***"
     user, domain = parts
-    if len(user) <= 2:
-        masked_user = f"{user[0]}***"
-    else:
-        masked_user = f"{user[0]}***{user[-1]}"
+    masked_user = f"{user[0]}***" if len(user) <= 2 else f"{user[0]}***{user[-1]}"
     return f"{masked_user}@{domain}"
 
 

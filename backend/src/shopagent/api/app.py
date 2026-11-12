@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import uuid
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -15,10 +16,61 @@ from shopagent.core.errors import AppError
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application startup and shutdown lifespan."""
-    # Startup actions
+    """Application startup and shutdown lifespan with fail-fast health verification."""
+    import logging
+
+    from sqlalchemy import text
+
+    from shopagent.agent.checkpoint import get_default_checkpointer
+    from shopagent.infra.db.session import get_engine
+
+    logger = logging.getLogger("shopagent.startup")
+    settings = get_settings()
+
+    logger.info(
+        "Khởi động ShopSupport AI API: env=%s, mode=%s, llm=%s",
+        settings.ENVIRONMENT,
+        settings.INTEGRATION_MODE,
+        settings.LLM_PRIMARY_MODEL,
+    )
+
+    is_prod = settings.ENVIRONMENT.lower() in ("production", "prod")
+
+    # Production fail-fast checks
+    if is_prod:
+        # 1. Secret validation
+        if not settings.JWT_SECRET or settings.JWT_SECRET.startswith("dev_") or len(settings.JWT_SECRET) < 32:
+            raise RuntimeError(
+                "LỖI KHỞI ĐỘNG PRODUCTION: JWT_SECRET chưa được cấu hình an toàn (yêu cầu tối thiểu 32 ký tự ngẫu nhiên)."
+            )
+
+        # 2. Database connectivity
+        try:
+            engine = get_engine()
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            logger.info("Kết nối cơ sở dữ liệu xác nhận thành công.")
+        except Exception as e:
+            logger.critical("LỖI KHỞI ĐỘNG PRODUCTION: Không thể kết nối cơ sở dữ liệu: %s", e)
+            raise RuntimeError(f"Database connection failed on startup: {e}") from e
+
+        # 3. Checkpointer readiness
+        try:
+            get_default_checkpointer()
+            logger.info("LangGraph Checkpointer xác nhận sẵn sàng.")
+        except Exception as e:
+            logger.critical("LỖI KHỞI ĐỘNG PRODUCTION: Checkpointer thất bại: %s", e)
+            raise RuntimeError(f"Checkpointer initialization failed on startup: {e}") from e
+
     yield
+
     # Shutdown actions
+    try:
+        engine = get_engine()
+        await engine.dispose()
+        logger.info("Đã đóng kết nối database engine an toàn.")
+    except Exception as e:
+        logger.warning("Lỗi đóng database engine: %s", e)
 
 
 def create_app() -> FastAPI:

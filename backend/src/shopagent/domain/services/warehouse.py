@@ -2,31 +2,26 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
-import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.core.clock import get_clock
 from shopagent.core.config import get_rules_config
-from shopagent.core.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
+from shopagent.core.errors import ForbiddenError, NotFoundError
 from shopagent.core.ids import generate_uuid
 from shopagent.core.principal import Principal, PrincipalRole
-from shopagent.domain.models.entities import Customer, Order, OrderItem
+from shopagent.domain.models.entities import Order, OrderItem
 from shopagent.domain.models.enums import (
-    ApprovalGate,
     ApprovalStatus,
     OrderStatus,
     PaymentMethod,
     PaymentStatus,
     ReturnReason,
-    ReturnResolution,
     ReturnStatus,
 )
 from shopagent.domain.policies.engine import determine_refund_approval
 from shopagent.domain.policies.refund_calc import calculate_refund_amount
-from shopagent.domain.policies.risk import evaluate_risk_flags
 from shopagent.domain.policies.rules import PolicyRules
 from shopagent.domain.services.refunds import RefundService
 from shopagent.domain.state_machines import transition_return_status
@@ -35,7 +30,7 @@ from shopagent.infra.db.repositories.audit_repo import AuditRepository
 from shopagent.infra.db.repositories.order_repo import OrderRepository
 from shopagent.infra.db.repositories.outbox_repo import OutboxRepository
 from shopagent.infra.db.repositories.return_repo import ReturnRepository
-from shopagent.infra.db.tables import ApprovalRequestModel, ReturnRequestModel
+from shopagent.infra.db.tables import ApprovalRequestModel, OrderModel, ReturnRequestModel
 
 
 class WarehouseService:
@@ -65,7 +60,7 @@ class WarehouseService:
 
         prev_status = return_req.status
         transition_return_status(return_req, ReturnStatus.RECEIVED.value)
-        return_req.received_at = self.clock.now()
+        return_req.updated_at = self.clock.now()
         await self.return_repo.save(return_req)
 
         await self.audit_repo.log(
@@ -142,7 +137,7 @@ class WarehouseService:
 
         order = await self.order_repo.get_by_id(return_req.order_id)
         if not order:
-            raise NotFoundError(f"Không tìm thấy đơn hàng của yêu cầu trả hàng.", error_code="ORDER_NOT_FOUND")
+            raise NotFoundError("Không tìm thấy đơn hàng của yêu cầu trả hàng.", error_code="ORDER_NOT_FOUND")
 
         all_passed = True
         result_map = {str(it["item_id"]): it for it in items_result}

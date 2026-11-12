@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import uuid
+
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
 from shopagent.api.app import app
 from shopagent.api.deps import get_db_session
 from shopagent.core.security import hash_password
@@ -20,6 +19,7 @@ from shopagent.infra.db.tables import (
     ProductVariantModel,
     StaffUserModel,
 )
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
 @pytest.fixture
@@ -205,7 +205,7 @@ async def test_guest_otp_flow(test_app_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_otp_rate_limiting_and_brute_force_protection(test_app_client: AsyncClient):
     """Test cooldown rate limiting and brute force cancellation."""
-    from shopagent.api.routers.guest import _RATE_LIMIT_STORE, _GUEST_VERIFICATIONS
+    from shopagent.api.routers.guest import _GUEST_VERIFICATIONS, _RATE_LIMIT_STORE
     _RATE_LIMIT_STORE.clear()
     _GUEST_VERIFICATIONS.clear()
 
@@ -224,7 +224,7 @@ async def test_otp_rate_limiting_and_brute_force_protection(test_app_client: Asy
 
     # Brute force test: try wrong OTP 5 times -> gets locked with 429
     v_id = res1.json()["verification_id"]
-    for i in range(4):
+    for _i in range(4):
         r = await test_app_client.post(f"/guest/verifications/{v_id}/otp", json={"otp": "000000"})
         assert r.status_code == 400
 

@@ -1,9 +1,9 @@
 """Domain enumeration types."""
 
-from enum import Enum
+from enum import StrEnum
 
 
-class OrderStatus(str, Enum):
+class OrderStatus(StrEnum):
     PENDING_PAYMENT = "pending_payment"
     CONFIRMED = "confirmed"
     PAID = "confirmed"
@@ -21,21 +21,21 @@ class OrderStatus(str, Enum):
     PARTIALLY_RETURNED = "delivered"
 
 
-class PaymentMethod(str, Enum):
+class PaymentMethod(StrEnum):
     COD = "cod"
     BANK_TRANSFER = "bank_transfer"
     EWALLET = "ewallet"
     CARD = "card"
 
 
-class PaymentStatus(str, Enum):
+class PaymentStatus(StrEnum):
     UNPAID = "unpaid"
     PAID = "paid"
     PARTIALLY_REFUNDED = "partially_refunded"
     REFUNDED = "refunded"
 
 
-class ReturnReason(str, Enum):
+class ReturnReason(StrEnum):
     DEFECTIVE = "defective"
     DAMAGED_IN_TRANSIT = "damaged_in_transit"
     WRONG_ITEM = "wrong_item"
@@ -44,12 +44,12 @@ class ReturnReason(str, Enum):
     CHANGE_OF_MIND = "change_of_mind"
 
 
-class ReturnResolution(str, Enum):
+class ReturnResolution(StrEnum):
     REFUND = "refund"
     EXCHANGE = "exchange"
 
 
-class ReturnStatus(str, Enum):
+class ReturnStatus(StrEnum):
     REQUESTED = "requested"
     PENDING_REVIEW = "pending_review"
     APPROVED = "approved"
@@ -66,7 +66,7 @@ class ReturnStatus(str, Enum):
     CLOSED = "closed"
 
 
-class RefundStatus(str, Enum):
+class RefundStatus(StrEnum):
     CREATED = "created"
     PENDING_APPROVAL = "pending_approval"
     APPROVED = "approved"
@@ -76,24 +76,24 @@ class RefundStatus(str, Enum):
     REJECTED = "rejected"
 
 
-class ApprovalGate(str, Enum):
+class ApprovalGate(StrEnum):
     A_RETURN = "A_return"
     B_REFUND = "B_refund"
     CANCEL_PACKING = "cancel_packing"
 
 
-class ApprovalStatus(str, Enum):
+class ApprovalStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
 
 
-class PendingActionType(str, Enum):
+class PendingActionType(StrEnum):
     CANCEL_ORDER = "cancel_order"
     RETURN_REQUEST = "return_request"
 
 
-class PendingActionStatus(str, Enum):
+class PendingActionStatus(StrEnum):
     PROPOSED = "proposed"
     CONFIRMED = "confirmed"
     CANCELLED = "cancelled"
@@ -101,35 +101,35 @@ class PendingActionStatus(str, Enum):
     FAILED = "failed"
 
 
-class TicketPriority(str, Enum):
+class TicketPriority(StrEnum):
     LOW = "low"
     NORMAL = "normal"
     HIGH = "high"
     URGENT = "urgent"
 
 
-class TicketStatus(str, Enum):
+class TicketStatus(StrEnum):
     OPEN = "open"
     ASSIGNED = "assigned"
     RESOLVED = "resolved"
     CLOSED = "closed"
 
 
-class ConversationMode(str, Enum):
+class ConversationMode(StrEnum):
     AI = "ai"
     WAITING_HUMAN = "waiting_human"
     HUMAN = "human"
     CLOSED = "closed"
 
 
-class OutboxStatus(str, Enum):
+class OutboxStatus(StrEnum):
     PENDING = "pending"
     PROCESSING = "processing"
     PUBLISHED = "published"
     FAILED = "failed"
 
 
-class ProductCategory(str, Enum):
+class ProductCategory(StrEnum):
     FASHION = "fashion"
     APPAREL = "fashion"
     FOOTWEAR = "fashion"
@@ -142,7 +142,7 @@ class ProductCategory(str, Enum):
     FOOD_PERISHABLE = "home_living"
 
 
-class ReturnFlag(str, Enum):
+class ReturnFlag(StrEnum):
     FINAL_SALE = "final_sale"
     HYGIENE = "hygiene"
     SEALED_COSMETIC = "sealed_cosmetic"

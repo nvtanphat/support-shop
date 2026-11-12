@@ -1,6 +1,5 @@
 """Identifier generators: UUIDv7 and Crockford Base32 readable non-sequential codes."""
 
-import os
 import secrets
 import uuid
 
@@ -43,5 +42,7 @@ def generate_uuid() -> uuid.UUID:
     Uses uuid7 if available in Python 3.14+, otherwise standard uuid4.
     """
     if hasattr(uuid, "uuid7"):
-        return uuid.uuid7()
+        u7 = uuid.uuid7()
+        if isinstance(u7, uuid.UUID):
+            return u7
     return uuid.uuid4()

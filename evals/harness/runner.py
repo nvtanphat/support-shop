@@ -3,48 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
-import uuid
-import yaml
-from sqlalchemy.ext.asyncio import AsyncSession
-from zoneinfo import ZoneInfo
 
-from evals.harness.graders import (
-    check_safety_invariants,
-    grade_db_state,
-    grade_forbidden_patterns,
-    grade_required_facts,
-)
-from evals.harness.metrics import EvalSummary, compute_eval_metrics
-from evals.harness.models import (
-    ForbiddenPattern,
-    RequiredFact,
-    Scenario,
-    ScenarioExpectation,
-    ScenarioFixtureItem,
-    ScenarioFixtureOrder,
-    ScenarioRunResult,
-    ScriptStep,
-    StaffAction,
-    UserScript,
-)
-from evals.harness.langgraph_agent import LangGraphAgent
-from evals.harness.null_agent import NullAgent
-from evals.harness.oracle_agent import OracleAgent
-from evals.harness.scripted_user import ScriptedUser
-from evals.harness.staff_actor import StaffActor
+import yaml
 from shopagent.core.clock import Clock, set_global_clock
-from shopagent.core.principal import Principal, PrincipalRole
-from shopagent.domain.models.enums import OrderStatus, PaymentMethod, PaymentStatus
+from shopagent.core.principal import Principal
+from shopagent.domain.models.enums import PaymentStatus
 from shopagent.domain.services.actions import ActionService
-from shopagent.domain.services.cancellations import CancellationService
-from shopagent.domain.services.returns import ReturnService
-from shopagent.infra.db.repositories.action_repo import ActionRepository
-from shopagent.infra.db.repositories.approval_repo import ApprovalRepository
-from shopagent.infra.db.repositories.order_repo import OrderRepository
-from shopagent.infra.db.repositories.return_repo import ReturnRepository
 from shopagent.infra.db.session import async_engine, async_session_factory
 from shopagent.infra.db.tables import (
     Base,
@@ -55,6 +23,30 @@ from shopagent.infra.db.tables import (
     ProductVariantModel,
     StaffUserModel,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from evals.harness.graders import (
+    check_safety_invariants,
+    grade_db_state,
+    grade_forbidden_patterns,
+    grade_required_facts,
+)
+from evals.harness.langgraph_agent import LangGraphAgent
+from evals.harness.metrics import EvalSummary, compute_eval_metrics
+from evals.harness.models import (
+    ForbiddenPattern,
+    RequiredFact,
+    Scenario,
+    ScenarioExpectation,
+    ScenarioRunResult,
+    ScriptStep,
+    StaffAction,
+    UserScript,
+)
+from evals.harness.null_agent import NullAgent
+from evals.harness.oracle_agent import OracleAgent
+from evals.harness.scripted_user import ScriptedUser
+from evals.harness.staff_actor import StaffActor
 
 
 def load_scenario_from_yaml(path: Path) -> Scenario:
@@ -155,6 +147,7 @@ async def setup_scenario_fixtures(
     # 2. Customer
     cust_id = uuid.uuid4()
     p_data = scenario.principal
+    is_guest = p_data.get("type") == "guest"
     cust_email = p_data.get("email", "eval.customer@example.com")
     customer = CustomerModel(
         id=cust_id,
@@ -166,12 +159,26 @@ async def setup_scenario_fixtures(
     session.add(customer)
     await session.flush()
 
-    principal = Principal.authenticated_customer(customer_id=cust_id)
+    if is_guest:
+        principal = Principal.guest(guest_token="guest_token_eval")
+        owner_id = uuid.uuid4()
+        other_customer = CustomerModel(
+            id=owner_id,
+            email="other.owner@example.com",
+            phone="0988776655",
+            full_name="Chủ Đơn Hàng Khác",
+            tier="standard",
+        )
+        session.add(other_customer)
+        await session.flush()
+    else:
+        principal = Principal.authenticated_customer(customer_id=cust_id)
+        owner_id = cust_id
 
     # 3. Orders & Items
     created_orders: list[OrderModel] = []
     fixtures_orders = scenario.fixtures.get("orders", [])
-    for o_idx, o_fix in enumerate(fixtures_orders):
+    for _o_idx, o_fix in enumerate(fixtures_orders):
         order_code = o_fix["code"]
         order_id = uuid.uuid4()
 
@@ -237,7 +244,7 @@ async def setup_scenario_fixtures(
         order = OrderModel(
             id=order_id,
             code=order_code,
-            customer_id=cust_id,
+            customer_id=owner_id,
             status=o_fix.get("status", "delivered"),
             payment_method=o_fix.get("payment_method", "card"),
             payment_status=p_status,
@@ -308,7 +315,7 @@ async def run_scenario(
 
         max_turns = scenario.user.max_turns or 10
 
-        for turn_idx in range(max_turns):
+        for _turn_idx in range(max_turns):
             # User Turn
             user_say, action_decision, action_card = scripted_user.respond(
                 assistant_text=last_assistant_text,

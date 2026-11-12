@@ -6,7 +6,6 @@ All handlers must be idempotent (at-least-once delivery semantics).
 from __future__ import annotations
 
 import logging
-from typing import Any
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
