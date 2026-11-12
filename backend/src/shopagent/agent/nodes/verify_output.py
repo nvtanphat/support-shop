@@ -22,11 +22,15 @@ _FALSE_COMPLETION_PATTERNS = [
     r"tiền\s+đã\s+được\s+hoàn",
     r"đã\s+chuyển\s+tiền\s+hoàn",
     r"đã\s+xác\s+nhận\s+hủy\s+đơn",
+    r"đã\s+xử\s+lý\s+hoàn\s+tiền\s+thành\s+công",
+    r"đã\s+hoàn\s+tất\s+thủ\s+tục\s+hoàn\s+tiền",
+    r"đã\s+đổi\s+hàng\s+thành\s+công",
 ]
 
 # Sensitive PII patterns
 _CARD_REGEX = re.compile(r"\b(?:\d{4}[-\s]?){3}\d{4}\b")
 _CCCD_REGEX = re.compile(r"\b\d{12}\b")
+_FULL_PHONE_REGEX = re.compile(r"\b0[35789]\d{8}\b")
 
 
 def verify_output_node(state: AgentState) -> dict[str, Any]:
@@ -69,6 +73,8 @@ def verify_output_node(state: AgentState) -> dict[str, Any]:
         violations.append("PII_LEAK: Payment card number detected in response")
     if _CCCD_REGEX.search(content):
         violations.append("PII_LEAK: Citizen ID detected in response")
+    if _FULL_PHONE_REGEX.search(content):
+        violations.append("PII_LEAK: Unmasked phone number detected in response")
 
     # If violations are detected, replace with safe compliant response
     if violations:

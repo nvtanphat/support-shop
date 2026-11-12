@@ -276,8 +276,11 @@ async def test_tool_schema_validation():
 
 
 @pytest.mark.asyncio
-async def test_persist_emit_duplicate_prevention():
-    """Verify persist_emit_node does not create duplicate messages or duplicate action events on retries."""
+async def test_persist_emit_turn_idempotency_and_multi_turn_repeated_content():
+    """Verify persist_emit_node:
+    1. Retrying with identical turn_id does NOT create duplicate messages.
+    2. A new turn with identical message content (e.g. 'Đúng vậy') IS correctly preserved.
+    """
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -288,10 +291,12 @@ async def test_persist_emit_duplicate_prevention():
     act_id = str(uuid.uuid4())
 
     async with session_factory() as session:
-        state: AgentState = {
+        # Turn 1
+        state_turn_1: AgentState = {
             "conversation_id": c_str,
-            "messages": [HumanMessage(content="Xin chào")],
-            "verified_output": "Chào bạn, mình có thể giúp gì?",
+            "turn_id": "turn-1",
+            "messages": [HumanMessage(content="Đúng vậy", id="msg-t1-h")],
+            "verified_output": "Dạ em đã ghi nhận.",
             "pending_action": {
                 "action_id": act_id,
                 "type": "cancel_order",
@@ -301,29 +306,96 @@ async def test_persist_emit_duplicate_prevention():
         }
         config = {"configurable": {"session": session}}
 
-        # First persist run
-        await persist_emit_node(state, config=config)
+        # First persist run for Turn 1
+        await persist_emit_node(state_turn_1, config=config)
         await session.commit()
 
-        # Second persist run (simulating retry or duplicate step execution)
-        await persist_emit_node(state, config=config)
+        # Retry of Turn 1 (same turn_id) -> must be deduplicated
+        await persist_emit_node(state_turn_1, config=config)
         await session.commit()
 
-        # Verify messages: Exactly 1 customer message and 1 assistant message (no duplicates)
-        res_msgs = await session.execute(select(MessageModel).where(MessageModel.conversation_id == c_uuid))
-        msgs = res_msgs.scalars().all()
-        assert len(msgs) == 2
-        assert msgs[0].role == "customer" and msgs[0].content == "Xin chào"
-        assert msgs[1].role == "assistant" and msgs[1].content == "Chào bạn, mình có thể giúp gì?"
+        res_msgs_1 = await session.execute(select(MessageModel).where(MessageModel.conversation_id == c_uuid))
+        msgs_1 = res_msgs_1.scalars().all()
+        assert len(msgs_1) == 2
+        assert msgs_1[0].role == "customer" and msgs_1[0].content == "Đúng vậy"
+        assert msgs_1[1].role == "assistant" and msgs_1[1].content == "Dạ em đã ghi nhận."
 
-        # Verify events: Exactly 1 message.completed and 1 action.proposed (no duplicate events)
-        res_events = await session.execute(select(ConversationEventModel).where(ConversationEventModel.conversation_id == c_uuid))
-        events = res_events.scalars().all()
-        assert len(events) == 2
-        types = [e.type for e in events]
-        assert types == ["message.completed", "action.proposed"]
+        # Turn 2: Customer repeats the exact same word "Đúng vậy", but with new turn_id
+        state_turn_2: AgentState = {
+            "conversation_id": c_str,
+            "turn_id": "turn-2",
+            "messages": [
+                HumanMessage(content="Đúng vậy", id="msg-t1-h"),
+                AIMessage(content="Dạ em đã ghi nhận."),
+                HumanMessage(content="Đúng vậy", id="msg-t2-h"),
+            ],
+            "verified_output": "Dạ em đã ghi nhận.",
+            "retrieved_clauses": ["POL-RETURN-01"],
+        }
+        await persist_emit_node(state_turn_2, config=config)
+        await session.commit()
+
+        # Verify that Turn 2 is preserved! (Total 4 messages now)
+        res_msgs_2 = await session.execute(
+            select(MessageModel).where(MessageModel.conversation_id == c_uuid).order_by(MessageModel.seq.asc())
+        )
+        msgs_2 = res_msgs_2.scalars().all()
+        assert len(msgs_2) == 4
+        assert [m.content for m in msgs_2] == [
+            "Đúng vậy",
+            "Dạ em đã ghi nhận.",
+            "Đúng vậy",
+            "Dạ em đã ghi nhận.",
+        ]
 
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_token_aware_context_pruning_preserves_tool_call_pairs():
+    """Verify prune_messages_token_aware never separates an AIMessage tool call from its ToolMessage."""
+    from shopagent.agent.nodes.agent import prune_messages_token_aware
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+    # Create a history with 3 complete turns, including a tool exchange in turn 2
+    tc_id = "call_abc123"
+    messages = [
+        HumanMessage(content="Lượt 1: Tra cứu đơn hàng cũ SL-000001" * 10),
+        AIMessage(content="Dạ đơn hàng SL-000001 đã giao thành công." * 10),
+        HumanMessage(content="Lượt 2: Tra cứu chính sách hoàn tiền" * 10),
+        AIMessage(
+            content="",
+            tool_calls=[{"name": "search_policy", "args": {"query": "hoàn tiền"}, "id": tc_id}],
+        ),
+        ToolMessage(content="Chính sách hoàn tiền: 1-3 ngày làm việc" * 10, tool_call_id=tc_id),
+        AIMessage(content="Thời gian hoàn tiền từ 1-3 ngày làm việc ạ." * 10),
+        HumanMessage(content="Lượt 3: Cảm ơn em nhé!"),
+    ]
+
+    # Prune with a tight token budget that forces pruning of Lượt 1
+    pruned = prune_messages_token_aware(messages, max_input_tokens=250)
+
+    # Verify Lượt 3 is kept
+    assert any("Lượt 3" in str(m.content) for m in pruned)
+
+    # If the tool call from Lượt 2 is kept, its matching ToolMessage MUST also be kept
+    ai_tc = [m for m in pruned if isinstance(m, AIMessage) and getattr(m, "tool_calls", None)]
+    tool_msgs = [m for m in pruned if isinstance(m, ToolMessage)]
+    if ai_tc:
+        assert len(tool_msgs) >= 1
+        assert tool_msgs[0].tool_call_id == tc_id
+    else:
+        assert len(tool_msgs) == 0
+
+
+@pytest.mark.asyncio
+async def test_postgres_checkpointer_force_raise_in_production():
+    """Verify create_postgres_checkpointer raises RuntimeError on invalid connection when force_raise is True."""
+    from shopagent.agent.checkpoint import create_postgres_checkpointer
+
+    with pytest.raises(RuntimeError) as exc_info:
+        create_postgres_checkpointer("postgresql://invalid_user:invalid_pwd@localhost:54329/nonexistent", force_raise=True)
+    assert "PostgreSQL checkpointer connection failed" in str(exc_info.value)
 
 
 @pytest.mark.asyncio

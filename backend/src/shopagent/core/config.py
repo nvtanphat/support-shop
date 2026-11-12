@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     )
 
     INTEGRATION_MODE: str = "simulated"
+    ENVIRONMENT: str = "development"
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/shopagent"

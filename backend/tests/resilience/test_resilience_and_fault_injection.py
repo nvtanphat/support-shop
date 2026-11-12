@@ -1,5 +1,6 @@
 """Resilience and fault injection tests enforcing S1-S6 invariants and idempotency."""
 
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 import pytest
@@ -15,8 +16,11 @@ from shopagent.core.principal import Principal
 from shopagent.core.security import create_access_token
 from shopagent.infra.db.tables import (
     Base,
+    ConversationEventModel,
+    ConversationModel,
     CustomerModel,
     CustomerCredentialsModel,
+    MessageModel,
     OrderModel,
     PendingActionModel,
     RefundModel,
@@ -260,4 +264,108 @@ async def test_durable_checkpointer_persistence_across_restart(tmp_path):
     cp3.delete_thread("thread-user-42")
     cp4 = DurableCheckpointer(storage_path=ckpt_file)
     assert cp4.get_tuple(config_t1) is None
+
+
+@pytest.mark.asyncio
+async def test_concurrency_20_conversations_and_turn_idempotency(tmp_path):
+    """Verify system handles 20 concurrent customer conversations without race conditions,
+    duplicate events, or cross-conversation state contamination.
+    """
+    from sqlalchemy import text
+
+    db_file = tmp_path / "concurrent_test.db"
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{db_file}",
+        connect_args={"check_same_thread": False},
+        echo=False,
+    )
+    async with engine.begin() as conn:
+        await conn.execute(text("PRAGMA journal_mode=WAL;"))
+        await conn.execute(text("PRAGMA synchronous=NORMAL;"))
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def override_get_db():
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db_session] = override_get_db
+
+    transport = ASGITransport(app=app)
+    num_concurrent = 20
+
+    async def run_single_conversation(idx: int):
+        cust_id = uuid.uuid4()
+        token = create_access_token({"sub": str(cust_id), "role": "customer", "email": f"cust_{idx}@test.vn"})
+        headers = {"Authorization": f"Bearer {token}"}
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # 1. Create conversation
+            res_c = await client.post("/conversations", json={"channel": "web"}, headers=headers)
+            assert res_c.status_code == 200
+            conv_id = res_c.json()["id"]
+
+            # 2. Concurrently send Turn 1 request AND its duplicate retry (same idempotency key)
+            turn_1_key = f"turn-1-{conv_id}"
+            req_1 = client.post(
+                f"/conversations/{conv_id}/messages",
+                json={"content": "Chính sách đổi trả hàng thế nào?"},
+                headers={**headers, "X-Idempotency-Key": turn_1_key},
+            )
+            req_1_dup = client.post(
+                f"/conversations/{conv_id}/messages",
+                json={"content": "Chính sách đổi trả hàng thế nào?"},
+                headers={**headers, "X-Idempotency-Key": turn_1_key},
+            )
+
+            r1, r1_dup = await asyncio.gather(req_1, req_1_dup)
+            assert r1.status_code == 200
+            assert r1_dup.status_code == 200
+
+            # 3. Send Turn 2 with a new idempotency key
+            turn_2_key = f"turn-2-{conv_id}"
+            r2 = await client.post(
+                f"/conversations/{conv_id}/messages",
+                json={"content": "Cảm ơn em nhiều nhé!"},
+                headers={**headers, "X-Idempotency-Key": turn_2_key},
+            )
+            assert r2.status_code == 200
+
+            # 4. Fetch conversation detail and verify invariants
+            res_get = await client.get(f"/conversations/{conv_id}", headers=headers)
+            assert res_get.status_code == 200
+            data = res_get.json()
+            msgs = data["messages"]
+
+            # Must have exactly 4 messages (Turn 1: Q+A, Turn 2: Q+A). No duplicates from retry!
+            assert len(msgs) == 4
+            assert msgs[0]["role"] == "customer" and msgs[0]["seq"] == 1
+            assert msgs[1]["role"] == "assistant" and msgs[1]["seq"] == 2
+            assert msgs[2]["role"] == "customer" and msgs[2]["seq"] == 3
+            assert msgs[3]["role"] == "assistant" and msgs[3]["seq"] == 4
+
+            return conv_id
+
+    try:
+        tasks = [run_single_conversation(i) for i in range(num_concurrent)]
+        completed_conv_ids = await asyncio.gather(*tasks)
+        assert len(completed_conv_ids) == num_concurrent
+        # Verify all conversation IDs are unique
+        assert len(set(completed_conv_ids)) == num_concurrent
+
+        # Direct database verification across all 20 conversations
+        async with session_factory() as session:
+            stmt_msgs = select(MessageModel)
+            all_msgs = (await session.execute(stmt_msgs)).scalars().all()
+            # 20 conversations * 4 messages = 80 messages total
+            assert len(all_msgs) == num_concurrent * 4
+
+            stmt_evs = select(ConversationEventModel)
+            all_evs = (await session.execute(stmt_evs)).scalars().all()
+            # Each conversation should have exactly 2 message.completed events (Turn 1 and Turn 2)
+            assert len(all_evs) == num_concurrent * 2
+    finally:
+        app.dependency_overrides.clear()
+        await engine.dispose()
 

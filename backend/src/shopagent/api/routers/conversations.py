@@ -34,6 +34,15 @@ from shopagent.infra.db.tables import (
 
 router = APIRouter(tags=["Conversations"])
 
+_conv_locks: dict[uuid.UUID, asyncio.Lock] = {}
+
+
+def get_conversation_lock(conv_id: uuid.UUID) -> asyncio.Lock:
+    """Get or create an asyncio Lock to serialize concurrent requests for a conversation."""
+    if conv_id not in _conv_locks:
+        _conv_locks[conv_id] = asyncio.Lock()
+    return _conv_locks[conv_id]
+
 
 def verify_conversation_access(
     conv: ConversationModel,
@@ -180,12 +189,13 @@ async def get_conversation(
 async def send_message(
     conversation_id: uuid.UUID,
     req: SendMessageRequest,
+    x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
     x_guest_token: str | None = Header(default=None, alias="X-Guest-Token"),
     guest_token: str | None = Query(default=None),
     principal: Principal = Depends(get_current_principal),
     session: AsyncSession = Depends(get_db_session),
 ):
-    """Send customer message and invoke LangGraph Agent pipeline with authorization."""
+    """Send customer message and invoke LangGraph Agent pipeline with authorization and turn idempotency."""
     stmt = select(ConversationModel).where(ConversationModel.id == conversation_id)
     res = await session.execute(stmt)
     conv = res.scalar_one_or_none()
@@ -194,53 +204,86 @@ async def send_message(
 
     verify_conversation_access(conv, principal, x_guest_token or guest_token)
 
-    # If conversation is with human staff, save user message and do not invoke AI
-    if conv.mode in ("waiting_human", "human"):
-        stmt_seq = select(func.coalesce(func.max(MessageModel.seq), 0)).where(
-            MessageModel.conversation_id == conversation_id
-        )
-        res_seq = await session.execute(stmt_seq)
-        seq = res_seq.scalar_one() + 1
-        msg = MessageModel(
-            conversation_id=conversation_id,
-            seq=seq,
-            role="customer",
-            content=req.content,
-        )
-        session.add(msg)
+    async with get_conversation_lock(conversation_id):
+        # Resolve turn idempotency key
+        turn_id = x_idempotency_key or req.idempotency_key
+
+        # Check if request was already executed with this idempotency key
+        if turn_id:
+            stmt_prior = (
+                select(ConversationEventModel)
+                .where(
+                    ConversationEventModel.conversation_id == conversation_id,
+                    ConversationEventModel.type == "message.completed",
+                )
+                .order_by(ConversationEventModel.seq.desc())
+                .limit(10)
+            )
+            res_prior = await session.execute(stmt_prior)
+            for ev in res_prior.scalars().all():
+                pl = ev.payload or {}
+                if pl.get("turn_id") == turn_id:
+                    # Idempotent replay: return cached response
+                    return {
+                        "status": "success",
+                        "verified_output": pl.get("content", ""),
+                        "assistant_message": pl.get("content", ""),
+                        "citations": pl.get("citations", []),
+                        "pending_action": None,
+                        "tool_calls": [],
+                    }
+
+        # If conversation is with human staff, save user message and do not invoke AI
+        if conv.mode in ("waiting_human", "human"):
+            stmt_seq = select(func.coalesce(func.max(MessageModel.seq), 0)).where(
+                MessageModel.conversation_id == conversation_id
+            )
+            res_seq = await session.execute(stmt_seq)
+            seq = res_seq.scalar_one() + 1
+            msg = MessageModel(
+                conversation_id=conversation_id,
+                seq=seq,
+                role="customer",
+                content=req.content,
+            )
+            session.add(msg)
+            await session.commit()
+            return {
+                "status": "waiting_human",
+                "message": "Tin nhắn đã được chuyển tới nhân viên chăm sóc khách hàng.",
+            }
+
+        # Execute 5-node LangGraph pipeline
+        graph = get_agent_graph()
+        effective_turn_id = turn_id or str(uuid.uuid4())
+        human_msg_id = str(uuid.uuid4())
+        initial_state: AgentState = {
+            "conversation_id": str(conversation_id),
+            "turn_id": effective_turn_id,
+            "request_id": effective_turn_id,
+            "messages": [HumanMessage(content=req.content, id=human_msg_id)],
+            "principal": principal,
+            "clock": get_clock().now(),
+        }
+        config = {
+            "configurable": {
+                "thread_id": str(conversation_id),
+                "session": session,
+            }
+        }
+
+        output = await graph.ainvoke(initial_state, config=config)
         await session.commit()
+
+        verified = output.get("verified_output") or ""
         return {
-            "status": "waiting_human",
-            "message": "Tin nhắn đã được chuyển tới nhân viên chăm sóc khách hàng.",
+            "status": "success",
+            "verified_output": verified,
+            "assistant_message": verified,
+            "citations": list(output.get("retrieved_clauses") or []),
+            "pending_action": output.get("pending_action"),
+            "tool_calls": output.get("tool_calls", []),
         }
-
-    # Execute 5-node LangGraph pipeline
-    graph = get_agent_graph()
-    initial_state: AgentState = {
-        "conversation_id": str(conversation_id),
-        "messages": [HumanMessage(content=req.content)],
-        "principal": principal,
-        "clock": get_clock().now(),
-    }
-    config = {
-        "configurable": {
-            "thread_id": str(conversation_id),
-            "session": session,
-        }
-    }
-
-    output = await graph.ainvoke(initial_state, config=config)
-    await session.commit()
-
-    verified = output.get("verified_output") or ""
-    return {
-        "status": "success",
-        "verified_output": verified,
-        "assistant_message": verified,
-        "citations": list(output.get("retrieved_clauses") or []),
-        "pending_action": output.get("pending_action"),
-        "tool_calls": output.get("tool_calls", []),
-    }
 
 
 @router.get("/conversations/{conversation_id}/events")

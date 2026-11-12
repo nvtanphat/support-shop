@@ -109,8 +109,12 @@ class DurableCheckpointer(SqliteSaver):
         return await asyncio.to_thread(self.delete_thread, thread_id)
 
 
-def create_postgres_checkpointer(sync_url: str) -> BaseCheckpointSaver | None:
-    """Attempt to initialize PostgresSaver when PostgreSQL is configured."""
+def create_postgres_checkpointer(sync_url: str, force_raise: bool = False) -> BaseCheckpointSaver | None:
+    """Attempt to initialize PostgresSaver when PostgreSQL is configured.
+    
+    If force_raise is True (e.g. production or explicitly enforced), raises an exception on failure
+    rather than silently falling back to SQLite.
+    """
     try:
         from langgraph.checkpoint.postgres import PostgresSaver
         import psycopg
@@ -123,7 +127,10 @@ def create_postgres_checkpointer(sync_url: str) -> BaseCheckpointSaver | None:
         logger.info("Khởi tạo PostgresSaver thành công với kết nối PostgreSQL.")
         return saver
     except Exception as e:
-        logger.info("Không thể kết nối PostgresSaver (%s). Sử dụng SqliteSaver.", e)
+        if force_raise:
+            logger.error("Không thể kết nối PostgresSaver trong môi trường production/bắt buộc: %s", e)
+            raise RuntimeError(f"PostgreSQL checkpointer connection failed: {e}. Refusing silent fallback to SQLite in production.") from e
+        logger.warning("Không thể kết nối PostgresSaver trong môi trường development (%s). Sử dụng DurableCheckpointer (SQLite WAL).", e)
         return None
 
 
@@ -136,13 +143,14 @@ def get_default_checkpointer() -> BaseCheckpointSaver:
     if _default_checkpointer is None:
         settings = get_settings()
         sync_url = settings.DATABASE_URL_SYNC
+        is_production = getattr(settings, "ENVIRONMENT", "development").lower() in ("production", "prod") or os.environ.get("ENVIRONMENT", "").lower() in ("production", "prod") or os.environ.get("FORCE_POSTGRES", "").lower() in ("1", "true")
 
         if "postgres" in sync_url.lower():
-            pg_saver = create_postgres_checkpointer(sync_url)
+            pg_saver = create_postgres_checkpointer(sync_url, force_raise=is_production)
             if pg_saver is not None:
                 _default_checkpointer = pg_saver
                 return _default_checkpointer
 
-        # Default to durable SQLite checkpointer
+        # Default to durable SQLite checkpointer for local development and offline evaluations
         _default_checkpointer = DurableCheckpointer()
     return _default_checkpointer

@@ -24,6 +24,8 @@ class AgentState(TypedDict, total=False):
     """Shared state for the 5-node LangGraph agent graph."""
 
     conversation_id: str
+    turn_id: str | None
+    request_id: str | None
     messages: Annotated[list[BaseMessage], add_messages]
     principal: Principal
     clock: datetime

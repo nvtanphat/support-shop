@@ -17,11 +17,12 @@ logger = logging.getLogger(__name__)
 
 
 async def persist_emit_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
-    """Persist conversation messages, citations, and events to DB without duplication."""
+    """Persist conversation messages, citations, and events to DB with turn idempotency."""
     session: AsyncSession = config.get("configurable", {}).get("session")
 
     verified_output = state.get("verified_output") or ""
     conv_id_str = state.get("conversation_id")
+    turn_id = state.get("turn_id") or state.get("request_id")
 
     if session and conv_id_str:
         try:
@@ -39,31 +40,6 @@ async def persist_emit_node(state: AgentState, config: RunnableConfig) -> dict[s
                 session.add(conv)
                 await session.flush()
 
-            # Get current max sequence number for messages
-            stmt_seq = select(func.coalesce(func.max(MessageModel.seq), 0)).where(
-                MessageModel.conversation_id == c_uuid
-            )
-            res_seq = await session.execute(stmt_seq)
-            current_seq = res_seq.scalar_one()
-
-            # Find the latest saved customer and assistant messages in DB to prevent duplicates on retries
-            stmt_last_cust = (
-                select(MessageModel)
-                .where(MessageModel.conversation_id == c_uuid, MessageModel.role == "customer")
-                .order_by(MessageModel.seq.desc())
-                .limit(1)
-            )
-            last_cust_msg = (await session.execute(stmt_last_cust)).scalar_one_or_none()
-
-            stmt_last_asst = (
-                select(MessageModel)
-                .where(MessageModel.conversation_id == c_uuid, MessageModel.role == "assistant")
-                .order_by(MessageModel.seq.desc())
-                .limit(1)
-            )
-            last_asst_msg = (await session.execute(stmt_last_asst)).scalar_one_or_none()
-
-            # Check and persist the user's latest HumanMessage if not already saved
             messages = state.get("messages", [])
             latest_human_msg: HumanMessage | None = None
             if messages:
@@ -72,9 +48,51 @@ async def persist_emit_node(state: AgentState, config: RunnableConfig) -> dict[s
                         latest_human_msg = m
                         break
 
-            if latest_human_msg:
-                user_content = str(latest_human_msg.content).strip()
-                if not (last_cust_msg and last_cust_msg.content == user_content):
+            human_msg_id = getattr(latest_human_msg, "id", None) if latest_human_msg else None
+            effective_turn_key = turn_id or (f"msg_{human_msg_id}" if human_msg_id else None)
+
+            # Check if this exact turn was already persisted via turn idempotency key
+            already_persisted = False
+            if effective_turn_key:
+                stmt_check_ev = (
+                    select(ConversationEventModel)
+                    .where(
+                        ConversationEventModel.conversation_id == c_uuid,
+                        ConversationEventModel.type == "message.completed",
+                    )
+                    .order_by(ConversationEventModel.seq.desc())
+                    .limit(10)
+                )
+                res_check_ev = await session.execute(stmt_check_ev)
+                for ev in res_check_ev.scalars().all():
+                    pl = ev.payload or {}
+                    if pl.get("turn_id") == effective_turn_key or (human_msg_id and pl.get("user_message_id") == human_msg_id):
+                        already_persisted = True
+                        break
+
+            # If no turn key was provided, fall back to checking if the latest assistant message was already saved
+            if not effective_turn_key and not already_persisted:
+                stmt_last_asst = (
+                    select(MessageModel)
+                    .where(MessageModel.conversation_id == c_uuid, MessageModel.role == "assistant")
+                    .order_by(MessageModel.seq.desc())
+                    .limit(1)
+                )
+                last_asst_msg = (await session.execute(stmt_last_asst)).scalar_one_or_none()
+                if last_asst_msg and last_asst_msg.content == verified_output.strip():
+                    already_persisted = True
+
+            if not already_persisted:
+                # Get current max sequence number for messages
+                stmt_seq = select(func.coalesce(func.max(MessageModel.seq), 0)).where(
+                    MessageModel.conversation_id == c_uuid
+                )
+                res_seq = await session.execute(stmt_seq)
+                current_seq = res_seq.scalar_one()
+
+                # Save user message
+                if latest_human_msg:
+                    user_content = str(latest_human_msg.content).strip()
                     current_seq += 1
                     u_msg = MessageModel(
                         conversation_id=c_uuid,
@@ -84,10 +102,9 @@ async def persist_emit_node(state: AgentState, config: RunnableConfig) -> dict[s
                     )
                     session.add(u_msg)
 
-            # Persist assistant verified response if not already saved
-            if verified_output:
-                clean_verified = verified_output.strip()
-                if not (last_asst_msg and last_asst_msg.content == clean_verified):
+                # Save assistant verified response
+                if verified_output:
+                    clean_verified = verified_output.strip()
                     current_seq += 1
                     a_msg = MessageModel(
                         conversation_id=c_uuid,
@@ -98,7 +115,7 @@ async def persist_emit_node(state: AgentState, config: RunnableConfig) -> dict[s
                     )
                     session.add(a_msg)
 
-                    # Persist message.completed event for SSE replay
+                    # Persist message.completed event for SSE replay & turn idempotency
                     stmt_ev_seq = select(func.coalesce(func.max(ConversationEventModel.seq), 0)).where(
                         ConversationEventModel.conversation_id == c_uuid
                     )
@@ -110,6 +127,8 @@ async def persist_emit_node(state: AgentState, config: RunnableConfig) -> dict[s
                         type="message.completed",
                         payload={
                             "id": str(a_msg.id),
+                            "turn_id": effective_turn_key,
+                            "user_message_id": human_msg_id,
                             "seq": current_seq,
                             "role": "assistant",
                             "content": clean_verified,

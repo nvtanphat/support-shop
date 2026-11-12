@@ -38,6 +38,7 @@ class CreateConversationRequest(BaseModel):
 
 class SendMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=2000, description="Nội dung tin nhắn khách gửi.")
+    idempotency_key: str | None = Field(default=None, description="Khóa chống trùng lặp theo lượt gửi của client.")
 
 
 class MessageDto(BaseModel):
