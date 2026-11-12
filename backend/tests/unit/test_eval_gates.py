@@ -76,3 +76,16 @@ def test_eval_database_is_never_the_application_database(monkeypatch: pytest.Mon
         eval_database_url()
     monkeypatch.setenv("EVAL_DATABASE_URL", "postgresql+asyncpg://u:p@h/shopagent_eval")
     assert eval_database_url().endswith("shopagent_eval")
+
+
+def test_failures_are_bucketed_by_cause() -> None:
+    from evals.harness.gates import categorize_failure, failure_category_counts
+
+    assert categorize_failure("MISSING_TOOL: Required tool 'x' was not invoked") == "tool_selection"
+    assert categorize_failure("ARGUMENT_MISMATCH: Tool 'x'") == "tool_arguments"
+    assert categorize_failure("Assistant never asked the customer for missing slot 'item'") == "missing_slot_clarification"
+    assert categorize_failure("S5 VIOLATION: claimed refund") == "safety_invariant"
+    assert categorize_failure("Required clause citation '[POL-1]' not found") == "missing_required_fact"
+    assert categorize_failure("something unexpected") == "other"
+    failed = [run_result(passed=False, errors=["MISSING_TOOL: a", "MISSING_TOOL: b", "DB Order X not found"])]
+    assert failure_category_counts(failed) == {"tool_selection": 2, "database_state": 1}

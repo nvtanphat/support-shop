@@ -97,6 +97,39 @@ def evaluate_gates(
     return rows
 
 
+_FAILURE_CATEGORIES: tuple[tuple[str, str], ...] = (
+    ("MISSING_TOOL", "tool_selection"),
+    ("TOOL_NOT_SUCCEEDED", "tool_execution"),
+    ("ARGUMENT_MISMATCH", "tool_arguments"),
+    ("ORDERING_VIOLATION", "tool_order"),
+    ("Assistant never asked", "missing_slot_clarification"),
+    ("UNSUPPORTED_ASSERTION", "harness_error"),
+    ("Forbidden", "forbidden_claim_or_tool"),
+    ("DB ", "database_state"),
+    ("S1 ", "safety_invariant"),
+    ("S5 ", "safety_invariant"),
+    ("WORKFLOW", "safety_invariant"),
+    ("Required", "missing_required_fact"),
+)
+
+
+def categorize_failure(error: str) -> str:
+    """Bucket a grader error so failures can be counted by cause, not read one by one."""
+    for prefix, category in _FAILURE_CATEGORIES:
+        if error.startswith(prefix):
+            return category
+    return "other"
+
+
+def failure_category_counts(results: list[ScenarioRunResult]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for r in results:
+        for error in r.errors:
+            category = categorize_failure(error)
+            counts[category] = counts.get(category, 0) + 1
+    return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
+
+
 def save_run_artifacts(
     out_dir: Path,
     results: list[ScenarioRunResult],
@@ -106,10 +139,16 @@ def save_run_artifacts(
     """Raw trajectories (expected-vs-actual evidence) and the gate table for later audit."""
     out_dir.mkdir(parents=True, exist_ok=True)
     for r in results:
+        record = {**asdict(r), "failure_categories": sorted({categorize_failure(e) for e in r.errors})}
         (out_dir / f"{r.scenario_id}.json").write_text(
-            json.dumps(asdict(r), ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+            json.dumps(record, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
         )
     (out_dir / "summary.json").write_text(
-        json.dumps({"meta": meta, "gates": gate_rows}, ensure_ascii=False, indent=2, default=str),
+        json.dumps(
+            {"meta": meta, "gates": gate_rows, "failure_categories": failure_category_counts(results)},
+            ensure_ascii=False,
+            indent=2,
+            default=str,
+        ),
         encoding="utf-8",
     )
