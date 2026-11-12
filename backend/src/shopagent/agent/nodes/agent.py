@@ -1,4 +1,4 @@
-"""Node 3: agent - Main reasoning loop with tool binding and execution."""
+"""Node 3: agent - Main reasoning loop with tool binding, execution, timeout, and anti-thrashing."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
+import time
 from typing import Any
 import uuid
 import jinja2
@@ -70,11 +71,12 @@ def render_system_prompt(state: AgentState) -> str:
 
 
 async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
-    """Execute LLM agent loop with bound tools up to max 6 iterations."""
+    """Execute LLM agent loop with bound tools up to max 6 iterations with timeout & loop prevention."""
     session: AsyncSession = config.get("configurable", {}).get("session")
     if not session:
         raise ValueError("AsyncSession must be provided in config['configurable']['session']")
 
+    start_turn = time.perf_counter()
     principal = state.get("principal") or Principal.guest()
     conv_id_str = state.get("conversation_id")
     conv_id = uuid.UUID(conv_id_str) if conv_id_str else uuid.uuid4()
@@ -106,14 +108,19 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
     sys_prompt = render_system_prompt(state)
     sys_msg = SystemMessage(content=sys_prompt)
 
-    # Conversation history
+    # Conversation history with budget limit (sliding window of last 12 messages)
     history = list(state.get("messages", []))
-    working_messages: list[BaseMessage] = list(history)
+    if len(history) > 12:
+        working_messages: list[BaseMessage] = list(history[-12:])
+    else:
+        working_messages = list(history)
+
     new_messages: list[BaseMessage] = []
     recorded_tool_calls: list[dict[str, Any]] = []
+    sig_counts: dict[str, int] = {}
 
     max_iterations = 6
-    for _ in range(max_iterations):
+    for iteration in range(max_iterations):
         call_input = [sys_msg, *working_messages]
         ai_response = None
 
@@ -123,7 +130,7 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
                 ai_response = await llm_with_tools.ainvoke(call_input)
                 break
             except Exception as e:
-                logger.warning("Lỗi gọi LLM lần %d: %s", attempt + 1, e)
+                logger.warning("Lỗi gọi LLM lần %d (vòng %d): %s", attempt + 1, iteration + 1, e)
                 if attempt < 2:
                     await asyncio.sleep(0.5 * (attempt + 1))
                 else:
@@ -168,12 +175,36 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
 
             target_tool = tools_by_name.get(tool_name)
             if not target_tool:
-                res_content = {"error_code": "TOOL_NOT_FOUND", "message": f"Công cụ '{tool_name}' không tồn tại hoặc không được phép dùng."}
+                res_content = {
+                    "error_code": "TOOL_NOT_FOUND",
+                    "message": f"Công cụ '{tool_name}' không tồn tại hoặc không được phép dùng cho vai trò của bạn.",
+                }
             else:
+                # Anti-thrashing check
                 try:
-                    res_content = await target_tool.ainvoke(tool_args)
-                except Exception as e:
-                    res_content = {"error_code": "TOOL_EXECUTION_ERROR", "message": str(e)}
+                    call_sig = f"{tool_name}:{json.dumps(tool_args, sort_keys=True)}"
+                except Exception:
+                    call_sig = f"{tool_name}:{str(tool_args)}"
+
+                sig_counts[call_sig] = sig_counts.get(call_sig, 0) + 1
+                if sig_counts[call_sig] > 2:
+                    res_content = {
+                        "error_code": "DUPLICATE_CALL",
+                        "message": f"Công cụ '{tool_name}' đã được gọi trước đó với cùng tham số. Vui lòng sử dụng thông tin đã có để giải đáp hoặc hỏi thêm thông tin từ khách hàng.",
+                    }
+                else:
+                    # Execute tool with strict 12-second timeout
+                    try:
+                        res_content = await asyncio.wait_for(target_tool.ainvoke(tool_args), timeout=12.0)
+                    except asyncio.TimeoutError:
+                        logger.error("Công cụ '%s' hết thời gian chờ (12s)", tool_name)
+                        res_content = {
+                            "error_code": "TOOL_TIMEOUT",
+                            "message": f"Công cụ '{tool_name}' phản hồi quá lâu (hơn 12s).",
+                        }
+                    except Exception as e:
+                        logger.warning("Lỗi thực thi công cụ '%s': %s", tool_name, e)
+                        res_content = {"error_code": "TOOL_EXECUTION_ERROR", "message": str(e)}
 
             recorded_tool_calls.append({
                 "tool": tool_name,
@@ -188,6 +219,14 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
             )
             working_messages.append(tool_msg)
             new_messages.append(tool_msg)
+
+    elapsed = time.perf_counter() - start_turn
+    logger.info(
+        "Agent turn completed | conv_id=%s | tools_called=%d | duration=%.2fs",
+        conv_id_str,
+        len(recorded_tool_calls),
+        elapsed,
+    )
 
     update: dict[str, Any] = {
         "messages": new_messages,

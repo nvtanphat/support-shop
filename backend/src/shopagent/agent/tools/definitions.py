@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 import uuid
 from langchain_core.tools import StructuredTool
@@ -35,12 +36,12 @@ from shopagent.infra.db.tables import (
 # Tool Input Schemas
 # -------------------------------------------------------------------------
 class SearchPolicyInput(BaseModel):
-    query: str = Field(description="Nội dung hoặc chủ đề cần tra cứu chính sách (ví dụ: đổi trả hàng lỗi, thời gian hoàn tiền, phí trả hàng đổi ý).")
+    query: str = Field(min_length=2, description="Nội dung hoặc chủ đề cần tra cứu chính sách (ví dụ: đổi trả hàng lỗi, thời gian hoàn tiền, phí trả hàng đổi ý).")
     as_of: str | None = Field(default=None, description="Thời điểm áp dụng chính sách theo định dạng ISO nếu gắn với đơn hàng cũ.")
 
 
 class LookupOrderGuestInput(BaseModel):
-    order_code: str = Field(description="Mã đơn hàng cần tra cứu (ví dụ: SL-123456).")
+    order_code: str = Field(min_length=3, description="Mã đơn hàng cần tra cứu (ví dụ: SL-123456).")
 
 
 class ListMyOrdersInput(BaseModel):
@@ -48,22 +49,22 @@ class ListMyOrdersInput(BaseModel):
 
 
 class GetOrderInput(BaseModel):
-    order_code: str = Field(description="Mã đơn hàng cần xem chi tiết (ví dụ: SL-123456).")
+    order_code: str = Field(min_length=3, description="Mã đơn hàng cần xem chi tiết (ví dụ: SL-123456).")
 
 
 class TrackShipmentInput(BaseModel):
-    order_code: str = Field(description="Mã đơn hàng cần theo dõi vận chuyển.")
+    order_code: str = Field(min_length=3, description="Mã đơn hàng cần theo dõi vận chuyển.")
 
 
 class CheckReturnEligibilityInput(BaseModel):
-    order_code: str = Field(description="Mã đơn hàng cần kiểm tra đổi trả.")
-    item_ids: list[str] = Field(description="Danh sách item_id của các sản phẩm muốn trả.")
+    order_code: str = Field(min_length=3, description="Mã đơn hàng cần kiểm tra đổi trả.")
+    item_ids: list[str] = Field(min_length=1, description="Danh sách item_id của các sản phẩm muốn trả (tối thiểu 1 sản phẩm).")
     reason_code: str = Field(description="Lý do đổi trả: defective, damaged_in_transit, wrong_item, missing_item, not_as_described, hoặc change_of_mind.")
     resolution: str = Field(default="refund", description="refund (hoàn tiền) hoặc exchange (đổi hàng).")
 
 
 class CheckVariantStockInput(BaseModel):
-    sku: str = Field(description="Mã SKU của phân loại sản phẩm cần kiểm tra tồn kho.")
+    sku: str = Field(min_length=2, description="Mã SKU của phân loại sản phẩm cần kiểm tra tồn kho.")
 
 
 class GetCaseStatusInput(BaseModel):
@@ -71,13 +72,13 @@ class GetCaseStatusInput(BaseModel):
 
 
 class ProposeCancelOrderInput(BaseModel):
-    order_code: str = Field(description="Mã đơn hàng muốn đề xuất hủy.")
+    order_code: str = Field(min_length=3, description="Mã đơn hàng muốn đề xuất hủy.")
     reason: str = Field(default="customer_request", description="Lý do hủy đơn từ khách hàng.")
 
 
 class ProposeReturnInput(BaseModel):
-    order_code: str = Field(description="Mã đơn hàng muốn tạo đề xuất đổi trả.")
-    items: list[dict[str, Any]] = Field(description="Danh sách sản phẩm cần trả kèm số lượng: [{'item_id': str, 'qty': int}].")
+    order_code: str = Field(min_length=3, description="Mã đơn hàng muốn tạo đề xuất đổi trả.")
+    items: list[dict[str, Any]] = Field(min_length=1, description="Danh sách sản phẩm cần trả kèm số lượng: [{'item_id': str, 'qty': int}].")
     reason_code: str = Field(description="Lý do đổi trả.")
     resolution: str = Field(default="refund", description="refund hoặc exchange.")
     exchange_sku: str | None = Field(default=None, description="Mã SKU mới muốn đổi sang nếu resolution=exchange.")
@@ -86,7 +87,7 @@ class ProposeReturnInput(BaseModel):
 
 class EscalateToHumanInput(BaseModel):
     reason_code: str = Field(description="Lý do cần chuyển nhân viên: complex_case, customer_request, payment_dispute, complaints.")
-    summary: str = Field(description="Tóm tắt ngắn gọn vấn đề của khách hàng để nhân viên nắm bắt.")
+    summary: str = Field(min_length=5, description="Tóm tắt ngắn gọn vấn đề của khách hàng để nhân viên nắm bắt.")
 
 
 # -------------------------------------------------------------------------
@@ -115,9 +116,10 @@ def create_tools(
         as_of_dt = None
         if as_of:
             try:
-                as_of_dt = datetime.fromisoformat(as_of)
+                clean_as_of = as_of.strip().replace("Z", "+00:00")
+                as_of_dt = datetime.fromisoformat(clean_as_of)
             except Exception:
-                pass
+                as_of_dt = None
         matches = await retriever.retrieve(query=query, top_k=4, as_of=as_of_dt)
         for m in matches:
             if retrieved_clauses is not None:
@@ -224,12 +226,14 @@ def create_tools(
     async def get_case_status(case_code: str | None = None) -> dict[str, Any]:
         """Xem tiến độ của yêu cầu trả hàng, phiếu hoàn tiền hoặc phiếu hỗ trợ."""
         if case_code:
-            code_upper = case_code.upper()
+            code_upper = case_code.strip().upper()
             if code_upper.startswith("RT-"):
                 stmt = select(ReturnRequestModel).where(ReturnRequestModel.code == code_upper)
                 res = await session.execute(stmt)
                 ret = res.scalar_one_or_none()
-                if ret and principal.can_access_order(ret.customer_id, ret.order_id):
+                if ret:
+                    if not principal.can_access_order(ret.customer_id, ret.order_id):
+                        return {"error_code": "ORDER_ACCESS_DENIED", "message": "Bạn không có quyền truy cập yêu cầu đổi trả này."}
                     return {
                         "case_type": "return_request",
                         "code": ret.code,
@@ -243,6 +247,9 @@ def create_tools(
                 res = await session.execute(stmt)
                 rf = res.scalar_one_or_none()
                 if rf:
+                    order = await session.get(OrderModel, rf.order_id)
+                    if not order or not principal.can_access_order(order.customer_id, order.id):
+                        return {"error_code": "ORDER_ACCESS_DENIED", "message": "Bạn không có quyền truy cập thông tin hoàn tiền này."}
                     return {
                         "case_type": "refund",
                         "code": rf.code,
@@ -255,6 +262,13 @@ def create_tools(
                 res = await session.execute(stmt)
                 tk = res.scalar_one_or_none()
                 if tk:
+                    is_allowed = (
+                        principal.is_staff
+                        or (principal.is_authenticated_customer and tk.customer_id == principal.customer_id)
+                        or (tk.conversation_id == conversation_id)
+                    )
+                    if not is_allowed:
+                        return {"error_code": "TICKET_ACCESS_DENIED", "message": "Bạn không có quyền truy cập phiếu hỗ trợ này."}
                     return {
                         "case_type": "ticket",
                         "code": tk.code,
@@ -262,6 +276,7 @@ def create_tools(
                         "priority": tk.priority,
                         "created_at": tk.created_at.isoformat(),
                     }
+
         # If no code, list active cases for customer
         if principal.is_authenticated_customer:
             stmt = select(ReturnRequestModel).where(ReturnRequestModel.customer_id == principal.customer_id)

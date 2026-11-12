@@ -27,7 +27,7 @@ class HybridRetriever:
         self.embedder = get_embedding_provider()
         self._in_memory_cache: list[dict[str, Any]] | None = None
 
-    def _get_in_memory_chunks(self) -> list[dict[str, Any]]:
+    def _get_in_memory_chunks(self, as_of: datetime | None = None) -> list[dict[str, Any]]:
         if self._in_memory_cache is None:
             clauses = generate_policy_clauses()
             chunks = build_chunks_from_clauses(clauses)
@@ -36,6 +36,37 @@ class HybridRetriever:
             for c, emb in zip(chunks, embeddings):
                 c["embedding"] = emb
             self._in_memory_cache = chunks
+
+        if as_of is not None:
+            filtered = []
+            for c in self._in_memory_cache:
+                eff_from = c.get("effective_from")
+                eff_to = c.get("effective_to")
+                if isinstance(eff_from, str):
+                    try:
+                        eff_from = datetime.fromisoformat(eff_from.replace("Z", "+00:00"))
+                    except Exception:
+                        eff_from = None
+                if isinstance(eff_to, str):
+                    try:
+                        eff_to = datetime.fromisoformat(eff_to.replace("Z", "+00:00"))
+                    except Exception:
+                        eff_to = None
+
+                # Normalize timezone if needed
+                as_of_cmp = as_of
+                if eff_from and eff_from.tzinfo is not None and as_of_cmp.tzinfo is None:
+                    as_of_cmp = as_of_cmp.replace(tzinfo=eff_from.tzinfo)
+                elif eff_from and eff_from.tzinfo is None and as_of_cmp.tzinfo is not None:
+                    as_of_cmp = as_of_cmp.replace(tzinfo=None)
+
+                if eff_from and as_of_cmp < eff_from:
+                    continue
+                if eff_to and as_of_cmp >= eff_to:
+                    continue
+                filtered.append(c)
+            return filtered
+
         return self._in_memory_cache
 
     async def _fetch_chunks(self, as_of: datetime | None = None) -> list[dict[str, Any]]:
@@ -65,7 +96,7 @@ class HybridRetriever:
             except Exception:
                 pass
 
-        return self._get_in_memory_chunks()
+        return self._get_in_memory_chunks(as_of=as_of)
 
     async def retrieve(
         self,

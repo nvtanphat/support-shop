@@ -47,19 +47,34 @@ async def load_context_node(state: AgentState, config: RunnableConfig) -> dict[s
         if conv_id:
             try:
                 c_uuid = uuid.UUID(conv_id)
-                stmt_act = select(PendingActionModel).where(
-                    PendingActionModel.conversation_id == c_uuid,
-                    PendingActionModel.status == "proposed",
+                stmt_act = (
+                    select(PendingActionModel)
+                    .where(
+                        PendingActionModel.conversation_id == c_uuid,
+                        PendingActionModel.status == "proposed",
+                    )
+                    .order_by(PendingActionModel.created_at.desc())
                 )
                 res_act = await session.execute(stmt_act)
-                act = res_act.scalar_one_or_none()
-                if act and act.expires_at > clock:
-                    dynamic_context["active_pending_action"] = {
-                        "action_id": str(act.id),
-                        "type": act.type,
-                        "preview": act.preview,
-                        "preview_hash": act.payload_hash,
-                    }
+                acts = res_act.scalars().all()
+                for act in acts:
+                    act_exp = act.expires_at
+                    clock_cmp = clock
+                    if act_exp.tzinfo is not None and clock_cmp.tzinfo is None:
+                        clock_cmp = clock_cmp.replace(tzinfo=act_exp.tzinfo)
+                    elif act_exp.tzinfo is None and clock_cmp.tzinfo is not None:
+                        act_exp = act_exp.replace(tzinfo=clock_cmp.tzinfo)
+
+                    if act_exp > clock_cmp:
+                        dynamic_context["active_pending_action"] = {
+                            "action_id": str(act.id),
+                            "code": str(act.id)[:8],
+                            "type": act.type,
+                            "preview": act.preview,
+                            "preview_hash": act.payload_hash,
+                            "expires_at": act.expires_at.isoformat(),
+                        }
+                        break
             except Exception:
                 pass
 
@@ -80,4 +95,5 @@ async def load_context_node(state: AgentState, config: RunnableConfig) -> dict[s
     return {
         "dynamic_context": dynamic_context,
         "clock": clock,
+        "pending_action": dynamic_context.get("active_pending_action"),
     }
