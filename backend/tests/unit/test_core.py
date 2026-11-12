@@ -110,3 +110,17 @@ def test_google_api_key_is_a_fallback_only_when_pool_is_empty(monkeypatch) -> No
     assert Settings(GEMINI_API_KEY="").get_gemini_api_keys() == ["solo"]
     monkeypatch.setenv("GOOGLE_API_KEY", "a,b")
     assert Settings(GEMINI_API_KEY="").get_gemini_api_keys() == []
+
+
+def test_exhausted_gemini_key_is_skipped_until_cooldown_ends() -> None:
+    """Later calls must not pay a 429 on a key that is already out of quota."""
+    from shopagent.infra.llm.factory import GeminiKeyManager, get_key_manager
+
+    manager = GeminiKeyManager(["k1", "k2"], cooldown_seconds=1000.0)
+    assert manager.current_idx == 0
+    manager.rotate()  # k1 hit its quota
+    assert manager.current_idx == 1
+    manager.rotate()  # k2 too: both cooling, the soonest-ready one (k1) is used
+    assert manager.current_idx == 0
+    # The process shares one manager per key set, so a new model instance keeps the cooldown.
+    assert get_key_manager(["a", "b"]) is get_key_manager(["a", "b"])

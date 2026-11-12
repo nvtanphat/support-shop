@@ -73,3 +73,10 @@ async def index_policies(session: AsyncSession, rules: dict[str, Any] | None = N
 
     await session.commit()
     return saved_chunks
+
+
+if __name__ == "__main__":
+    # Same entry point the README documents; the click command `shopagent index-policies` is equivalent.
+    from shopagent.cli import index_policies_cmd
+
+    index_policies_cmd()

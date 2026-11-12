@@ -14,7 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.core.clock import get_clock
-from shopagent.core.errors import AppError, ForbiddenError
+from shopagent.core.errors import AppError, ForbiddenError, NotFoundError
 from shopagent.core.principal import Principal
 from shopagent.domain.policies.rules import PolicyRules
 from shopagent.domain.services.actions import ActionService
@@ -35,6 +35,22 @@ from shopagent.rag.reranker import RerankerUnavailableError
 from shopagent.rag.retriever import HybridRetriever, PolicyIndexUnavailableError
 
 logger = logging.getLogger(__name__)
+
+
+def _order_not_found(order_code: str) -> dict[str, Any]:
+    """The same answer for "no such order" and "not yours", so order codes cannot be probed."""
+    return {
+        "error_code": "ORDER_NOT_FOUND",
+        "message": f"Không tìm thấy đơn hàng '{order_code}' trong tài khoản của quý khách.",
+    }
+
+
+_CASE_NOT_FOUND = {"error_code": "CASE_NOT_FOUND", "message": "Không tìm thấy hồ sơ với mã này trong tài khoản của quý khách."}
+_GUEST_VERIFICATION_REQUIRED = {
+    "error_code": "GUEST_VERIFICATION_REQUIRED",
+    "message": "Quý khách cần xác minh số điện thoại đặt hàng qua mã OTP để xem thông tin đơn hàng này.",
+    "hint": "Mời khách bấm vào nút 'Xác minh đơn hàng' trên màn hình chat.",
+}
 
 
 # -------------------------------------------------------------------------
@@ -176,12 +192,9 @@ def create_tools(
             return {"error_code": "INVALID_PRINCIPAL", "message": "Công cụ này chỉ dùng cho khách chưa đăng nhập (guest)."}
         try:
             return await order_service.get_order_for_principal(principal, order_code)
-        except ForbiddenError:
-            return {
-                "error_code": "GUEST_VERIFICATION_REQUIRED",
-                "message": "Quý khách cần xác minh số điện thoại đặt hàng qua mã OTP để xem thông tin đơn hàng này.",
-                "hint": "Mời khách bấm vào nút 'Xác minh đơn hàng' trên màn hình chat.",
-            }
+        except (ForbiddenError, NotFoundError):
+            # Unknown and unverified orders look the same to a guest.
+            return dict(_GUEST_VERIFICATION_REQUIRED)
         except AppError as e:
             return {"error_code": e.error_code, "message": str(e)}
 
@@ -199,6 +212,8 @@ def create_tools(
         """Xem chi tiết đầy đủ của đơn hàng (dòng sản phẩm, item_id, mốc thời gian, thanh toán, vận chuyển)."""
         try:
             return await order_service.get_order_for_principal(principal, order_code)
+        except (ForbiddenError, NotFoundError):
+            return _order_not_found(order_code)
         except AppError as e:
             return {"error_code": e.error_code, "message": str(e)}
 
@@ -206,10 +221,8 @@ def create_tools(
     async def track_shipment(order_code: str) -> dict[str, Any]:
         """Xem lịch trình và các sự kiện vận chuyển chi tiết của đơn hàng."""
         order_model = await order_service.order_repo.get_by_code(order_code)
-        if not order_model:
-            return {"error_code": "ORDER_NOT_FOUND", "message": f"Không tìm thấy đơn {order_code}."}
-        if not principal.can_access_order(order_model.customer_id, order_model.id):
-            return {"error_code": "ORDER_ACCESS_DENIED", "message": "Bạn không có quyền truy cập đơn này."}
+        if not order_model or not principal.can_access_order(order_model.customer_id, order_model.id):
+            return _order_not_found(order_code)
 
         stmt = select(ShipmentModel).where(ShipmentModel.order_id == order_model.id)
         res = await session.execute(stmt)
@@ -245,7 +258,11 @@ def create_tools(
             )
             if res.get("clause_id") and retrieved_clauses is not None:
                 retrieved_clauses.append(res["clause_id"])
-            return res
+            # Echo what was checked so a later propose_return can prove it follows this exact check.
+            return {
+                **res,
+                "checked": {"order_code": order_code, "item_ids": list(item_ids), "reason_code": reason_code, "resolution": resolution},
+            }
         except AppError as e:
             return {"error_code": e.error_code, "message": str(e)}
 
@@ -276,7 +293,7 @@ def create_tools(
                 ret = res_ret.scalar_one_or_none()
                 if ret:
                     if not principal.can_access_order(ret.customer_id, ret.order_id):
-                        return {"error_code": "ORDER_ACCESS_DENIED", "message": "Bạn không có quyền truy cập yêu cầu đổi trả này."}
+                        return dict(_CASE_NOT_FOUND)
                     return {
                         "case_type": "return_request",
                         "code": ret.code,
@@ -292,7 +309,7 @@ def create_tools(
                 if rf:
                     order = await session.get(OrderModel, rf.order_id)
                     if not order or not principal.can_access_order(order.customer_id, order.id):
-                        return {"error_code": "ORDER_ACCESS_DENIED", "message": "Bạn không có quyền truy cập thông tin hoàn tiền này."}
+                        return dict(_CASE_NOT_FOUND)
                     return {
                         "case_type": "refund",
                         "code": rf.code,
@@ -311,7 +328,7 @@ def create_tools(
                         or (tk.conversation_id == conversation_id)
                     )
                     if not is_allowed:
-                        return {"error_code": "TICKET_ACCESS_DENIED", "message": "Bạn không có quyền truy cập phiếu hỗ trợ này."}
+                        return dict(_CASE_NOT_FOUND)
                     return {
                         "case_type": "ticket",
                         "code": tk.code,

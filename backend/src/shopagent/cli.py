@@ -12,6 +12,8 @@ from shopagent.domain.seeder import generate_seed_data
 from shopagent.domain.verifier import verify_dataset
 from shopagent.infra.db.session import async_engine, async_session_factory
 from shopagent.infra.db.tables import Base
+from shopagent.rag.indexer import index_policies
+from shopagent.rag.retriever import clear_retrieval_caches
 
 
 @click.group()
@@ -60,11 +62,27 @@ def seed_cmd(seed: int, now: str, customers: int, products: int, orders: int) ->
                 num_products=products,
                 num_orders=orders,
             )
+            indexed = await index_policies(session)
+            click.echo(f"Đã lập chỉ mục {len(indexed)} điều khoản chính sách.")
             click.echo(
                 f"Đã sinh xong: {counts['staff']} nhân viên, {counts['customers']} khách hàng, "
                 f"{counts['products']} sản phẩm, {counts['variants']} phân loại, "
                 f"{counts['orders']} đơn hàng, {counts['returns']} yêu cầu trả hàng."
             )
+
+    asyncio.run(_run())
+
+
+@cli.command("index-policies")
+def index_policies_cmd() -> None:
+    """(Re)build the policy index from config/policy/rules.yaml; required before policy lookups work."""
+    async def _run() -> None:
+        async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        async with async_session_factory() as session:
+            indexed = await index_policies(session)
+        clear_retrieval_caches()
+        click.echo(f"Đã lập chỉ mục {len(indexed)} điều khoản chính sách.")
 
     asyncio.run(_run())
 

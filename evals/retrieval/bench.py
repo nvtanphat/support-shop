@@ -24,6 +24,7 @@ import yaml
 from shopagent.rag.chunker import build_chunks_from_clauses, tokenize_unaccent
 from shopagent.rag.embeddings import get_embedding_provider
 from shopagent.rag.generator import generate_policy_clauses
+from shopagent.rag.lexical import Bm25Index, normalize_query
 
 BENCHMARK_PATH = Path(__file__).with_name("benchmark_v2.yaml")
 TOP_K = 4
@@ -58,35 +59,15 @@ def effective_at(chunks: list[dict[str, Any]], as_of: datetime | None) -> list[d
     return [c for c in chunks if (c["from"] is None or c["from"] <= as_of) and (c["to"] is None or as_of < c["to"])]
 
 
-class Bm25Index:
-    """Okapi BM25 over accent-stripped tokens (k1=1.5, b=0.75)."""
+def split_children(clause_text: str, max_sentences: int = 2) -> list[str]:
+    """Child chunks: groups of sentences, each prefixed with the clause title (its first sentence)."""
+    import re
 
-    def __init__(self, chunks: list[dict[str, Any]], k1: float = 1.5, b: float = 0.75) -> None:
-        self.k1, self.b = k1, b
-        self.docs = [tokenize_unaccent(c["text"]) for c in chunks]
-        self.avg_len = sum(len(d) for d in self.docs) / max(1, len(self.docs))
-        df: dict[str, int] = {}
-        for doc in self.docs:
-            for term in set(doc):
-                df[term] = df.get(term, 0) + 1
-        n = len(self.docs)
-        self.idf = {t: math.log(1 + (n - c + 0.5) / (c + 0.5)) for t, c in df.items()}
-
-    def scores(self, query: str) -> list[float]:
-        terms = tokenize_unaccent(query)
-        out = []
-        for doc in self.docs:
-            length = len(doc)
-            total = 0.0
-            for term in terms:
-                tf = doc.count(term)
-                if tf and term in self.idf:
-                    total += self.idf[term] * tf * (self.k1 + 1) / (tf + self.k1 * (1 - self.b + self.b * length / self.avg_len))
-            out.append(total)
-        return out
-
-    def max_possible(self, query: str) -> float:
-        return sum(self.idf.get(t, 0.0) for t in set(tokenize_unaccent(query))) or 1.0
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", clause_text) if s.strip()]
+    if len(sentences) <= max_sentences + 1:
+        return [clause_text]
+    title, body = sentences[0], sentences[1:]
+    return [f"{title} " + " ".join(body[i : i + max_sentences]) for i in range(0, len(body), max_sentences)]
 
 
 def _rank(scores: list[float]) -> list[int]:
@@ -120,6 +101,22 @@ def strategy_current(chunks: list[dict[str, Any]], query: str) -> Ranking:
 def strategy_bm25(chunks: list[dict[str, Any]], query: str, index: Bm25Index) -> Ranking:
     scores = index.scores(query)
     return _ranking(chunks, _rank(scores), max(scores) / index.max_possible(query))
+
+
+def strategy_bm25_normalized(chunks: list[dict[str, Any]], query: str, index: Bm25Index) -> Ranking:
+    return strategy_bm25(chunks, normalize_query(query), index)
+
+
+def strategy_children(chunks: list[dict[str, Any]], query: str, normalize: bool) -> Ranking:
+    """Small-to-big: rank child chunks with BM25, score each clause by its best child."""
+    q = normalize_query(query) if normalize else query
+    children: list[tuple[int, str]] = [(i, t) for i, c in enumerate(chunks) for t in split_children(c["text"])]
+    index = Bm25Index([t for _, t in children])
+    child_scores = index.scores(q)
+    parent = [0.0] * len(chunks)
+    for (i, _), sc in zip(children, child_scores, strict=True):
+        parent[i] = max(parent[i], sc)
+    return _ranking(chunks, _rank(parent), max(parent) / index.max_possible(q))
 
 
 def strategy_bm25_hybrid(chunks: list[dict[str, Any]], query: str, index: Bm25Index) -> Ranking:
@@ -254,7 +251,6 @@ def run_benchmark(semantic_model: str | None = None, reranker_model: str | None 
     items = spec["queries"]
     tracemalloc.start()
     chunks = build_chunks(spec["temporal_clauses"])
-    bm25_all = Bm25Index(chunks)
     _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 
@@ -264,7 +260,7 @@ def run_benchmark(semantic_model: str | None = None, reranker_model: str | None 
     def with_index(fn: Callable[..., Ranking]) -> Callable[[dict[str, Any]], Ranking]:
         def run(item: dict[str, Any]) -> Ranking:
             pool = visible(item)
-            return fn(pool, item["q"], Bm25Index(pool)) if pool else Ranking([], [], 0.0)
+            return fn(pool, item["q"], Bm25Index([c["text"] for c in pool])) if pool else Ranking([], [], 0.0)
 
         return run
 
@@ -278,6 +274,9 @@ def run_benchmark(semantic_model: str | None = None, reranker_model: str | None 
         evaluate("current (overlap + hashed n-gram, RRF)", lambda it: strategy_current(visible(it), it["q"]), items),
         evaluate("bm25", with_index(strategy_bm25), items),
         evaluate("bm25 + hashed n-gram, RRF", with_index(strategy_bm25_hybrid), items),
+        evaluate("bm25 + query normalization", with_index(strategy_bm25_normalized), items),
+        evaluate("bm25 child chunks (small-to-big)", lambda it: strategy_children(visible(it), it["q"], False), items),
+        evaluate("bm25 child chunks + query normalization", lambda it: strategy_children(visible(it), it["q"], True), items),
     ]
     if semantic is not None:
         sem = semantic
@@ -285,7 +284,7 @@ def run_benchmark(semantic_model: str | None = None, reranker_model: str | None 
         results.append(
             evaluate(
                 f"bm25 + semantic {sem.name}, RRF",
-                lambda it: strategy_semantic_bm25(visible(it), it["q"], Bm25Index(visible(it)), sem),
+                lambda it: strategy_semantic_bm25(visible(it), it["q"], Bm25Index([c["text"] for c in visible(it)]), sem),
                 items,
             )
         )
@@ -294,7 +293,6 @@ def run_benchmark(semantic_model: str | None = None, reranker_model: str | None 
         results.append(evaluate(f"rerank all clauses with {rr.name}", lambda it: strategy_rerank(visible(it), it["q"], rr), items))
     for row in results:
         row["index_build_peak_kib"] = round(peak / 1024, 1)
-    _ = bm25_all
     return results
 
 

@@ -250,21 +250,21 @@ async def test_get_case_status_idor_security():
         session.add(tk_a)
         await session.commit()
 
-        # 1. Customer B (unauthorized) tries to access Customer A's Refund -> ORDER_ACCESS_DENIED
+        # 1. Customer B (unauthorized) tries to access Customer A's Refund -> CASE_NOT_FOUND
         principal_b = Principal.customer(customer_id=cust_b_id, email="cust_b@example.com")
         tools_b = create_tools(session, principal_b, conversation_id=uuid.uuid4())
         get_case_tool = next(t for t in tools_b if t.name == "get_case_status")
 
         res_rf_b = await get_case_tool.ainvoke({"case_code": "RF-AAAA01"})
-        assert res_rf_b.get("error_code") == "ORDER_ACCESS_DENIED"
+        assert res_rf_b.get("error_code") == "CASE_NOT_FOUND"  # same answer as a code that does not exist
 
-        # 2. Customer B tries to access Customer A's Ticket -> TICKET_ACCESS_DENIED
+        # 2. Customer B tries to access Customer A's Ticket -> CASE_NOT_FOUND
         res_tk_b = await get_case_tool.ainvoke({"case_code": "TK-AAAA01"})
-        assert res_tk_b.get("error_code") == "TICKET_ACCESS_DENIED"
+        assert res_tk_b.get("error_code") == "CASE_NOT_FOUND"
 
-        # 3. Customer B tries to access Customer A's Return -> ORDER_ACCESS_DENIED
+        # 3. Customer B tries to access Customer A's Return -> CASE_NOT_FOUND
         res_rt_b = await get_case_tool.ainvoke({"case_code": "RT-AAAA01"})
-        assert res_rt_b.get("error_code") == "ORDER_ACCESS_DENIED"
+        assert res_rt_b.get("error_code") == "CASE_NOT_FOUND"
 
         # 4. Customer A (authorized) accesses own Refund and Ticket -> Returns valid data
         principal_a = Principal.customer(customer_id=cust_a_id, email="cust_a@example.com")
@@ -518,3 +518,33 @@ async def test_system_prompt_carries_no_customer_identity() -> None:
     prompt = render_system_prompt(state)
     assert str(customer_id) not in prompt
     assert "Riêng Tư" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_other_customers_order_is_indistinguishable_from_a_missing_one() -> None:
+    """Order codes must not be probeable: 'not yours' and 'does not exist' give the same answer."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    owner_id, intruder_id = uuid.uuid4(), uuid.uuid4()
+    async with async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)() as session:
+        session.add(
+            OrderModel(
+                id=uuid.uuid4(), customer_id=owner_id, code="SL-OWNED1", status="delivered",
+                payment_method="cod", payment_status="paid", subtotal=100000, total=100000,
+            )
+        )
+        await session.commit()
+        intruder = Principal.customer(customer_id=intruder_id, email="x@example.com")
+        tools = {t.name: t for t in create_tools(session, intruder, conversation_id=uuid.uuid4())}
+        for tool_name in ("get_order", "track_shipment"):
+            theirs = await tools[tool_name].ainvoke({"order_code": "SL-OWNED1"})
+            missing = await tools[tool_name].ainvoke({"order_code": "SL-OWNED1"[:-1] + "9"})
+            assert theirs["error_code"] == missing["error_code"] == "ORDER_NOT_FOUND"
+            assert theirs["message"].replace("SL-OWNED1", "X") == missing["message"].replace("SL-OWNED9", "X")
+
+        guest_tools = {t.name: t for t in create_tools(session, Principal.guest(), conversation_id=uuid.uuid4())}
+        unverified = await guest_tools["lookup_order_guest"].ainvoke({"order_code": "SL-OWNED1"})
+        unknown = await guest_tools["lookup_order_guest"].ainvoke({"order_code": "SL-NOPE99"})
+        assert unverified == unknown and unknown["error_code"] == "GUEST_VERIFICATION_REQUIRED"
+    await engine.dispose()

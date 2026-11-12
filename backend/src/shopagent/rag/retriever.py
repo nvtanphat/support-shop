@@ -1,37 +1,53 @@
-"""Hybrid policy retriever combining lexical unaccented search and semantic embeddings."""
+"""Policy retriever: BM25 over normalised queries, optional cross-encoder reranking, cached index.
+
+Ranking choices are justified by evals/retrieval (benchmark_v2). The index snapshot (parsed chunks)
+is cached per process and revalidated with a cheap fingerprint query, so a lookup no longer reloads
+and re-tokenises every clause; reranker results are cached per (query, candidates).
+"""
 
 from __future__ import annotations
 
 import asyncio
+import time
+from collections import OrderedDict
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shopagent.core.clock import get_clock
 from shopagent.infra.db.tables import PolicyChunkModel
-from shopagent.rag.chunker import (
-    build_chunks_from_clauses,
-    remove_vietnamese_accents,
-    tokenize_unaccent,
-)
-from shopagent.rag.embeddings import get_embedding_provider
+from shopagent.rag.chunker import build_chunks_from_clauses
 from shopagent.rag.generator import generate_policy_clauses
+from shopagent.rag.lexical import Bm25Index, normalize_query
 from shopagent.rag.reranker import Reranker, get_configured_reranker
 
-
-def _cosine_similarity(v1: list[float], v2: list[float]) -> float:
-    dot = sum(a * b for a, b in zip(v1, v2, strict=False))
-    return max(0.0, dot)
+# The snapshot is also revalidated by fingerprint on every call; the TTL bounds staleness if the
+# fingerprint query ever misses a change.
+SNAPSHOT_TTL_SECONDS = 300.0
+RERANK_CACHE_SIZE = 256
 
 
 def _format_datetime(dt: Any) -> str | None:
-    """Safely format an optional datetime or string into ISO string."""
     if dt is None:
         return None
-    if hasattr(dt, "isoformat"):
-        return str(dt.isoformat())
-    return str(dt)
+    return str(dt.isoformat()) if hasattr(dt, "isoformat") else str(dt)
+
+
+def _as_datetime(value: Any) -> datetime | None:
+    if value is None or isinstance(value, datetime):
+        return value  # type: ignore[no-any-return]
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+
+def _aware(dt: datetime, reference: datetime) -> datetime:
+    """Compare naive database timestamps (SQLite) with aware ones without guessing a zone."""
+    if dt.tzinfo is None and reference.tzinfo is not None:
+        return dt.replace(tzinfo=reference.tzinfo)
+    if dt.tzinfo is not None and reference.tzinfo is None:
+        return dt.replace(tzinfo=None)
+    return dt
 
 
 class PolicyIndexUnavailableError(RuntimeError):
@@ -42,8 +58,30 @@ class PolicyIndexUnavailableError(RuntimeError):
     """
 
 
+class _Snapshot:
+    def __init__(self, fingerprint: object, chunks: list[dict[str, Any]]) -> None:
+        self.fingerprint = fingerprint
+        self.chunks = chunks
+        self.loaded_at = time.monotonic()
+        self.index_by_ids: dict[tuple[str, ...], Bm25Index] = {}
+
+    def fresh(self, fingerprint: object) -> bool:
+        return fingerprint == self.fingerprint and time.monotonic() - self.loaded_at < SNAPSHOT_TTL_SECONDS
+
+
+_snapshot: _Snapshot | None = None
+_rerank_cache: OrderedDict[tuple[str, tuple[str, ...]], list[float]] = OrderedDict()
+
+
+def clear_retrieval_caches() -> None:
+    """Drop cached index snapshots and rerank results (used after re-indexing and in tests)."""
+    global _snapshot
+    _snapshot = None
+    _rerank_cache.clear()
+
+
 class HybridRetriever:
-    """Retrieves top-k relevant policy clauses using BM25 lexical + Cosine semantic RRF.
+    """Retrieves the top-k policy clauses that were in force at `as_of`.
 
     Production code passes a database session. `in_memory=True` is an explicit offline mode for
     benchmarks; it is never selected implicitly when a database call fails.
@@ -62,8 +100,7 @@ class HybridRetriever:
         self.session = session
         self._explicit_reranker = reranker
         self._explicit_candidates = rerank_candidates
-        self.embedder = get_embedding_provider()
-        self._in_memory_cache: list[dict[str, Any]] | None = None
+        self._in_memory_snapshot: _Snapshot | None = None
 
     def _resolve_reranker(self) -> tuple[Reranker | None, int]:
         """An explicitly injected reranker, else the configured one; failure to load raises."""
@@ -72,78 +109,74 @@ class HybridRetriever:
         configured = get_configured_reranker()
         return configured if configured is not None else (None, self._explicit_candidates)
 
-    def _get_in_memory_chunks(self, as_of: datetime | None = None) -> list[dict[str, Any]]:
-        if self._in_memory_cache is None:
-            clauses = generate_policy_clauses()
-            chunks = build_chunks_from_clauses(clauses)
-            texts = [c["text"] for c in chunks]
-            embeddings = self.embedder.embed_documents(texts)
-            for c, emb in zip(chunks, embeddings, strict=False):
-                c["embedding"] = emb
-            self._in_memory_cache = chunks
+    async def _load_snapshot(self) -> _Snapshot:
+        global _snapshot
+        if self.session is None:
+            if self._in_memory_snapshot is None:
+                chunks = build_chunks_from_clauses(generate_policy_clauses())
+                for chunk in chunks:
+                    chunk["effective_from"] = _as_datetime(chunk.get("effective_from"))
+                    chunk["effective_to"] = _as_datetime(chunk.get("effective_to"))
+                self._in_memory_snapshot = _Snapshot("in-memory", chunks)
+            return self._in_memory_snapshot
 
-        if as_of is not None:
-            filtered = []
-            for c in self._in_memory_cache:
-                eff_from = c.get("effective_from")
-                eff_to = c.get("effective_to")
-                if isinstance(eff_from, str):
-                    try:
-                        eff_from = datetime.fromisoformat(eff_from.replace("Z", "+00:00"))
-                    except Exception:
-                        eff_from = None
-                if isinstance(eff_to, str):
-                    try:
-                        eff_to = datetime.fromisoformat(eff_to.replace("Z", "+00:00"))
-                    except Exception:
-                        eff_to = None
-
-                # Normalize timezone if needed
-                as_of_cmp = as_of
-                if eff_from and eff_from.tzinfo is not None and as_of_cmp.tzinfo is None:
-                    as_of_cmp = as_of_cmp.replace(tzinfo=eff_from.tzinfo)
-                elif eff_from and eff_from.tzinfo is None and as_of_cmp.tzinfo is not None:
-                    as_of_cmp = as_of_cmp.replace(tzinfo=None)
-
-                if eff_from and as_of_cmp < eff_from:
-                    continue
-                if eff_to and as_of_cmp >= eff_to:
-                    continue
-                filtered.append(c)
-            return filtered
-
-        return self._in_memory_cache
-
-    async def _fetch_chunks(self, as_of: datetime | None = None) -> list[dict[str, Any]]:
-        """Fetch policy chunks from the database, or from the generated clauses in offline mode."""
-        if self.session is not None:
-            total = (await self.session.execute(select(func.count()).select_from(PolicyChunkModel))).scalar_one()
-            if total == 0:
-                raise PolicyIndexUnavailableError("policy_chunks is empty: run the policy indexer")
-            stmt = select(PolicyChunkModel)
-            if as_of:
-                stmt = stmt.where(
-                    PolicyChunkModel.effective_from <= as_of,
-                    (PolicyChunkModel.effective_to.is_(None) | (PolicyChunkModel.effective_to > as_of)),
+        count, *marks = (
+            await self.session.execute(
+                select(
+                    func.count(PolicyChunkModel.id),
+                    func.max(PolicyChunkModel.created_at),
+                    func.max(PolicyChunkModel.effective_from),
+                    func.max(PolicyChunkModel.effective_to),
+                    func.count(PolicyChunkModel.effective_to),
                 )
-            res = await self.session.execute(stmt)
-            db_chunks = res.scalars().all()
-            return [
-                {
-                    "clause_id": c.clause_id,
-                    "topic": c.topic,
-                    "version": c.version,
-                    "effective_from": _format_datetime(c.effective_from),
-                    "effective_to": _format_datetime(c.effective_to),
-                    "text": c.text,
-                    "text_unaccent": c.text_unaccent,
-                    "tokens": tokenize_unaccent(c.text_unaccent),
-                    "embedding": c.embedding,
-                }
-                for c in db_chunks
-            ]
+            )
+        ).one()
+        if count == 0:
+            raise PolicyIndexUnavailableError("policy_chunks is empty: run the policy indexer")
+        # Re-indexing adds rows and expiring a clause moves effective_to; both change the fingerprint.
+        fingerprint = (count, *marks)
+        if _snapshot is not None and _snapshot.fresh(fingerprint):
+            return _snapshot
 
-        return self._get_in_memory_chunks(as_of=as_of)
+        rows = (await self.session.execute(select(PolicyChunkModel))).scalars().all()
+        chunks = [
+            {
+                "clause_id": c.clause_id,
+                "topic": c.topic,
+                "version": c.version,
+                "effective_from": c.effective_from,
+                "effective_to": c.effective_to,
+                "text": c.text,
+            }
+            for c in rows
+        ]
+        _snapshot = _Snapshot(fingerprint, chunks)
+        return _snapshot
+
+    @staticmethod
+    def _in_force(chunks: list[dict[str, Any]], as_of: datetime) -> list[dict[str, Any]]:
+        visible = []
+        for c in chunks:
+            start, end = c.get("effective_from"), c.get("effective_to")
+            if start is not None and _aware(as_of, start) < start:
+                continue
+            if end is not None and _aware(as_of, end) >= end:
+                continue
+            visible.append(c)
+        return visible
+
+    async def _rerank(self, reranker: Reranker, query: str, pool: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        key = (query, tuple(f"{c['clause_id']}@{c['version']}" for c in pool))
+        scores = _rerank_cache.get(key)
+        if scores is None:
+            scores = await asyncio.to_thread(reranker.scores, query, [c["text"] for c in pool])
+            _rerank_cache[key] = scores
+            while len(_rerank_cache) > RERANK_CACHE_SIZE:
+                _rerank_cache.popitem(last=False)
+        else:
+            _rerank_cache.move_to_end(key)
+        ranked = sorted(zip(pool, scores, strict=True), key=lambda pair: pair[1], reverse=True)
+        return [{**chunk, "score": score} for chunk, score in ranked]
 
     async def retrieve(
         self,
@@ -152,90 +185,39 @@ class HybridRetriever:
         topic: str | None = None,
         as_of: datetime | None = None,
     ) -> list[dict[str, Any]]:
-        """Retrieve top_k matching clauses using Reciprocal Rank Fusion."""
-        chunks = await self._fetch_chunks(as_of=as_of)
+        """Return up to top_k clauses in force at `as_of` (default: now), best first."""
+        snapshot = await self._load_snapshot()
+        chunks = self._in_force(snapshot.chunks, as_of or get_clock().now())
+        if topic:
+            chunks = [c for c in chunks if c.get("topic") == topic] or chunks
         if not chunks:
             return []
 
-        # Filter by topic if specified
-        if topic:
-            filtered = [c for c in chunks if c.get("topic") == topic]
-            if filtered:
-                chunks = filtered
+        ids = tuple(f"{c['clause_id']}@{c['version']}" for c in chunks)
+        index = snapshot.index_by_ids.get(ids)
+        if index is None:
+            index = snapshot.index_by_ids[ids] = Bm25Index([c["text"] for c in chunks])
+        normalized = normalize_query(query)
+        scores = index.scores(normalized)
+        if max(scores) == 0.0:
+            return []  # no query term occurs in any clause: nothing to present as evidence
 
-        query_unaccent = remove_vietnamese_accents(query)
-        query_tokens = set(tokenize_unaccent(query))
-        query_emb = self.embedder.embed_query(query)
-
-        # 1. Lexical Scoring (BM25 token overlap + exact match boost)
-        lexical_scores = []
-        max_overlap = 0
-        for idx, c in enumerate(chunks):
-            c_tokens = set(c["tokens"])
-            overlap = len(query_tokens.intersection(c_tokens))
-            if overlap > max_overlap:
-                max_overlap = overlap
-            bonus = 0.0
-            # Phrase / exact substring match boost
-            if query_unaccent in c["text_unaccent"]:
-                bonus += 5.0
-            score = overlap + bonus
-            lexical_scores.append((idx, score))
-
-        # 2. Semantic Scoring (Cosine similarity)
-        semantic_scores = []
-        max_sim = 0.0
-        for idx, c in enumerate(chunks):
-            sim = _cosine_similarity(query_emb, c["embedding"])
-            if sim > max_sim:
-                max_sim = sim
-            semantic_scores.append((idx, sim))
-
-        # If zero token overlap and no phrase match, treat as no relevant evidence
-        if max_overlap == 0:
-            return []
-
-        # Sort lexical descending
-        lexical_scores.sort(key=lambda x: x[1], reverse=True)
-        lexical_ranks = {item[0]: rank for rank, item in enumerate(lexical_scores)}
-
-        # Sort semantic descending
-        semantic_scores.sort(key=lambda x: x[1], reverse=True)
-        semantic_ranks = {item[0]: rank for rank, item in enumerate(semantic_scores)}
-
-        # 3. Reciprocal Rank Fusion (RRF)
-        k_const = 60
-        rrf_list = []
-        for idx in range(len(chunks)):
-            r_lex = lexical_ranks[idx]
-            r_sem = semantic_ranks[idx]
-            rrf_score = (1.0 / (k_const + r_lex)) + (1.0 / (k_const + r_sem))
-            rrf_list.append((idx, rrf_score))
-
-        rrf_list.sort(key=lambda x: x[1], reverse=True)
-
+        order = sorted(range(len(chunks)), key=lambda i: scores[i], reverse=True)
+        ranked = [{**chunks[i], "score": scores[i]} for i in order]
         reranker, candidates = self._resolve_reranker()
         if reranker is not None:
-            pool = rrf_list[: max(top_k, candidates)]
-            rerank_scores = await asyncio.to_thread(
-                reranker.scores, query, [chunks[idx]["text"] for idx, _ in pool]
-            )
-            rrf_list = [
-                (idx, score)
-                for (idx, _), score in sorted(zip(pool, rerank_scores, strict=True), key=lambda p: p[1], reverse=True)
-            ]
+            pool = ranked[: max(top_k, candidates)]
+            ranked = await self._rerank(reranker, normalized, pool)
 
-        results = []
-        for idx, score in rrf_list[:top_k]:
-            c = chunks[idx]
-            results.append({
+        return [
+            {
                 "clause_id": c["clause_id"],
                 "topic": c["topic"],
                 "version": c["version"],
                 "effective_from": _format_datetime(c.get("effective_from")),
                 "effective_to": _format_datetime(c.get("effective_to")),
                 "text": c["text"],
-                "score": round(score, 4),
-            })
-
-        return results
+                "score": round(float(c["score"]), 4),
+            }
+            for c in ranked[:top_k]
+        ]

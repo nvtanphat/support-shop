@@ -21,8 +21,9 @@ from langchain_core.messages.tool import ToolCall
 from langchain_core.runnables import RunnableConfig
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shopagent.agent.context_window import prune_messages_token_aware
+from shopagent.agent.context_window import estimate_text_tokens, prune_messages_token_aware
 from shopagent.agent.prompt import render_system_prompt
+from shopagent.agent.proposal_guard import find_proposal_conflict
 from shopagent.agent.slot_guard import (
     GroundingContext,
     find_ungrounded_slot,
@@ -47,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_DUPLICATE_CALLS = 2
 _MAX_STEERING_ROUNDS = 2
-_LLM_ATTEMPTS = 3
+_LLM_ATTEMPTS = 2
 
 
 @dataclass(frozen=True)
@@ -209,7 +210,11 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
     llm_with_tools = _bind_tools(llm, tools)
     sys_msg = SystemMessage(content=render_system_prompt(state))
     history = list(state.get("messages", []))
-    working = prune_messages_token_aware(history, max_input_tokens=budget.max_input_tokens)
+    # System prompt and tool schemas are sent on every call, so they count against the input budget.
+    reserved = estimate_text_tokens(sys_msg.content if isinstance(sys_msg.content, str) else "") + sum(
+        estimate_text_tokens(json.dumps(t.get_input_jsonschema())) for t in tools
+    )
+    working = prune_messages_token_aware(history, max_input_tokens=budget.max_input_tokens, reserved_tokens=reserved)
 
     dynamic_context = state.get("dynamic_context") or {}
     requirements = derive_requirements(_latest_user_text(history), tools_by_name)
@@ -249,7 +254,9 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
         new_messages.append(ai)
         for call in ai.tool_calls:
             grounding = GroundingContext([*history, *new_messages], recent_order_codes(dynamic_context))
-            result = await _run_tool_call(call, tools_by_name, sig_counts, budget.tool_timeout_s, grounding)
+            result = find_proposal_conflict(
+                call["name"], recorded, dynamic_context.get("active_pending_action")
+            ) or await _run_tool_call(call, tools_by_name, sig_counts, budget.tool_timeout_s, grounding)
             recorded.append(
                 {
                     "tool": call.get("name"),

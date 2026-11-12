@@ -30,7 +30,7 @@ _CLAUSE_TEMPLATES: list[dict[str, Any]] = [
             "Chính sách đổi trả do khách hàng đổi ý không còn nhu cầu (Change of mind). "
             "Thời hạn yêu cầu: trong vòng {{ r.return.windows_days.change_of_mind }} ngày kể từ khi nhận hàng. "
             "Điều kiện hàng hóa: Chưa qua sử dụng, còn nguyên tem mác, hộp đựng và phụ kiện quà tặng kèm theo. "
-            "Phí vận chuyển: Khách hàng chịu phí vận chuyển chiều về là {{ r.return.return_shipping.customer_fee_vnd }} đ, "
+            "Phí vận chuyển: Khách hàng chịu phí vận chuyển chiều về là {{ r.return.return_shipping.customer_fee_vnd | vnd }}, "
             "khoản phí này sẽ được khấu trừ trực tiếp vào tổng số tiền hoàn."
         ),
     },
@@ -54,7 +54,7 @@ _CLAUSE_TEMPLATES: list[dict[str, Any]] = [
             "Quy định về thời hạn gửi hàng trả về kho cửa hàng. "
             "Sau khi yêu cầu đổi trả được phê duyệt và chấp thuận, khách hàng có thời hạn tối đa "
             "{{ r.return.ship_back_deadline_days }} ngày để giao kiện hàng cho bưu cục vận chuyển. "
-            "Hạn chót tính theo mốc {{ r.return.deadline_rule }}. "
+            "Hạn chót tính đến {{ r.return.deadline_rule | deadline_text }}. "
             "Nếu quá thời hạn trên mà hàng chưa được gửi, yêu cầu đổi trả sẽ tự động hết hiệu lực."
         ),
     },
@@ -76,9 +76,9 @@ _CLAUSE_TEMPLATES: list[dict[str, Any]] = [
         "category_scope": ["all"],
         "template": (
             "Hạn mức duyệt và thẩm quyền giải ngân hoàn tiền. "
-            "Khoản hoàn tiền từ {{ r.refund.auto_approve_max_vnd }} đ trở xuống không có cờ rủi ro: Hệ thống tự động phê duyệt ngay. "
-            "Khoản hoàn tiền trên {{ r.refund.auto_approve_max_vnd }} đ đến {{ r.refund.agent_approve_max_vnd }} đ: Nhân viên chăm sóc khách hàng (agent) xem xét phê duyệt. "
-            "Khoản hoàn tiền trên {{ r.refund.agent_approve_max_vnd }} đ hoặc phát hiện cờ rủi ro: Bắt buộc Trưởng nhóm (supervisor) xem xét và phê duyệt."
+            "Khoản hoàn tiền từ {{ r.refund.auto_approve_max_vnd | vnd }} trở xuống không có cờ rủi ro: Hệ thống tự động phê duyệt ngay. "
+            "Khoản hoàn tiền trên {{ r.refund.auto_approve_max_vnd | vnd }} đến {{ r.refund.agent_approve_max_vnd | vnd }}: Nhân viên chăm sóc khách hàng (agent) xem xét phê duyệt. "
+            "Khoản hoàn tiền trên {{ r.refund.agent_approve_max_vnd | vnd }} hoặc phát hiện cờ rủi ro: Bắt buộc Trưởng nhóm (supervisor) xem xét và phê duyệt."
         ),
     },
     {
@@ -133,12 +133,31 @@ _CLAUSE_TEMPLATES: list[dict[str, Any]] = [
 ]
 
 
+_DEADLINE_RULES = {
+    "end_of_local_day": "hết ngày (23:59:59 giờ Việt Nam) của ngày đến hạn",
+}
+
+
+def _format_vnd(amount: int) -> str:
+    """500000 -> '500.000 đ', the way customers write and read money."""
+    return f"{int(amount):,}".replace(",", ".") + " đ"
+
+
+def _deadline_text(rule: str) -> str:
+    """Customer-facing wording for a deadline rule; an unknown rule is a configuration error."""
+    if rule not in _DEADLINE_RULES:
+        raise ValueError(f"No customer-facing wording for deadline rule '{rule}'")
+    return _DEADLINE_RULES[rule]
+
+
 def generate_policy_clauses(rules: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Render all policy clauses dynamically using rules config."""
     if rules is None:
         rules = get_rules_config()
 
     jinja_env = jinja2.Environment()
+    jinja_env.filters["vnd"] = _format_vnd
+    jinja_env.filters["deadline_text"] = _deadline_text
     clauses = []
 
     for item in _CLAUSE_TEMPLATES:

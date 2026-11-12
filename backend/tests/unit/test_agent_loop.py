@@ -6,6 +6,7 @@ The model is a scripted stand-in, so these tests prove the orchestration around 
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -229,11 +230,11 @@ async def test_failed_synthesis_is_degraded_not_an_empty_success(
 async def test_llm_outage_degrades_after_bounded_retries(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch, no_sleep: None
 ) -> None:
-    model = ScriptedModel([RuntimeError("503")] * 4)
+    model = ScriptedModel([RuntimeError("503")] * 3)
     use_model(monkeypatch, model)
     out = await agent_node(make_state("Xin chào"), run_config(session))
     assert out["turn_status"] == "degraded"
-    assert model.calls == 4  # 3 primary attempts + 1 fallback attempt
+    assert model.calls == 3  # 2 primary attempts + 1 fallback attempt
 
 
 @pytest.mark.asyncio
@@ -305,7 +306,9 @@ def test_invalid_reason_and_missing_exchange_sku_are_rejected() -> None:
     assert find_ungrounded_slot("propose_return", {**base, "reason_code": "khong_thich"}, g)["slot"] == "reason_code"
     exchange = {**base, "reason_code": "change_of_mind", "resolution": "exchange"}
     assert find_ungrounded_slot("propose_return", exchange, g)["slot"] == "exchange_sku"
-    assert find_ungrounded_slot("propose_return", {**exchange, "exchange_sku": "TS-M"}, g) is None
+    checked = '{"eligible": true, "checked": {"order_code": "SL-100002", "item_ids": ["11111111-aaaa"], "reason_code": "change_of_mind", "resolution": "exchange"}}'
+    g_checked = grounding(["đơn SL-100002 cái áo mình đổi ý"], [ORDER_RESULT, checked])
+    assert find_ungrounded_slot("propose_return", {**exchange, "exchange_sku": "TS-M"}, g_checked) is None
 
 
 @pytest.mark.asyncio
@@ -416,3 +419,83 @@ def test_policy_lookup_failure_blocks_answer_but_honest_no_evidence_is_allowed()
     assert unmet_requirements(reqs, db_down)
     assert unmet_requirements(reqs, empty) == []
     assert unmet_requirements(reqs, found) == []
+
+
+# ---------------------------------------------------------------------------
+# Duplicate proposals
+# ---------------------------------------------------------------------------
+def test_second_proposal_in_one_turn_is_refused() -> None:
+    from shopagent.agent.proposal_guard import find_proposal_conflict
+
+    done = [{"tool": "propose_return", "args": {}, "result": {"action_id": "a1", "type": "return_request"}}]
+    assert find_proposal_conflict("propose_cancel_order", done, None)["error_code"] == "PROPOSAL_ALREADY_CREATED"
+    assert find_proposal_conflict("get_order", done, None) is None
+    failed = [{"tool": "propose_return", "args": {}, "result": {"error_code": "ORDER_NOT_FOUND"}}]
+    assert find_proposal_conflict("propose_return", failed, None) is None
+
+
+def test_live_card_of_the_same_kind_blocks_a_new_one_but_not_another_kind() -> None:
+    from shopagent.agent.proposal_guard import find_proposal_conflict
+
+    active = {"type": "return_request", "code": "ab12cd34"}
+    blocked = find_proposal_conflict("propose_return", [], active)
+    assert blocked["error_code"] == "PENDING_ACTION_EXISTS" and blocked["existing_action_code"] == "ab12cd34"
+    assert find_proposal_conflict("propose_cancel_order", [], active) is None
+
+
+# ---------------------------------------------------------------------------
+# Context window
+# ---------------------------------------------------------------------------
+def test_current_turn_is_kept_whole_even_when_a_tool_result_is_huge() -> None:
+    from shopagent.agent.context_window import prune_messages_token_aware
+
+    huge = ToolMessage(content="x" * 60000, tool_call_id="c1", name="get_order")
+    history = [
+        HumanMessage(content="câu cũ " * 50),
+        AIMessage(content="trả lời cũ " * 50),
+        HumanMessage(content="Đơn SL-1 sao rồi?"),
+        tool_call_msg("get_order", {"order_code": "SL-1"}),
+        huge,
+    ]
+    pruned = prune_messages_token_aware(history, max_input_tokens=500)
+    assert pruned[0].content == "Đơn SL-1 sao rồi?"  # the question survives, old history is dropped
+    assert pruned[-1] is huge and len(pruned) == 3
+
+
+def test_reserved_tokens_shrink_the_room_for_history_without_splitting_pairs() -> None:
+    from shopagent.agent.context_window import prune_messages_token_aware
+
+    old = [
+        HumanMessage(content="a " * 200),
+        tool_call_msg("search_policy", {"query": "x y"}, call_id="c0"),
+        ToolMessage(content="r " * 200, tool_call_id="c0", name="search_policy"),
+        AIMessage(content="đã trả lời"),
+    ]
+    now = [HumanMessage(content="câu mới")]
+    roomy = prune_messages_token_aware([*old, *now], max_input_tokens=3000, reserved_tokens=0)
+    tight = prune_messages_token_aware([*old, *now], max_input_tokens=3000, reserved_tokens=2900)
+    assert len(roomy) == 5
+    assert tight == now  # nothing left over for history
+    for kept in (roomy, tight):
+        ids = {c["id"] for m in kept if isinstance(m, AIMessage) for c in m.tool_calls}
+        assert ids == {m.tool_call_id for m in kept if isinstance(m, ToolMessage)}
+
+
+def test_propose_return_must_follow_a_matching_positive_eligibility_check() -> None:
+    args = {"order_code": "SL-100002", "items": [{"item_id": "11111111-aaaa", "qty": 1}], "reason_code": "defective"}
+    said = ["đơn SL-100002 cái áo bị rách"]
+
+    def check(eligible: bool, **overrides: object) -> str:
+        checked = {"order_code": "SL-100002", "item_ids": ["11111111-aaaa"], "reason_code": "defective", **overrides}
+        return json.dumps({"eligible": eligible, "checked": checked})
+
+    never = grounding(said, [ORDER_RESULT])
+    assert find_ungrounded_slot("propose_return", args, never)["error_code"] == "ELIGIBILITY_NOT_CHECKED"
+    other_order = grounding(said, [ORDER_RESULT, check(True, order_code="SL-OTHER")])
+    assert find_ungrounded_slot("propose_return", args, other_order)["error_code"] == "ELIGIBILITY_NOT_CHECKED"
+    other_reason = grounding(said, [ORDER_RESULT, check(True, reason_code="change_of_mind")])
+    assert find_ungrounded_slot("propose_return", args, other_reason)["error_code"] == "ELIGIBILITY_NOT_CHECKED"
+    refused = grounding(said, [ORDER_RESULT, check(False)])
+    assert find_ungrounded_slot("propose_return", args, refused)["error_code"] == "NOT_ELIGIBLE"
+    ok = grounding(said, [ORDER_RESULT, check(True)])
+    assert find_ungrounded_slot("propose_return", args, ok) is None

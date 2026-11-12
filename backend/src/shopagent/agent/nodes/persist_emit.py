@@ -146,6 +146,8 @@ async def persist_emit_node(state: AgentState, config: RunnableConfig) -> dict[s
                             "role": "assistant",
                             "content": clean_verified,
                             "citations": list(state.get("retrieved_clauses", [])),
+                            # Which tool backed each numeric/order claim, for auditing a wrong answer.
+                            "claim_evidence": dict(state.get("claim_evidence") or {}),
                         },
                     )
                     session.add(ev_msg)

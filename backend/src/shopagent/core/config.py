@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     DATABASE_URL_SYNC: str = "postgresql+psycopg://postgres:postgres@localhost:5432/shopagent"
     DATABASE_TEST_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/shopagent_test"
 
+    # Retrieval: overrides config/app.yaml `retrieval.reranker.enabled` when set (true/false)
+    RETRIEVAL_RERANKER_ENABLED: bool | None = None
+
     # LLM
     GEMINI_API_KEY: str = ""
     GROQ_API_KEY: str = ""

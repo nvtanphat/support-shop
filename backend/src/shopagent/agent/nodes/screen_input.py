@@ -17,6 +17,11 @@ INJECTION_PATTERNS = [
     r"reveal\s+(your\s+)?instructions",
     r"you\s+are\s+now\s+in\s+dan\s+mode",
     r"jailbreak",
+    r"developer\s+mode|chế\s+độ\s+(?:nhà\s+phát\s+triển|dev)",
+    r"(?:quên|bỏ)\s+(?:hết|toàn\s+bộ)\s+(?:những\s+)?(?:gì|chỉ\s+dẫn|hướng\s+dẫn)\s+(?:trước|đã)",
+    r"(?:tiết\s+lộ|cho\s+(?:tôi|mình)\s+xem|hiển\s+thị)\s+(?:prompt|chỉ\s+dẫn|hướng\s+dẫn)\s+(?:hệ\s+thống|gốc|ban\s+đầu)",
+    r"prompt\s+hệ\s+thống",
+    r"đóng\s+vai\s+(?:là\s+)?(?:một\s+)?(?:ai\s+không\s+bị|không\s+bị\s+giới\s+hạn)",
 ]
 
 

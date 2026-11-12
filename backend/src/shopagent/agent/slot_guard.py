@@ -76,6 +76,23 @@ class GroundingContext:
             if isinstance(it, dict) and it.get("item_id"):
                 self._item_names[str(it["item_id"])] = (str(it.get("product_name", "")), len(items))
 
+    def eligibility_for(self, order_code: str, item_ids: list[str], reason_code: str) -> bool | None:
+        """Result of the matching check_return_eligibility call, or None if that exact check never ran."""
+        for text in reversed(self._tool_text):
+            try:
+                payload = json.loads(text)
+            except ValueError:
+                continue
+            checked = payload.get("checked") if isinstance(payload, dict) else None
+            if (
+                isinstance(checked, dict)
+                and str(checked.get("order_code", "")).upper() == order_code.upper()
+                and set(checked.get("item_ids", [])) == set(item_ids)
+                and checked.get("reason_code") == reason_code
+            ):
+                return bool(payload.get("eligible"))
+        return None
+
     def customer_said(self, words: Iterable[str]) -> bool:
         return any(_has_word(text, w) for text in self._human_text for w in words)
 
@@ -147,6 +164,18 @@ def find_ungrounded_slot(
         return _missing("resolution", "Hãy hỏi khách muốn hoàn tiền (refund) hay đổi hàng (exchange).")
     if tool == "propose_return" and args.get("resolution") == "exchange" and not args.get("exchange_sku"):
         return _missing("exchange_sku", "Khách đổi hàng: hãy hỏi mẫu/size mới rồi kiểm tra tồn kho bằng check_variant_stock.")
+    if tool == "propose_return":
+        verdict = grounding.eligibility_for(str(code), ids, str(reason))
+        if verdict is None:
+            return {
+                "error_code": "ELIGIBILITY_NOT_CHECKED",
+                "message": "Chưa kiểm tra điều kiện đổi trả cho đúng đơn, sản phẩm và lý do này. Gọi check_return_eligibility trước.",
+            }
+        if verdict is False:
+            return {
+                "error_code": "NOT_ELIGIBLE",
+                "message": "Kiểm tra điều kiện cho thấy yêu cầu này không đủ điều kiện; không tạo đề xuất, hãy giải thích lý do cho khách.",
+            }
     return None
 
 

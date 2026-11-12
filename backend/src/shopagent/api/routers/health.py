@@ -6,11 +6,12 @@ import logging
 
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.agent.checkpoint import get_default_checkpointer
 from shopagent.api.deps import get_db_session
+from shopagent.infra.db.tables import PolicyChunkModel
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,16 @@ async def readiness_check(session: AsyncSession = Depends(get_db_session)):
     except Exception as e:
         logger.error("Readiness check checkpointer failed: %s", e)
         checks["checkpointer"] = f"unhealthy: {e}"
+        is_healthy = False
+
+    # 3. Policy index: policy lookups are impossible (and say so) until the indexer has run
+    try:
+        indexed = (await session.execute(select(func.count(PolicyChunkModel.id)))).scalar_one()
+        checks["policy_index"] = f"{indexed} clauses" if indexed else "empty: run `shopagent index-policies`"
+        is_healthy = is_healthy and indexed > 0
+    except Exception as e:
+        logger.error("Readiness check policy index failed: %s", e)
+        checks["policy_index"] = f"unhealthy: {e}"
         is_healthy = False
 
     if not is_healthy:

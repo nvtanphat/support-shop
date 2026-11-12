@@ -37,9 +37,14 @@ def test_clause_generation_dynamic_from_rules():
     # Check return window 15 days from rules
     assert f"{rules['return']['windows_days']['defect_like']} ngày" in by_id["POL-RETURN-01"]
     # Check change of mind fee from rules
-    assert f"{rules['return']['return_shipping']['customer_fee_vnd']}" in by_id["POL-RETURN-02"]
+    def vnd(amount: int) -> str:
+        return f"{amount:,}".replace(",", ".") + " đ"
+
+    assert vnd(rules['return']['return_shipping']['customer_fee_vnd']) in by_id["POL-RETURN-02"]
     # Check auto approve refund limit from rules
-    assert f"{rules['refund']['auto_approve_max_vnd']}" in by_id["POL-REFUND-02"]
+    assert vnd(rules['refund']['auto_approve_max_vnd']) in by_id["POL-REFUND-02"]
+    # Customer-facing text must not leak configuration tokens
+    assert all("end_of_local_day" not in text for text in by_id.values())
 
 
 def test_vietnamese_unaccent_normalization():
@@ -283,5 +288,85 @@ async def test_enabled_but_missing_reranker_is_an_explicit_error(monkeypatch: py
     monkeypatch.setattr(reranker_module, "get_app_config", lambda: {"retrieval": {"reranker": {"enabled": True, "model": "x"}}})
     monkeypatch.setattr(reranker_module, "CrossEncoderReranker", broken)
     monkeypatch.setattr(reranker_module, "_cached", None)
+    monkeypatch.setattr(reranker_module, "get_settings", lambda: type("S", (), {"RETRIEVAL_RERANKER_ENABLED": None})())
     with pytest.raises(reranker_module.RerankerUnavailableError):
         await HybridRetriever(in_memory=True).retrieve("đổi trả hàng", top_k=2)
+
+
+# ---------------------------------------------------------------------------
+# Index snapshot and rerank caches
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_index_snapshot_is_reused_and_invalidated_when_clauses_expire() -> None:
+    from datetime import UTC, datetime
+
+    from shopagent.infra.db.tables import PolicyChunkModel
+    from shopagent.rag import retriever as retriever_module
+    from shopagent.rag.indexer import index_policies
+    from sqlalchemy import event, update
+
+    retriever_module.clear_retrieval_caches()
+    engine, factory = await _memory_session()
+    async with factory() as session:
+        await index_policies(session)
+        full_loads: list[str] = []
+
+        @event.listens_for(engine.sync_engine, "before_cursor_execute")
+        def count_full_loads(conn, cursor, statement, *args):  # type: ignore[no-untyped-def]
+            if "policy_chunks.text" in statement:
+                full_loads.append(statement)
+
+        retriever = HybridRetriever(session=session)
+        for _ in range(3):
+            assert await retriever.retrieve("đổi ý trả hàng mất phí bao nhiêu")
+        assert len(full_loads) == 1  # one load, two cache hits
+
+        await session.execute(update(PolicyChunkModel).values(effective_to=datetime(2026, 1, 1, tzinfo=UTC)))
+        await session.commit()
+        assert await retriever.retrieve("đổi ý trả hàng mất phí bao nhiêu") == []  # fingerprint changed
+        assert len(full_loads) == 2
+    await engine.dispose()
+    retriever_module.clear_retrieval_caches()
+
+
+@pytest.mark.asyncio
+async def test_rerank_results_are_cached_per_query() -> None:
+    from shopagent.rag import retriever as retriever_module
+
+    class CountingReranker:
+        calls = 0
+
+        def scores(self, query, texts):  # type: ignore[no-untyped-def]
+            CountingReranker.calls += 1
+            return [float(len(t)) for t in texts]
+
+    retriever_module.clear_retrieval_caches()
+    retriever = HybridRetriever(in_memory=True, reranker=CountingReranker())
+    first = await retriever.retrieve("đổi trả hàng", top_k=3)
+    second = await retriever.retrieve("đổi trả hàng", top_k=3)
+    assert first == second and CountingReranker.calls == 1
+    retriever_module.clear_retrieval_caches()
+
+
+def test_query_normalization_expands_shorthand_without_touching_words() -> None:
+    from shopagent.rag.lexical import normalize_query
+
+    assert normalize_query("áo chật đổi sz dc ko") == "áo chật đổi size duoc khong"
+    assert "500000" in normalize_query("hoàn trên 500k")
+    assert "2000000" in normalize_query("trên 2 triệu thì ai duyệt")
+    assert normalize_query("kho hàng") == "kho hàng"  # 'k' alone is shorthand, 'kho' is a word
+
+
+@pytest.mark.asyncio
+async def test_production_retriever_meets_the_measured_benchmark_floor() -> None:
+    """The production path (not only the research runner) keeps the benchmark gains."""
+    spec = yaml.safe_load((Path(__file__).resolve().parents[3] / "evals" / "retrieval" / "benchmark_v2.yaml").read_text(encoding="utf-8"))
+    items = [i for i in spec["queries"] if i["split"] == "test" and i["expected"] and "as_of" not in i]
+    retriever = HybridRetriever(in_memory=True)
+    top1 = top4 = 0
+    for item in items:
+        got = [r["clause_id"] for r in await retriever.retrieve(item["q"], top_k=4)]
+        top1 += bool(got) and got[0] in item["expected"]
+        top4 += all(c in got for c in item["expected"])
+    assert top4 / len(items) >= 0.95
+    assert top1 / len(items) >= 0.60

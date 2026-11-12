@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Sequence
 from typing import Any
 
@@ -17,22 +18,52 @@ logger = logging.getLogger(__name__)
 
 
 class GeminiKeyManager:
-    """Manages a pool of Gemini API keys with thread-safe round-robin and quota rotation."""
+    """A pool of Gemini API keys shared by the whole process.
 
-    def __init__(self, keys: list[str]) -> None:
+    A key that hits its quota is put on cooldown, so later calls start with a working key instead of
+    paying a 429 on the exhausted one every time.
+    """
+
+    def __init__(self, keys: list[str], cooldown_seconds: float = 900.0) -> None:
         self.keys = [k.strip() for k in keys if k.strip()]
-        self.current_idx = 0
+        self.cooldown_seconds = cooldown_seconds
+        self._idx = 0
+        self._cooldown_until: dict[int, float] = {}
 
     @property
     def has_keys(self) -> bool:
         return bool(self.keys)
 
+    @property
+    def current_idx(self) -> int:
+        """First key not on cooldown, starting from the last used one; the soonest-ready key if all cool."""
+        now = time.monotonic()
+        for offset in range(len(self.keys)):
+            idx = (self._idx + offset) % len(self.keys)
+            if self._cooldown_until.get(idx, 0.0) <= now:
+                self._idx = idx
+                return idx
+        return min(range(len(self.keys)), key=lambda i: self._cooldown_until.get(i, 0.0))
+
     def rotate(self) -> str:
+        """Mark the current key exhausted and move to the next one."""
         if not self.keys:
             return ""
-        self.current_idx = (self.current_idx + 1) % len(self.keys)
+        self._cooldown_until[self._idx] = time.monotonic() + self.cooldown_seconds
+        self._idx = (self._idx + 1) % len(self.keys)
         logger.info("Chuyển sang Gemini API Key index %d/%d", self.current_idx + 1, len(self.keys))
-        return self.keys[self.current_idx]
+        return self.keys[self._idx]
+
+
+_key_managers: dict[tuple[str, ...], GeminiKeyManager] = {}
+
+
+def get_key_manager(keys: list[str]) -> GeminiKeyManager:
+    """One manager per distinct key set, so cooldown state outlives individual model instances."""
+    signature = tuple(keys)
+    if signature not in _key_managers:
+        _key_managers[signature] = GeminiKeyManager(keys)
+    return _key_managers[signature]
 
 
 class RotatingBoundModel:
@@ -201,6 +232,7 @@ def get_chat_model(role: str = "agent_primary") -> BaseChatModel:
     provider = role_cfg.get("provider", "gemini")
     model_name = role_cfg.get("model", "gemini-3.5-flash-lite")
     temperature = role_cfg.get("temperature", 0.0)
+    timeout_s = float(role_cfg.get("timeout_s", 30))
 
     # Resolve environment variable placeholders
     if isinstance(provider, str) and provider.startswith("${"):
@@ -232,7 +264,8 @@ def get_chat_model(role: str = "agent_primary") -> BaseChatModel:
                     model=model_name,
                     google_api_key=keys[0],
                     temperature=temperature,
-                    timeout=30.0,
+                    timeout=timeout_s,
+                    max_retries=0,
                 )
             # Multi-key rotation pool
             models = [
@@ -240,11 +273,12 @@ def get_chat_model(role: str = "agent_primary") -> BaseChatModel:
                     model=model_name,
                     google_api_key=k,
                     temperature=temperature,
-                    timeout=30.0,
+                    timeout=timeout_s,
+                    max_retries=0,
                 )
                 for k in keys
             ]
-            km = GeminiKeyManager(keys)
+            km = get_key_manager(keys)
             return RotatingChatGoogleGenerativeAI(models=models, key_manager=km)
         except Exception as e:
             logger.error("Failed to initialize ChatGoogleGenerativeAI(%s): %s", model_name, e)

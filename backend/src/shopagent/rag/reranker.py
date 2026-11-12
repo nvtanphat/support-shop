@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
-from shopagent.core.config import get_app_config
+from shopagent.core.config import get_app_config, get_settings
 
 
 class Reranker(Protocol):
@@ -49,7 +49,8 @@ def get_configured_reranker() -> tuple[Reranker, int] | None:
     """The reranker and its candidate count when enabled in config, else None."""
     global _cached
     cfg = (get_app_config().get("retrieval") or {}).get("reranker") or {}
-    if not cfg.get("enabled"):
+    override = get_settings().RETRIEVAL_RERANKER_ENABLED
+    if not (cfg.get("enabled") if override is None else override):
         return None
     model = str(cfg["model"])
     if _cached is None or _cached[0] != model:

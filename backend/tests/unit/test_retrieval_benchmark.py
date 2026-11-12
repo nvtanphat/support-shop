@@ -38,7 +38,10 @@ def test_expired_policy_version_is_selected_by_as_of() -> None:
 
 def test_measured_baseline_does_not_regress() -> None:
     rows = {r["strategy"]: r for r in run_benchmark()}
-    current = rows["current (overlap + hashed n-gram, RRF)"]
-    assert current["recall@4"] >= 0.90
-    assert current["recall@1"] >= 0.55
+    # "bm25 + query normalization" is the production ranking; the legacy row is kept only as a baseline.
+    production = rows["bm25 + query normalization"]
+    legacy = rows["current (overlap + hashed n-gram, RRF)"]
+    assert production["recall@4"] >= 0.95 and production["recall@1"] >= 0.65
+    assert production["mrr"] > legacy["mrr"] and production["ndcg@4"] > legacy["ndcg@4"]
+    current = production
     assert current["test_answerable"] >= 30 and current["test_out_of_domain"] >= 10
