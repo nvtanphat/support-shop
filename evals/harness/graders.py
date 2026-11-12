@@ -196,9 +196,19 @@ SLOT_QUESTION_KEYWORDS: dict[str, list[str]] = {
 }
 
 
+# Vietnamese support staff often ask politely without a question mark ("vui lòng cho em biết ...").
+_REQUEST_FORM_RE = re.compile(
+    r"(?:vui\s+lòng|xin|làm\s+ơn|bạn|quý\s+khách)\s+(?:\w+\s+){0,3}?(?:cho|cung\s+cấp|nhập|gửi|chọn|nói|biết)"
+    r"|cho\s+(?:mình|em|tôi)\s+(?:biết|xin|hỏi)"
+    r"|(?:mình|em)\s+cần\s+(?:biết|thêm\s+thông\s+tin)"
+)
+
+
 def _asks_about(text: str, keywords: list[str]) -> bool:
+    """A clarification names the missing slot and is phrased as a question or a request."""
     lowered = text.lower()
-    return "?" in lowered and any(k in lowered for k in keywords)
+    names_slot = any(k in lowered for k in keywords)
+    return names_slot and ("?" in lowered or _REQUEST_FORM_RE.search(lowered) is not None)
 
 
 def grade_required_facts(

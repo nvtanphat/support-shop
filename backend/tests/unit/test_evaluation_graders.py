@@ -153,3 +153,13 @@ def test_every_shipped_scenario_uses_only_supported_assertions() -> None:
 def test_slot_and_multi_turn_scenarios_exist_with_independent_ground_truth() -> None:
     ids = {load_scenario_from_yaml(f).id for f in SCENARIO_DIR.glob("*.yaml")}
     assert {"SLOT-ORDER-001", "SLOT-ORDER-002", "SLOT-ITEM-001", "SLOT-REASON-001", "MT-RETURN-001", "MT-RETURN-002"} <= ids
+
+
+def test_polite_request_without_question_mark_counts_as_a_clarification() -> None:
+    fact = [RequiredFact(kind="asks_for", value="order_code")]
+    polite = "Để hỗ trợ trả hàng, bạn vui lòng cho mình biết **mã đơn hàng** bạn muốn trả (ví dụ SL-710001)."
+    assert grade_required_facts([polite], fact)[0] is True
+    assert grade_required_facts(["Quý khách vui lòng cung cấp mã đơn hàng ạ."], fact)[0] is True
+    # Still a failure: names the slot without asking for it, or asks for something else.
+    assert grade_required_facts(["Mã đơn hàng của quý khách đã được ghi nhận."], fact)[0] is False
+    assert grade_required_facts(["Bạn vui lòng cho mình biết lý do trả hàng?"], fact)[0] is False
