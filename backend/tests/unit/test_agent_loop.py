@@ -523,3 +523,36 @@ async def test_transient_errors_back_off_and_recover_but_bad_requests_are_not_re
     use_model(monkeypatch, bad)
     out = await agent_node(make_state("Xin chào"), run_config(session))
     assert out["turn_status"] == "degraded" and delays == [] and bad.calls == 2  # one try + the fallback model
+
+
+@pytest.mark.asyncio
+async def test_agent_turn_survives_a_proposal_blocked_for_missing_eligibility_check(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Integration of the guard with the loop: the blocked call is a tool result, never a crash."""
+    customer = Principal.customer(customer_id=uuid.uuid4(), email="c@example.com")
+    state = make_state(
+        "đơn SL-100002 cái áo bị rách, mình muốn trả",
+        principal=customer,
+    )
+    state["messages"] = [
+        *state["messages"],
+        tool_call_msg("get_order", {"order_code": "SL-100002"}, call_id="g1"),
+        ToolMessage(content=ORDER_RESULT, tool_call_id="g1", name="get_order"),
+    ]
+    propose = {
+        "order_code": "SL-100002",
+        "items": [{"item_id": "11111111-aaaa", "qty": 1}],
+        "reason_code": "defective",
+    }
+    model = ScriptedModel(
+        [tool_call_msg("propose_return", propose, call_id="p1"), *[AIMessage(content="Dạ em kiểm tra điều kiện trước ạ.")] * 4]
+    )
+    use_model(monkeypatch, model)
+    out = await agent_node(state, run_config(session))
+    blocked = [c for c in out["tool_calls"] if c["tool"] == "propose_return"]
+    assert blocked and blocked[0]["result"]["error_code"] == "ELIGIBILITY_NOT_CHECKED"
+    assert blocked[0]["outcome"] == "failed"
+    # The order lookup happened in an earlier turn, so this turn is steered for a fresh one; whatever the
+    # final status, the blocked proposal must not have created a card or crashed the node.
+    assert out["turn_status"] in ("completed", "requirements_unmet") and "pending_action" not in out

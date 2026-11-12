@@ -158,7 +158,7 @@ async def _run_tool_call(
 
     missing_slot = find_ungrounded_slot(name, args, grounding)
     if missing_slot is not None:
-        logger.info("tool_rejected_ungrounded tool=%s slot=%s", name, missing_slot["slot"])
+        logger.info("tool_rejected_ungrounded tool=%s reason=%s", name, missing_slot.get("slot") or missing_slot["error_code"])
         return missing_slot
 
     signature = f"{name}:{json.dumps(args, sort_keys=True, default=str)}"
