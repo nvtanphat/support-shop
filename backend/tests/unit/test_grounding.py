@@ -69,3 +69,23 @@ def test_supported_claims_are_traced_to_their_source_tool() -> None:
     eligibility = call("check_return_eligibility", {"eligible": True, "estimated_refund": 440000, "clause_id": "POL-RETURN-02"})
     res = verify("Dạ khoản hoàn ước tính là 440.000 đ ạ.", [eligibility])
     assert res["claim_evidence"] == {"440.000 đ": "check_return_eligibility"}
+
+
+def test_amounts_of_the_loaded_recent_orders_are_valid_evidence() -> None:
+    context = {"recent_orders": [{"code": "SL-710001", "total": 250000}, {"code": "SL-710002", "total": 700000}]}
+    answer = "Dạ quý khách có đơn SL-710001 trị giá 250.000 đ và đơn SL-710002 trị giá 700.000 đ, quý khách muốn trả đơn nào ạ?"
+    assert "error" not in verify(answer, [], customer="Mình muốn trả hàng", dynamic_context=context)
+    # An amount that is not in the list is still rejected.
+    assert "UNSUPPORTED_NUMBER" in verify("Đơn SL-710001 trị giá 999.000 đ ạ.", [], customer="đơn SL-710001", dynamic_context=context)["error"]
+
+
+def test_degraded_turn_still_tells_the_customer_about_a_created_ticket() -> None:
+    from langchain_core.messages import HumanMessage
+
+    created = call("escalate_to_human", {"ticket_code": "TK-ABC123", "status": "open"})
+    state: AgentState = {"messages": [HumanMessage(content="cho gặp nhân viên")], "tool_calls": [created], "turn_status": "degraded"}
+    reply = verify_output_node(state)["verified_output"]
+    assert "TK-ABC123" in reply and "30 phút" in reply
+    failed = call("escalate_to_human", {"error_code": "TOOL_TIMEOUT"})
+    state["tool_calls"] = [failed]
+    assert "TK-" not in verify_output_node(state)["verified_output"]

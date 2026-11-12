@@ -21,7 +21,8 @@ roles:
 budgets:
   max_agent_iterations: 6
   max_input_tokens_per_turn: 12000
-  turn_timeout_s: 90
+  turn_timeout_s: 150
+  llm_retry_delays_s: [1, 3]  # backoff between retries of transient LLM errors (503/504/429)
   tool_timeout_s: 12
   synthesis_timeout_s: 20
   max_cost_usd_per_conversation: 0.10

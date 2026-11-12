@@ -96,9 +96,14 @@ def collect_evidence(state: AgentState) -> Evidence:
     for call in state.get("tool_calls", []):
         if classify_result(call.get("result")) is ToolOutcome.SUCCEEDED:
             _absorb(evidence, str(call.get("tool")), call.get("result"))
+    # The recent-orders list is loaded from the database and shown to the model, so its codes and
+    # amounts are legitimate evidence when the assistant lists the customer's orders.
     for order in (state.get("dynamic_context") or {}).get("recent_orders") or []:
         if order.get("code"):
             evidence.order_codes.setdefault(str(order["code"]).upper(), "recent_orders")
+        for value in (order.get("total"),):
+            if isinstance(value, int):
+                evidence.numbers.setdefault(str(value), "recent_orders")
     return evidence
 
 

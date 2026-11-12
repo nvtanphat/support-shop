@@ -48,7 +48,6 @@ logger = logging.getLogger(__name__)
 
 _MAX_DUPLICATE_CALLS = 2
 _MAX_STEERING_ROUNDS = 2
-_LLM_ATTEMPTS = 2
 
 
 @dataclass(frozen=True)
@@ -60,6 +59,7 @@ class LoopBudget:
     turn_timeout_s: float
     tool_timeout_s: float
     synthesis_timeout_s: float
+    llm_retry_delays_s: tuple[float, ...]
 
     @classmethod
     def from_config(cls) -> LoopBudget:
@@ -70,6 +70,7 @@ class LoopBudget:
             turn_timeout_s=float(cfg.get("turn_timeout_s", 90)),
             tool_timeout_s=float(cfg.get("tool_timeout_s", 12)),
             synthesis_timeout_s=float(cfg.get("synthesis_timeout_s", 20)),
+            llm_retry_delays_s=tuple(float(d) for d in cfg.get("llm_retry_delays_s", [1.0, 3.0])),
         )
 
 
@@ -103,17 +104,33 @@ def _bind_tools(llm: Any, tools: list[Any]) -> Any:
         return llm
 
 
+_TRANSIENT_MARKERS = (
+    "503", "unavailable", "504", "deadline", "timeout", "timed out", "429", "resource_exhausted", "overloaded",
+    "connection", "temporarily",
+)
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Overload, timeout and quota errors may succeed on retry; a malformed request never will."""
+    return any(marker in str(exc).lower() for marker in _TRANSIENT_MARKERS)
+
+
 async def _invoke_llm(
-    primary: Any, fallback_tools: list[Any], call_input: list[BaseMessage]
+    primary: Any, fallback_tools: list[Any], call_input: list[BaseMessage], retry_delays_s: tuple[float, ...]
 ) -> AIMessage | None:
-    """Call the primary model with retries, then the fallback model. None means unavailable."""
-    for attempt in range(_LLM_ATTEMPTS):
+    """Call the primary model, retrying transient failures with backoff, then the fallback model.
+
+    None means no model could answer; the caller ends the turn as degraded.
+    """
+    for attempt in range(len(retry_delays_s) + 1):
         try:
             return _normalize_ai_message(await primary.ainvoke(call_input))
         except Exception as exc:
-            logger.warning("llm_call_failed attempt=%d error=%s", attempt + 1, exc)
-            if attempt < _LLM_ATTEMPTS - 1:
-                await asyncio.sleep(0.5 * (attempt + 1))
+            transient = _is_transient(exc)
+            logger.warning("llm_call_failed attempt=%d transient=%s error=%s", attempt + 1, transient, exc)
+            if not transient or attempt == len(retry_delays_s):
+                break
+            await asyncio.sleep(retry_delays_s[attempt])
     try:
         fallback = _bind_tools(get_chat_model("agent_fallback"), fallback_tools)
         return _normalize_ai_message(await fallback.ainvoke(call_input))
@@ -230,7 +247,7 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
             logger.error("turn_timeout elapsed_s=%.1f", time.monotonic() - started)
             break
 
-        ai = await _invoke_llm(llm_with_tools, tools, [sys_msg, *working])
+        ai = await _invoke_llm(llm_with_tools, tools, [sys_msg, *working], budget.llm_retry_delays_s)
         if ai is None:
             turn_status = "degraded"
             break

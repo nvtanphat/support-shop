@@ -510,12 +510,15 @@ async def run_eval_cli(
     k: int = 1,
     gate: bool = False,
     out_dir: Path | None = None,
+    scenario_ids: list[str] | None = None,
 ) -> tuple[EvalSummary, list[dict[str, Any]]]:
     """Run scenarios, save raw trajectories and gate table; return the summary and gate rows."""
     scenario_files = sorted(Path("evals/scenarios").glob("*.yaml"))
     scenarios: list[Scenario] = []
     for f in scenario_files:
         sc = load_scenario_from_yaml(f)
+        if scenario_ids and sc.id not in scenario_ids:
+            continue
         if group != "all" and not sc.group.startswith(group):
             continue
         if tag and tag != "all" and tag not in sc.tags:
@@ -579,10 +582,11 @@ if __name__ == "__main__":
     parser.add_argument("--group", default="all", help="Scenario group filter")
     parser.add_argument("--tag", default="all", help="Scenario tag filter")
     parser.add_argument("--gate", action="store_true", help="Exit 1 unless every quality gate PASSes")
+    parser.add_argument("--scenario", action="append", dest="scenarios", help="Run only this scenario id (repeatable)")
     parser.add_argument("--out", type=Path, default=None, help="Directory for raw trajectories and the gate table")
     args = parser.parse_args()
 
     _, rows = asyncio.run(
-        run_eval_cli(agent=args.agent, k=args.k, group=args.group, tag=args.tag, gate=args.gate, out_dir=args.out)
+        run_eval_cli(agent=args.agent, k=args.k, group=args.group, tag=args.tag, gate=args.gate, out_dir=args.out, scenario_ids=args.scenarios)
     )
     sys.exit(1 if args.gate and any(row["status"] != "PASS" for row in rows) else 0)

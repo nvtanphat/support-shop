@@ -230,11 +230,11 @@ async def test_failed_synthesis_is_degraded_not_an_empty_success(
 async def test_llm_outage_degrades_after_bounded_retries(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch, no_sleep: None
 ) -> None:
-    model = ScriptedModel([RuntimeError("503")] * 3)
+    model = ScriptedModel([RuntimeError("503 UNAVAILABLE")] * 4)
     use_model(monkeypatch, model)
     out = await agent_node(make_state("Xin chào"), run_config(session))
     assert out["turn_status"] == "degraded"
-    assert model.calls == 3  # 2 primary attempts + 1 fallback attempt
+    assert model.calls == 4  # 3 primary attempts (2 retries with backoff) + 1 fallback attempt
 
 
 @pytest.mark.asyncio
@@ -499,3 +499,27 @@ def test_propose_return_must_follow_a_matching_positive_eligibility_check() -> N
     assert find_ungrounded_slot("propose_return", args, refused)["error_code"] == "NOT_ELIGIBLE"
     ok = grounding(said, [ORDER_RESULT, check(True)])
     assert find_ungrounded_slot("propose_return", args, ok) is None
+
+
+@pytest.mark.asyncio
+async def test_transient_errors_back_off_and_recover_but_bad_requests_are_not_retried(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    delays: list[float] = []
+
+    async def record(seconds: float) -> None:
+        delays.append(seconds)
+
+    monkeypatch.setattr(agent_module.asyncio, "sleep", record)
+    flaky = ScriptedModel(
+        [RuntimeError("503 UNAVAILABLE: high demand"), RuntimeError("504 DEADLINE_EXCEEDED"), AIMessage(content="Dạ xin chào ạ.")]
+    )
+    use_model(monkeypatch, flaky)
+    out = await agent_node(make_state("Xin chào"), run_config(session))
+    assert out["turn_status"] == "completed" and delays == [1.0, 3.0]
+
+    delays.clear()
+    bad = ScriptedModel([RuntimeError("400 INVALID_ARGUMENT: bad schema")] * 3)
+    use_model(monkeypatch, bad)
+    out = await agent_node(make_state("Xin chào"), run_config(session))
+    assert out["turn_status"] == "degraded" and delays == [] and bad.calls == 2  # one try + the fallback model

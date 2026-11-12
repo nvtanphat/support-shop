@@ -50,6 +50,20 @@ def _degraded_response(state: AgentState) -> str:
             "Dạ em đã tạo đề xuất ở thẻ xác nhận bên dưới. Quý khách vui lòng kiểm tra thông tin "
             "trên thẻ trước khi bấm xác nhận ạ."
         )
+    ticket = next(
+        (
+            tc["result"]["ticket_code"]
+            for tc in executed
+            if tc.get("tool") == "escalate_to_human" and "ticket_code" in (tc.get("result") or {})
+        ),
+        None,
+    )
+    if ticket:
+        # The ticket exists in the database even though the model could not phrase the answer.
+        return (
+            f"Dạ em đã tạo phiếu hỗ trợ {ticket} và chuyển yêu cầu của quý khách tới chuyên viên chăm sóc khách hàng. "
+            "Chuyên viên sẽ liên hệ lại với quý khách trong vòng 30 phút ạ."
+        )
     if status == "requirements_unmet":
         return _UNMET_TOOL_RESPONSE
     return _SAFE_DEFAULT_RESPONSE
