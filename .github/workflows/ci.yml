@@ -85,11 +85,14 @@ jobs:
           pytest backend/tests/ -v
         env:
           DATABASE_TEST_URL: "sqlite+aiosqlite:///:memory:"
+          # Enables the LangGraph AsyncPostgresSaver checkpoint tests against the service container.
+          TEST_POSTGRES_URL: "postgresql://shopagent:shopagent_password@localhost:5432/shopagent_test"
 
       - name: Run Evaluation Harness (Oracle & Null Baselines)
         run: |
-          python -m evals.harness.runner --agent oracle
-          python -m evals.harness.runner --agent null
+          # The Oracle must clear every quality gate; the Null agent must not (proves the gates can fail).
+          python -m evals.harness.runner --agent oracle --gate
+          if python -m evals.harness.runner --agent null --gate; then echo "Null agent passed the quality gates"; exit 1; fi
 
   frontend:
     name: Frontend Build, Unit & Playwright E2E Tests
