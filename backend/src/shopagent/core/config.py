@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -89,6 +90,20 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+
+    def get_gemini_api_keys(self) -> list[str]:
+        """Return list of Gemini API keys configured for key rotation and quota resilience."""
+        raw_keys = self.GEMINI_API_KEY
+        keys: list[str] = []
+        if raw_keys:
+            for k in raw_keys.split(","):
+                k_clean = k.strip()
+                if k_clean and k_clean not in keys:
+                    keys.append(k_clean)
+        env_google_key = os.environ.get("GOOGLE_API_KEY", "").strip()
+        if env_google_key and env_google_key not in keys:
+            keys.append(env_google_key)
+        return keys
 
 
 _settings: Settings | None = None
