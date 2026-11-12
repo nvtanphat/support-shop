@@ -102,6 +102,7 @@ async def load_context_node(state: AgentState, config: RunnableConfig) -> dict[s
         "tool_calls": [],
         "turn_status": "incomplete",
         "unmet_requirements": [],
+        "claim_evidence": {},
         "verified_output": None,
         "error": None,
     }

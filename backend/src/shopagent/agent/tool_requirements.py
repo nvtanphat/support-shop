@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 
 ORDER_CODE_RE = re.compile(r"\bSL-[A-Za-z0-9]+\b", re.IGNORECASE)
@@ -42,10 +43,45 @@ ORDER_DATA_TOOLS = frozenset(
 )
 POLICY_EVIDENCE_TOOLS = frozenset({"search_policy", "check_return_eligibility"})
 
-# A tool result carrying one of these codes means the call did not really happen.
-_FAILED_EXECUTION_CODES = frozenset(
-    {"TOOL_TIMEOUT", "TOOL_EXECUTION_ERROR", "DUPLICATE_CALL", "TOOL_NOT_FOUND"}
+class ToolOutcome(StrEnum):
+    """What a tool call achieved. Only SUCCEEDED results may back a factual claim."""
+
+    SUCCEEDED = "succeeded"
+    # The system answered definitively that there is nothing to show (not found, access denied,
+    # no policy clause). The agent may explain that, but must not claim any data.
+    DEFINITIVE_NEGATIVE = "definitive_negative"
+    FAILED = "failed"
+
+
+_DEFINITIVE_NEGATIVE_CODES = frozenset(
+    {
+        "ORDER_NOT_FOUND",
+        "ORDER_ACCESS_DENIED",
+        "GUEST_VERIFICATION_REQUIRED",
+        "CASE_NOT_FOUND",
+        "TICKET_ACCESS_DENIED",
+        "ITEM_NOT_FOUND",
+        "RETURN_NOT_FOUND",
+        "ORDER_NOT_CANCELLABLE",
+    }
 )
+
+
+def classify_result(result: Any) -> ToolOutcome:
+    """Classify a tool result. Unknown error shapes count as FAILED, never as success."""
+    if not isinstance(result, dict):
+        return ToolOutcome.SUCCEEDED if isinstance(result, str) and result else ToolOutcome.FAILED
+    code = result.get("error_code")
+    if code in _DEFINITIVE_NEGATIVE_CODES:
+        return ToolOutcome.DEFINITIVE_NEGATIVE
+    if code:
+        return ToolOutcome.FAILED
+    status = result.get("status")
+    if status == "no_evidence":
+        return ToolOutcome.DEFINITIVE_NEGATIVE
+    if status in ("db_error", "index_unavailable", "invalid_request"):
+        return ToolOutcome.FAILED
+    return ToolOutcome.SUCCEEDED
 
 
 @dataclass(frozen=True)
@@ -59,14 +95,12 @@ class ToolRequirement:
     preferred_tool: str
 
 
-def _was_executed(call: dict[str, Any]) -> bool:
-    result = call.get("result")
-    code = result.get("error_code") if isinstance(result, dict) else None
-    return code not in _FAILED_EXECUTION_CODES
+def _outcome_of(call: dict[str, Any]) -> ToolOutcome:
+    return classify_result(call.get("result"))
 
 
 def _is_escalated(result: Any) -> bool:
-    return isinstance(result, dict) and "ticket_code" in result and "error_code" not in result
+    return isinstance(result, dict) and "ticket_code" in result and classify_result(result) is ToolOutcome.SUCCEEDED
 
 
 def derive_requirements(user_text: str, available_tools: Iterable[str]) -> list[ToolRequirement]:
@@ -100,13 +134,14 @@ def derive_requirements(user_text: str, available_tools: Iterable[str]) -> list[
                 )
             )
 
-    if not codes and "search_policy" in tools and _POLICY_QUESTION_RE.search(user_text):
+    if "search_policy" in tools and _POLICY_QUESTION_RE.search(user_text):
         requirements.append(
             ToolRequirement(
                 key="policy",
                 accepted_tools=POLICY_EVIDENCE_TOOLS & tools,
                 order_code=None,
-                reason="Khách hỏi về chính sách; chỉ được trả lời bằng điều khoản đã tra cứu.",
+                reason="Khách hỏi về chính sách; chỉ được trả lời bằng điều khoản đã tra cứu"
+                + (" (và dữ liệu của đơn đã nêu)." if codes else "."),
                 preferred_tool="search_policy",
             )
         )
@@ -122,8 +157,13 @@ def unmet_requirements(
     for req in requirements:
         satisfied = False
         for call in executed_calls:
-            if call.get("tool") not in req.accepted_tools or not _was_executed(call):
+            if call.get("tool") not in req.accepted_tools:
                 continue
+            outcome = _outcome_of(call)
+            if outcome is ToolOutcome.FAILED:
+                continue
+            # DEFINITIVE_NEGATIVE ("no clause found") lets the agent say so honestly; verify_output
+            # still blocks any citation or number that has no successful evidence behind it.
             if req.key == "escalate":
                 satisfied = _is_escalated(call.get("result"))
             elif req.order_code is not None:

@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from langchain_core.messages import BaseMessage, HumanMessage
+from langgraph.checkpoint.memory import InMemorySaver
 from shopagent.agent.graph import build_agent_graph
 from shopagent.agent.state import AgentState
 from shopagent.core.clock import get_clock
@@ -25,7 +26,10 @@ class LangGraphAgent:
         self.session = session
         self.principal = principal
         self.clock = clock or get_clock().now()
-        self.graph = build_agent_graph()
+        # Evaluation conversations live in memory: they must not pollute the application's checkpoint store.
+        self.usage: dict[str, int] = {"input_tokens": 0, "output_tokens": 0, "llm_calls": 0}
+        self._counted_ids: set[str] = set()
+        self.graph = build_agent_graph(checkpointer=InMemorySaver())
 
     async def step(
         self,
@@ -54,6 +58,7 @@ class LangGraphAgent:
 
         output = await self.graph.ainvoke(state, config=config)
 
+        self._count_usage(output.get("messages") or [])
         asst_text = output.get("verified_output") or ""
         tool_calls = output.get("tool_calls") or []
         pending_action = output.get("pending_action")
@@ -69,3 +74,15 @@ class LangGraphAgent:
             }
 
         return asst_text, tool_calls, pending_action
+
+    def _count_usage(self, messages: list[BaseMessage]) -> None:
+        """Add token usage of AI messages not seen before (state carries the whole history)."""
+        for msg in messages:
+            msg_id = getattr(msg, "id", None)
+            usage = getattr(msg, "usage_metadata", None)
+            if not usage or not msg_id or msg_id in self._counted_ids:
+                continue
+            self._counted_ids.add(msg_id)
+            self.usage["llm_calls"] += 1
+            self.usage["input_tokens"] += int(usage.get("input_tokens", 0))
+            self.usage["output_tokens"] += int(usage.get("output_tokens", 0))

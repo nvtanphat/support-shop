@@ -49,9 +49,9 @@ def test_grade_required_facts_unsupported_kind_raises_error() -> None:
 
 def test_grade_tool_execution_selection_and_order() -> None:
     tool_calls = [
-        {"tool": "get_order", "args": {"order_code": "SL-100001"}},
-        {"tool": "check_return_eligibility", "args": {"order_code": "SL-100001", "item_ids": ["it1"], "reason_code": "defective"}},
-        {"tool": "propose_return", "args": {"order_code": "SL-100001", "items": [{"item_id": "it1", "qty": 1}], "reason_code": "defective"}},
+        {"tool": "get_order", "args": {"order_code": "SL-100001"}, "result": {"status": "delivered"}},
+        {"tool": "check_return_eligibility", "args": {"order_code": "SL-100001", "item_ids": ["it1"], "reason_code": "defective"}, "result": {"eligible": True}},
+        {"tool": "propose_return", "args": {"order_code": "SL-100001", "items": [{"item_id": "it1", "qty": 1}], "reason_code": "defective"}, "result": {"action_id": "a1"}},
     ]
     # Ordering: check_return_eligibility must be called before propose_return
     passed, errors = grade_tool_execution(

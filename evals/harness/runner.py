@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -10,10 +12,10 @@ from typing import Any
 
 import yaml
 from shopagent.core.clock import Clock, set_global_clock
+from shopagent.core.config import get_settings
 from shopagent.core.principal import Principal
 from shopagent.domain.models.enums import PaymentStatus
 from shopagent.domain.services.actions import ActionService
-from shopagent.infra.db.session import async_engine, async_session_factory
 from shopagent.infra.db.tables import (
     Base,
     CustomerModel,
@@ -24,14 +26,21 @@ from shopagent.infra.db.tables import (
     StaffUserModel,
 )
 from shopagent.rag.indexer import index_policies
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
+from evals.harness.gates import compute_gate_metrics, evaluate_gates, load_gates, save_run_artifacts
 from evals.harness.graders import (
     check_safety_invariants,
     grade_db_state,
     grade_forbidden_patterns,
     grade_required_facts,
     grade_tool_execution,
+    score_tool_use,
 )
 from evals.harness.langgraph_agent import LangGraphAgent
 from evals.harness.metrics import EvalSummary, compute_eval_metrics
@@ -304,14 +313,41 @@ async def setup_scenario_fixtures(
     return principal, created_orders
 
 
+EVAL_DB_PATH = Path("evals/results/eval_fixtures.sqlite")
+
+
+def eval_database_url() -> str:
+    """Database the harness is allowed to wipe. It is never the application database."""
+    url = os.environ.get("EVAL_DATABASE_URL") or f"sqlite+aiosqlite:///{EVAL_DB_PATH.as_posix()}"
+    if url == get_settings().DATABASE_URL:
+        raise RuntimeError("EVAL_DATABASE_URL must differ from DATABASE_URL: the harness drops every table")
+    if "postgres" in url and not url.rsplit("/", 1)[-1].endswith(("_eval", "_test")):
+        raise RuntimeError("Refusing to wipe a PostgreSQL database whose name does not end in _eval or _test")
+    return url
+
+
+_eval_engine: AsyncEngine | None = None
+
+
+def get_eval_engine() -> AsyncEngine:
+    global _eval_engine
+    if _eval_engine is None:
+        _eval_engine = create_async_engine(eval_database_url())
+    return _eval_engine
+
+
 async def run_scenario(
     scenario: Scenario,
     agent_type: str = "oracle",
     langgraph_app: Any = None,
 ) -> ScenarioRunResult:
     """Execute a single scenario end-to-end and grade the result."""
-    # 1. Reset tables in DB
-    async with async_engine.begin() as conn:
+    started = time.perf_counter()
+    # 1. Reset tables in the dedicated evaluation database
+    EVAL_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    eval_engine = get_eval_engine()
+    eval_session_factory = async_sessionmaker(eval_engine, expire_on_commit=False, class_=AsyncSession)
+    async with eval_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
@@ -320,7 +356,7 @@ async def run_scenario(
     clock = Clock(fixed_now=clock_dt)
     set_global_clock(clock)
 
-    async with async_session_factory() as session:
+    async with eval_session_factory() as session:
         principal, _ = await setup_scenario_fixtures(session, scenario, clock_dt)
 
         # 3. Setup Agent and Actors
@@ -453,6 +489,16 @@ async def run_scenario(
             errors=all_errors,
             safety_violations=inv_errors,
             dialogue=dialogue,
+            tags=list(scenario.tags),
+            tool_score=score_tool_use(
+                all_tool_calls,
+                required_tools=scenario.expect.required_tools,
+                required_args=scenario.expect.required_tool_args,
+                ordering_constraints=scenario.expect.tool_ordering,
+            ),
+            duration_s=round(time.perf_counter() - started, 2),
+            usage=dict(getattr(agent, "usage", {})),
+            tool_calls=all_tool_calls,
         )
 
 
@@ -462,8 +508,10 @@ async def run_eval_cli(
     mode: str = "offline",
     tag: str = "smoke",
     k: int = 1,
-) -> EvalSummary:
-    """CLI runner entrypoint for evaluation harness."""
+    gate: bool = False,
+    out_dir: Path | None = None,
+) -> tuple[EvalSummary, list[dict[str, Any]]]:
+    """Run scenarios, save raw trajectories and gate table; return the summary and gate rows."""
     scenario_files = sorted(Path("evals/scenarios").glob("*.yaml"))
     scenarios: list[Scenario] = []
     for f in scenario_files:
@@ -474,10 +522,9 @@ async def run_eval_cli(
             continue
         scenarios.append(sc)
 
-    print(f"Bắt đầu đánh giá: {len(scenarios)} kịch bản | agent={agent} | group={group} | mode={mode} | k={k}")
+    print(f"Bắt đầu đánh giá: {len(scenarios)} kịch bản | agent={agent} | group={group} | mode={mode} | k={k}", flush=True)
 
     all_runs: dict[str, list[ScenarioRunResult]] = {}
-
     for sc in scenarios:
         all_runs[sc.id] = []
         for run_idx in range(k):
@@ -485,9 +532,25 @@ async def run_eval_cli(
             all_runs[sc.id].append(res)
             status_str = "PASS" if res.passed else "FAIL"
             err_str = f" | Lỗi: {res.errors}" if not res.passed else ""
-            print(f"[{status_str}] {sc.id} (lần {run_idx+1}/{k}) | turns={res.turns_count} | tools={res.tool_calls_count}{err_str}")
+            print(
+                f"[{status_str}] {sc.id} (lần {run_idx+1}/{k}) | turns={res.turns_count} | "
+                f"tools={res.tool_calls_count} | {res.duration_s}s{err_str}",
+                flush=True,
+            )
 
     summary = compute_eval_metrics(all_runs, k_values=list(range(1, k + 1)))
+    every_run = [r for runs in all_runs.values() for r in runs]
+    gate_rows = evaluate_gates(compute_gate_metrics(every_run), load_gates())
+
+    run_id = f"{agent}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    target = out_dir or Path("evals/results") / run_id
+    save_run_artifacts(
+        target,
+        every_run,
+        gate_rows,
+        {"agent": agent, "k": k, "scenarios": len(scenarios), "group": group, "tag": tag, "run_id": run_id},
+    )
+
     print("-" * 60)
     print("KẾT QUẢ ĐÁNH GIÁ TỔNG QUAN:")
     print(f"Tổng số kịch bản: {summary.total_scenarios}")
@@ -496,19 +559,30 @@ async def run_eval_cli(
     print(f"Tỉ lệ đạt theo nhóm: {summary.group_pass_rates}")
     print(f"Số vi phạm an toàn: {summary.safety_violations_count}")
     print(f"Tỉ lệ câu thoái thác: {summary.average_fallback_rate:.1f}%")
+    for row in gate_rows:
+        value = "n/a" if row["value"] is None else f"{row['value']:.3f}"
+        print(f"GATE {row['status']:12} {row['metric']:36} {value} (ngưỡng {row['threshold']}, mẫu {row['numerator']}/{row['denominator']})")
+    print(f"Artifact: {target}")
     print("-" * 60)
-    return summary
+    if gate and any(row["status"] != "PASS" for row in gate_rows):
+        print("QUALITY GATE: FAILED hoặc NOT VERIFIED", flush=True)
+    return summary, gate_rows
 
 
 if __name__ == "__main__":
     import argparse
+    import sys
 
     parser = argparse.ArgumentParser(description="Run Shop Support Agent Evaluation Suite")
     parser.add_argument("--agent", choices=["oracle", "null", "langgraph"], default="oracle", help="Agent implementation")
     parser.add_argument("-k", "--k", type=int, default=1, help="Independent runs per scenario")
     parser.add_argument("--group", default="all", help="Scenario group filter")
     parser.add_argument("--tag", default="all", help="Scenario tag filter")
+    parser.add_argument("--gate", action="store_true", help="Exit 1 unless every quality gate PASSes")
+    parser.add_argument("--out", type=Path, default=None, help="Directory for raw trajectories and the gate table")
     args = parser.parse_args()
 
-    asyncio.run(run_eval_cli(agent=args.agent, k=args.k, group=args.group, tag=args.tag))
-
+    _, rows = asyncio.run(
+        run_eval_cli(agent=args.agent, k=args.k, group=args.group, tag=args.tag, gate=args.gate, out_dir=args.out)
+    )
+    sys.exit(1 if args.gate and any(row["status"] != "PASS" for row in rows) else 0)

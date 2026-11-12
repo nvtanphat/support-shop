@@ -21,7 +21,8 @@ async def lifespan(app: FastAPI):
 
     from sqlalchemy import text
 
-    from shopagent.agent.checkpoint import get_default_checkpointer
+    from shopagent.agent.checkpoint import close_checkpointer, open_checkpointer
+    from shopagent.agent.graph import get_agent_graph
     from shopagent.infra.db.session import get_engine
 
     logger = logging.getLogger("shopagent.startup")
@@ -54,17 +55,19 @@ async def lifespan(app: FastAPI):
             logger.critical("LỖI KHỞI ĐỘNG PRODUCTION: Không thể kết nối cơ sở dữ liệu: %s", e)
             raise RuntimeError(f"Database connection failed on startup: {e}") from e
 
-        # 3. Checkpointer readiness
-        try:
-            get_default_checkpointer()
-            logger.info("LangGraph Checkpointer xác nhận sẵn sàng.")
-        except Exception as e:
-            logger.critical("LỖI KHỞI ĐỘNG PRODUCTION: Checkpointer thất bại: %s", e)
-            raise RuntimeError(f"Checkpointer initialization failed on startup: {e}") from e
+    # Checkpointer: opened inside the running loop (async Postgres pool) and wired into the graph.
+    try:
+        handle = await open_checkpointer()
+        get_agent_graph(handle.saver)
+        logger.info("LangGraph Checkpointer xác nhận sẵn sàng.")
+    except Exception as e:
+        logger.critical("Checkpointer khởi tạo thất bại: %s", e)
+        raise RuntimeError(f"Checkpointer initialization failed on startup: {e}") from e
 
     yield
 
     # Shutdown actions
+    await close_checkpointer()
     try:
         engine = get_engine()
         await engine.dispose()

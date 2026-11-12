@@ -140,7 +140,7 @@ class OracleAgent:
                 agent_summary=user_message,
                 priority="high",
             )
-            tool_calls.append({"tool": "escalate_to_human", "args": {"reason_code": "customer_request", "summary": user_message}})
+            tool_calls.append({"tool": "escalate_to_human", "args": {"reason_code": "customer_request", "summary": user_message}, "result": {"ticket_code": ticket.code, "status": "open"}})
             return (
                 f"Em đã tạo phiếu hỗ trợ #{ticket.code} chuyển đến chuyên viên chăm sóc khách hàng. "
                 "Nhân viên sẽ liên hệ lại với quý khách trong vòng 30 phút.",
@@ -164,7 +164,7 @@ class OracleAgent:
             stmt = select(OrderModel).where(OrderModel.code == order_code)
             order_model = (await self.session.execute(stmt)).scalar_one_or_none()
             if order_model:
-                tool_calls.append({"tool": "get_order", "args": {"order_code": order_code}})
+                tool_calls.append({"tool": "get_order", "args": {"order_code": order_code}, "result": {"order_code": order_code, "status": order_model.status, "total": order_model.total}})
                 rows = await self._order_items(order_model.id)
                 chosen = self._pick_items(rows, customer_text)
                 if not chosen:
@@ -182,7 +182,9 @@ class OracleAgent:
                 tool_calls.append({
                     "tool": "check_return_eligibility",
                     "args": {"order_code": order_code, "item_ids": item_ids, "reason_code": reason.value},
+                    "result": {},
                 })
+                eligibility_record = tool_calls[-1]
 
                 try:
                     elig = await self.return_service.check_eligibility_for_principal(
@@ -191,6 +193,7 @@ class OracleAgent:
                         item_ids=item_ids,
                         reason_code=reason.value,
                     )
+                    eligibility_record["result"] = dict(elig)
                     if not elig["eligible"]:
                         return (
                             f"Đơn hàng {order_code} không đủ điều kiện đổi trả theo [{elig['clause_id']}]: {elig['message']}",
@@ -198,6 +201,7 @@ class OracleAgent:
                             None,
                         )
                 except Exception as err:
+                    eligibility_record["result"] = {"error_code": "TOOL_EXECUTION_ERROR", "message": str(err)}
                     return (
                         f"Không thể kiểm tra đổi trả đơn {order_code}: {err}",
                         tool_calls,
@@ -218,6 +222,7 @@ class OracleAgent:
                     tool_calls.append({
                         "tool": "propose_return",
                         "args": {"order_code": order_code, "items": items_payload, "reason_code": reason.value},
+                        "result": {"action_id": prop_res["action_id"], "type": prop_res["type"]},
                     })
                     p_dict = {
                         "id": prop_res["action_id"],
@@ -255,7 +260,7 @@ class OracleAgent:
                         order_code=order_code,
                         reason="Khách hàng yêu cầu hủy đơn",
                     )
-                    tool_calls.append({"tool": "propose_cancel_order", "args": {"order_code": order_code}})
+                    tool_calls.append({"tool": "propose_cancel_order", "args": {"order_code": order_code}, "result": {"action_id": prop_res["action_id"], "type": prop_res["type"]}})
                     p_dict = {
                         "id": prop_res["action_id"],
                         "type": prop_res["type"],
@@ -277,7 +282,7 @@ class OracleAgent:
 
         # 3.5 Exchange inquiry
         if any(w in msg_lower for w in ("đổi size", "size", "đổi sang", "chật", "rộng")):
-            tool_calls.append({"tool": "search_policy", "args": {"query": user_message}})
+            tool_calls.append({"tool": "search_policy", "args": {"query": user_message}, "result": {"status": "success", "results": []}})
             return (
                 "Theo quy định đổi trả [POL-RETURN-01], cửa hàng hỗ trợ đổi kích cỡ (size) sản phẩm tương đương trong vòng 15 ngày nếu sản phẩm còn hàng trong kho.",
                 tool_calls,
@@ -288,7 +293,7 @@ class OracleAgent:
         if order_code:
             try:
                 order_dict = await self.order_service.get_order_for_principal(self.principal, order_code)
-                tool_calls.append({"tool": "get_order", "args": {"order_code": order_code}})
+                tool_calls.append({"tool": "get_order", "args": {"order_code": order_code}, "result": order_dict})
                 return (
                     f"Đơn hàng {order_dict['order_code']} hiện có trạng thái: {order_dict['status']}. "
                     f"Tổng giá trị đơn hàng là {order_dict['total']:,} đ.",
@@ -304,7 +309,7 @@ class OracleAgent:
 
         # 5. Policy Inquiries
         if any(w in msg_lower for w in self._POLICY_WORDS):
-            tool_calls.append({"tool": "search_policy", "args": {"query": user_message}})
+            tool_calls.append({"tool": "search_policy", "args": {"query": user_message}, "result": {"status": "success", "results": []}})
         if any(w in msg_lower for w in ("bao nhiêu ngày", "hạn", "thời gian", "mấy ngày", "quy định", "chính sách", "phí", "bao lâu", "đổi size", "size", "chật")):
             if any(w in msg_lower for w in ("ví điện tử", "ewallet", "tiền hoàn")):
                 return (

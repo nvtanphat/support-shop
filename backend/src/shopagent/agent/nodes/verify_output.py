@@ -2,38 +2,16 @@
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage
 
+from shopagent.agent.grounding import check_claims
 from shopagent.agent.state import AgentState
 from shopagent.core.text import extract_text_content
 
 _CLAUSE_REGEX = re.compile(r"\[(POL-[A-Z0-9\-]+)\]")
-# A number with a business unit (money, days, percent...) is a factual claim that needs a source.
-_CLAIM_NUMBER_REGEX = re.compile(
-    r"(?<![\w.,])(\d{1,3}(?:[.,]\d{3})+|\d+)\s*(đ|₫|vnd|vnđ|k|ngày|giờ|phút|tháng|%)(?![\w])",
-    re.IGNORECASE,
-)
-_ANY_NUMBER_REGEX = re.compile(r"\d{1,3}(?:[.,]\d{3})+|\d+")
-
-# Patterns that claim completion of state-changing operations
-_FALSE_COMPLETION_PATTERNS = [
-    r"đã\s+hoàn\s+tiền",
-    r"đã\s+hủy\s+(thành\s+công\s+)?đơn\s+hàng",
-    r"đã\s+hủy\s+đơn\s+cho\s+bạn",
-    r"đã\s+hủy\s+giúp\s+bạn",
-    r"đơn\s+hàng\s+của\s+bạn\s+đã\s+được\s+hủy",
-    r"tiền\s+đã\s+được\s+hoàn",
-    r"đã\s+chuyển\s+tiền\s+hoàn",
-    r"đã\s+xác\s+nhận\s+hủy\s+đơn",
-    r"đã\s+xử\s+lý\s+hoàn\s+tiền\s+thành\s+công",
-    r"đã\s+hoàn\s+tất\s+thủ\s+tục\s+hoàn\s+tiền",
-    r"đã\s+đổi\s+hàng\s+thành\s+công",
-]
-
 # Sensitive PII patterns
 _CARD_REGEX = re.compile(r"\b(?:\d{4}[-\s]?){3}\d{4}\b")
 _CCCD_REGEX = re.compile(r"\b\d{12}\b")
@@ -75,30 +53,6 @@ def _degraded_response(state: AgentState) -> str:
     if status == "requirements_unmet":
         return _UNMET_TOOL_RESPONSE
     return _SAFE_DEFAULT_RESPONSE
-
-
-def _normalize_number(raw: str) -> str:
-    return re.sub(r"[.,]", "", raw)
-
-
-def _claimed_numbers(content: str) -> set[str]:
-    """Numbers the answer states together with a unit, normalised to plain digits (440k -> 440000)."""
-    claimed: set[str] = set()
-    for match in _CLAIM_NUMBER_REGEX.finditer(content):
-        value = _normalize_number(match.group(1))
-        claimed.add(value + "000" if match.group(2).lower() == "k" else value)
-    return claimed
-
-
-def _grounded_numbers(state: AgentState) -> set[str]:
-    """Numbers present in sources the customer or the system really provided this conversation."""
-    sources: list[str] = []
-    for msg in state.get("messages", []):
-        if isinstance(msg, (HumanMessage, ToolMessage)):
-            sources.append(extract_text_content(msg.content))
-    sources.extend(json.dumps(tc.get("result"), default=str, ensure_ascii=False) for tc in state.get("tool_calls", []))
-    sources.append(json.dumps(state.get("dynamic_context") or {}, default=str, ensure_ascii=False))
-    return {_normalize_number(n) for text in sources for n in _ANY_NUMBER_REGEX.findall(text)}
 
 
 def verify_output_node(state: AgentState) -> dict[str, Any]:
@@ -144,23 +98,15 @@ def verify_output_node(state: AgentState) -> dict[str, Any]:
         if c not in retrieved_clauses:
             violations.append(f"UNVERIFIED_CITATION: {c} not in retrieved clauses {retrieved_clauses}")
 
-    # 2. Verify False Completion Claims (Invariant S5)
-    content_lower = content.lower()
-    for pat in _FALSE_COMPLETION_PATTERNS:
-        if re.search(pat, content_lower):
-            violations.append(f"FALSE_COMPLETION_CLAIM: matched '{pat}' without execution proof")
-            break
-
     # 3. Verify Verbal Promises without Required Tool (Tool-first Enforcement)
     for pat in _ESCALATION_CLAIM_PATTERNS:
-        if re.search(pat, content_lower) and not escalation_done:
+        if re.search(pat, content.lower()) and not escalation_done:
             violations.append("VERBAL_PROMISE_WITHOUT_TOOL: Claimed human escalation without a created ticket")
             break
 
-    # 3b. Every number with a unit must come from a tool result, the customer or the loaded context
-    unsupported = sorted(_claimed_numbers(content) - _grounded_numbers(state))
-    if unsupported:
-        violations.append(f"UNSUPPORTED_NUMBER: {unsupported} not found in any tool result or customer message")
+    # 2. Claim-to-evidence: numbers, order identity and completion claims need successful tool evidence
+    claim_violations, supported_claims = check_claims(content, state)
+    violations.extend(f"{v.kind}: {v.claim} ({v.detail})" for v in claim_violations)
 
     # 4. Detect PII Leakage
     if _CARD_REGEX.search(content):
@@ -181,4 +127,4 @@ def verify_output_node(state: AgentState) -> dict[str, Any]:
             "error": f"Verification failed: {'; '.join(violations)}",
         }
 
-    return {"verified_output": content}
+    return {"verified_output": content, "claim_evidence": supported_claims}

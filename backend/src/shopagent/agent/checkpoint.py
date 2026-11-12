@@ -1,17 +1,18 @@
-"""Durable Checkpointer for LangGraph with real SQLite / PostgreSQL persistence.
+"""Durable LangGraph checkpointers: SQLite (local/offline) and async PostgreSQL (production).
 
 Replaces fragile pickle files with transactional database backends:
 - SqliteSaver with WAL mode and dual sync/async support for local development, tests, and CI
-- PostgresSaver for production multi-worker PostgreSQL deployments
+- AsyncPostgresSaver on a connection pool for production multi-worker PostgreSQL deployments
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import sqlite3
+import sys
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -106,49 +107,87 @@ class DurableCheckpointer(SqliteSaver):
         return await asyncio.to_thread(self.delete_thread, thread_id)
 
 
-def create_postgres_checkpointer(sync_url: str, force_raise: bool = False) -> BaseCheckpointSaver | None:
-    """Attempt to initialize PostgresSaver when PostgreSQL is configured.
-    
-    If force_raise is True (e.g. production or explicitly enforced), raises an exception on failure
-    rather than silently falling back to SQLite.
+@dataclass
+class CheckpointerHandle:
+    """An opened checkpointer plus whatever must be closed with it."""
+
+    saver: BaseCheckpointSaver
+    pool: Any | None = None
+
+    async def close(self) -> None:
+        if self.pool is not None:
+            await self.pool.close()
+
+
+def _clean_postgres_url(url: str) -> str:
+    return url.replace("postgresql+psycopg://", "postgresql://").replace("postgresql+asyncpg://", "postgresql://")
+
+
+async def open_postgres_checkpointer(sync_url: str, *, max_size: int = 10) -> CheckpointerHandle:
+    """Open the officially supported async LangGraph Postgres checkpointer.
+
+    `PostgresSaver` is synchronous and raises NotImplementedError from `graph.ainvoke`; the async
+    graph needs `AsyncPostgresSaver` on an async connection pool. A connection failure raises:
+    there is deliberately no fallback to another store, which would hide a broken deployment.
     """
+    if sys.platform == "win32" and type(asyncio.get_running_loop()).__name__ == "ProactorEventLoop":
+        raise RuntimeError(
+            "psycopg async cannot run on the Windows ProactorEventLoop; start the server with "
+            "asyncio.WindowsSelectorEventLoopPolicy (the production Linux image is not affected)."
+        )
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+    from psycopg.rows import dict_row
+    from psycopg_pool import AsyncConnectionPool
+
+    pool = AsyncConnectionPool(
+        conninfo=_clean_postgres_url(sync_url),
+        max_size=max_size,
+        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+        open=False,
+    )
     try:
-        import psycopg
-        from langgraph.checkpoint.postgres import PostgresSaver
-        from psycopg.rows import dict_row
-
-        # Clean psycopg url: postgresql+psycopg://... -> postgresql://...
-        clean_url = sync_url.replace("postgresql+psycopg://", "postgresql://").replace("postgresql+asyncpg://", "postgresql://")
-        conn = psycopg.connect(clean_url, autocommit=True, row_factory=dict_row, connect_timeout=3)
-        saver = PostgresSaver(conn)
-        saver.setup()
-        logger.info("Khởi tạo PostgresSaver thành công với kết nối PostgreSQL.")
-        return saver
-    except Exception as e:
-        if force_raise:
-            logger.error("Không thể kết nối PostgresSaver trong môi trường production/bắt buộc: %s", e)
-            raise RuntimeError(f"PostgreSQL checkpointer connection failed: {e}. Refusing silent fallback to SQLite in production.") from e
-        logger.warning("Không thể kết nối PostgresSaver trong môi trường development (%s). Sử dụng DurableCheckpointer (SQLite WAL).", e)
-        return None
+        await pool.open(wait=True, timeout=5)
+        saver = AsyncPostgresSaver(pool)  # type: ignore[arg-type]  # pool rows are dicts via dict_row
+        await saver.setup()
+    except Exception:
+        await pool.close()
+        raise
+    logger.info("checkpointer_ready backend=postgres")
+    return CheckpointerHandle(saver=saver, pool=pool)
 
 
-_default_checkpointer: BaseCheckpointSaver | None = None
+async def open_checkpointer() -> CheckpointerHandle:
+    """Open the checkpointer selected by DATABASE_URL_SYNC and make it the process default."""
+    global _active
+    sync_url = get_settings().DATABASE_URL_SYNC
+    if "postgres" in sync_url.lower():
+        handle = await open_postgres_checkpointer(sync_url)
+    else:
+        handle = CheckpointerHandle(saver=DurableCheckpointer())
+        logger.info("checkpointer_ready backend=sqlite")
+    _active = handle
+    return handle
+
+
+async def close_checkpointer() -> None:
+    global _active
+    if _active is not None:
+        await _active.close()
+        _active = None
+
+
+_active: CheckpointerHandle | None = None
 
 
 def get_default_checkpointer() -> BaseCheckpointSaver:
-    """Singleton getter for durable persistent checkpointer (Postgres or SQLite)."""
-    global _default_checkpointer
-    if _default_checkpointer is None:
-        settings = get_settings()
-        sync_url = settings.DATABASE_URL_SYNC
-        is_production = getattr(settings, "ENVIRONMENT", "development").lower() in ("production", "prod") or os.environ.get("ENVIRONMENT", "").lower() in ("production", "prod") or os.environ.get("FORCE_POSTGRES", "").lower() in ("1", "true")
+    """The checkpointer opened at startup.
 
-        if "postgres" in sync_url.lower():
-            pg_saver = create_postgres_checkpointer(sync_url, force_raise=is_production)
-            if pg_saver is not None:
-                _default_checkpointer = pg_saver
-                return _default_checkpointer
-
-        # Default to durable SQLite checkpointer for local development and offline evaluations
-        _default_checkpointer = DurableCheckpointer()
-    return _default_checkpointer
+    SQLite (local development and offline evaluation) may be created on first use; PostgreSQL
+    must have been opened with `open_checkpointer()` inside the running event loop.
+    """
+    global _active
+    if _active is None:
+        if "postgres" in get_settings().DATABASE_URL_SYNC.lower():
+            raise RuntimeError("PostgreSQL checkpointer not initialised: call open_checkpointer() at startup")
+        _active = CheckpointerHandle(saver=DurableCheckpointer())
+    return _active.saver

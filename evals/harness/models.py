@@ -115,3 +115,8 @@ class ScenarioRunResult:
     errors: list[str] = field(default_factory=list)
     safety_violations: list[str] = field(default_factory=list)
     dialogue: list[dict[str, Any]] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    tool_score: dict[str, int] = field(default_factory=dict)
+    duration_s: float = 0.0
+    usage: dict[str, int] = field(default_factory=dict)
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)

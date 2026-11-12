@@ -24,6 +24,7 @@ from shopagent.agent.tool_requirements import derive_requirements, unmet_require
 from shopagent.core.clock import get_clock
 from shopagent.core.principal import Principal
 from shopagent.infra.db.tables import Base, TicketModel
+from shopagent.rag.indexer import index_policies
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -105,8 +106,8 @@ def test_requirements_follow_intent_and_skip_unneeded_tools() -> None:
     assert [r.key for r in derive_requirements("Cho mình gặp nhân viên với", tools)] == ["escalate"]
     assert [r.key for r in derive_requirements("Đơn sl-123456 đang ở đâu?", tools)] == ["order:SL-123456"]
     assert [r.key for r in derive_requirements("Chính sách đổi trả thế nào?", tools)] == ["policy"]
-    # An order question is answered from order data, not forced through a policy search.
-    assert [r.key for r in derive_requirements("Đơn SL-1 có được đổi không?", tools)] == ["order:SL-1"]
+    # An order-specific policy question needs both the order data and policy evidence.
+    assert [r.key for r in derive_requirements("Đơn SL-1 có được đổi không?", tools)] == ["order:SL-1", "policy"]
 
 
 def test_guest_order_requirement_prefers_guest_lookup() -> None:
@@ -193,6 +194,7 @@ async def test_tool_calls_on_last_iteration_are_synthesized(
     )
     use_model(monkeypatch, model)
     use_budget(monkeypatch, max_iterations=1)
+    await index_policies(session)
     state = make_state("Chính sách đổi trả hàng lỗi thế nào?")
     out = await agent_node(state, run_config(session))
 
@@ -375,3 +377,42 @@ def test_item_in_multi_item_order_must_be_named_by_customer() -> None:
     assert find_ungrounded_slot("check_return_eligibility", args, vague)["slot"] == "item_ids"
     named = grounding(["Đơn SL-100002 cái áo bị lỗi, mình muốn trả"], [ORDER_RESULT])
     assert find_ungrounded_slot("check_return_eligibility", args, named) is None
+
+
+# ---------------------------------------------------------------------------
+# Tool outcomes: called is not succeeded, succeeded is not evidence for a refusal
+# ---------------------------------------------------------------------------
+def test_outcome_classification_never_treats_errors_as_success() -> None:
+    from shopagent.agent.tool_requirements import ToolOutcome, classify_result
+
+    assert classify_result({"order_code": "SL-1", "status": "delivered"}) is ToolOutcome.SUCCEEDED
+    assert classify_result({"error_code": "ORDER_NOT_FOUND"}) is ToolOutcome.DEFINITIVE_NEGATIVE
+    assert classify_result({"status": "no_evidence", "results": []}) is ToolOutcome.DEFINITIVE_NEGATIVE
+    for failed in (
+        {"error_code": "TOOL_TIMEOUT"},
+        {"error_code": "MISSING_SLOT"},
+        {"error_code": "SOMETHING_NEW"},
+        {"status": "db_error", "error_code": "POLICY_DB_ERROR"},
+        {"status": "index_unavailable"},
+        None,
+        "",
+    ):
+        assert classify_result(failed) is ToolOutcome.FAILED, failed
+
+
+def test_not_found_order_may_be_explained_but_failed_lookup_may_not() -> None:
+    reqs = derive_requirements("Đơn SL-9 đâu rồi", {"get_order"})
+    not_found = [{"tool": "get_order", "args": {"order_code": "SL-9"}, "result": {"error_code": "ORDER_NOT_FOUND"}}]
+    db_down = [{"tool": "get_order", "args": {"order_code": "SL-9"}, "result": {"error_code": "TOOL_EXECUTION_ERROR"}}]
+    assert unmet_requirements(reqs, not_found) == []
+    assert unmet_requirements(reqs, db_down)
+
+
+def test_policy_lookup_failure_blocks_answer_but_honest_no_evidence_is_allowed() -> None:
+    reqs = derive_requirements("Chính sách đổi trả thế nào?", {"search_policy"})
+    empty = [{"tool": "search_policy", "args": {"query": "x"}, "result": {"status": "no_evidence", "results": []}}]
+    db_down = [{"tool": "search_policy", "args": {"query": "x"}, "result": {"status": "db_error", "error_code": "POLICY_DB_ERROR"}}]
+    found = [{"tool": "search_policy", "args": {"query": "x"}, "result": {"status": "success", "results": [{"clause_id": "POL-RETURN-01"}]}}]
+    assert unmet_requirements(reqs, db_down)
+    assert unmet_requirements(reqs, empty) == []
+    assert unmet_requirements(reqs, found) == []

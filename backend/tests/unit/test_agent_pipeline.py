@@ -414,13 +414,12 @@ async def test_token_aware_context_pruning_preserves_tool_call_pairs():
 
 
 @pytest.mark.asyncio
-async def test_postgres_checkpointer_force_raise_in_production():
-    """Verify create_postgres_checkpointer raises RuntimeError on invalid connection when force_raise is True."""
-    from shopagent.agent.checkpoint import create_postgres_checkpointer
+async def test_postgres_checkpointer_connection_failure_is_raised_not_hidden():
+    """An unreachable PostgreSQL must fail startup; there is no fallback to another store."""
+    from shopagent.agent.checkpoint import open_postgres_checkpointer
 
-    with pytest.raises(RuntimeError) as exc_info:
-        create_postgres_checkpointer("postgresql://invalid_user:invalid_pwd@localhost:54329/nonexistent", force_raise=True)
-    assert "PostgreSQL checkpointer connection failed" in str(exc_info.value)
+    with pytest.raises(Exception):  # noqa: B017 - psycopg/pool raise driver-specific types
+        await open_postgres_checkpointer("postgresql://invalid_user:invalid_pwd@localhost:54329/nonexistent")
 
 
 @pytest.mark.asyncio

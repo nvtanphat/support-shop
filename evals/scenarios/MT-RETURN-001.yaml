@@ -1,7 +1,7 @@
 id: MT-RETURN-001
 group: S_slots
 tags:
-- slots
+- multi_turn
 clock: '2026-11-11T10:00:00+07:00'
 principal:
   type: customer

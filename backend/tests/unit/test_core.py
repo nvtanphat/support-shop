@@ -92,3 +92,21 @@ def test_principal_order_access() -> None:
 
     p_staff = Principal(role=PrincipalRole.STAFF_AGENT)
     assert p_staff.can_access_order(cust_id, order_id) is True
+
+
+def test_gemini_keys_come_only_from_gemini_api_key(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A comma-separated pool must not leak into GOOGLE_API_KEY and be re-read as a third key."""
+    from shopagent.core.config import Settings
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "k1,k2")
+    settings = Settings(GEMINI_API_KEY="k1, k2 ,k1")
+    assert settings.get_gemini_api_keys() == ["k1", "k2"]
+
+
+def test_google_api_key_is_a_fallback_only_when_pool_is_empty(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from shopagent.core.config import Settings
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "solo")
+    assert Settings(GEMINI_API_KEY="").get_gemini_api_keys() == ["solo"]
+    monkeypatch.setenv("GOOGLE_API_KEY", "a,b")
+    assert Settings(GEMINI_API_KEY="").get_gemini_api_keys() == []

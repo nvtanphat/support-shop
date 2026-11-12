@@ -32,6 +32,7 @@ from shopagent.agent.slot_guard import (
 from shopagent.agent.state import AgentState
 from shopagent.agent.tool_requirements import (
     ToolRequirement,
+    classify_result,
     derive_requirements,
     steering_message,
     unmet_requirements,
@@ -249,7 +250,14 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
         for call in ai.tool_calls:
             grounding = GroundingContext([*history, *new_messages], recent_order_codes(dynamic_context))
             result = await _run_tool_call(call, tools_by_name, sig_counts, budget.tool_timeout_s, grounding)
-            recorded.append({"tool": call.get("name"), "args": call.get("args", {}), "result": result})
+            recorded.append(
+                {
+                    "tool": call.get("name"),
+                    "args": call.get("args", {}),
+                    "result": result,
+                    "outcome": classify_result(result).value,
+                }
+            )
             tool_msg = ToolMessage(
                 content=serialize_result(result),
                 name=call.get("name"),

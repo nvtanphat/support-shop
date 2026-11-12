@@ -31,4 +31,6 @@ class AgentState(TypedDict, total=False):
     # How the agent loop ended: completed | synthesized | requirements_unmet | degraded.
     turn_status: str
     unmet_requirements: list[str]
+    # Supported claim -> tool that produced the evidence (audit trail for verified answers).
+    claim_evidence: dict[str, str]
     error: str | None

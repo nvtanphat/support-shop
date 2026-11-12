@@ -92,17 +92,19 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 
     def get_gemini_api_keys(self) -> list[str]:
-        """Return list of Gemini API keys configured for key rotation and quota resilience."""
-        raw_keys = self.GEMINI_API_KEY
+        """Gemini API keys for rotation: the comma-separated GEMINI_API_KEY.
+
+        A single GOOGLE_API_KEY from the environment is only a fallback when GEMINI_API_KEY is empty.
+        """
         keys: list[str] = []
-        if raw_keys:
-            for k in raw_keys.split(","):
-                k_clean = k.strip()
-                if k_clean and k_clean not in keys:
-                    keys.append(k_clean)
-        env_google_key = os.environ.get("GOOGLE_API_KEY", "").strip()
-        if env_google_key and env_google_key not in keys:
-            keys.append(env_google_key)
+        for raw in self.GEMINI_API_KEY.split(","):
+            clean = raw.strip()
+            if clean and clean not in keys:
+                keys.append(clean)
+        if not keys:
+            env_google_key = os.environ.get("GOOGLE_API_KEY", "").strip()
+            if env_google_key and "," not in env_google_key:
+                keys.append(env_google_key)
         return keys
 
 
@@ -116,11 +118,13 @@ def get_settings() -> Settings:
     global _settings
     if _settings is None:
         _settings = Settings()
-        # Synchronize Google API key to prevent SDK from picking up stale OS environment variables
-        if _settings.GEMINI_API_KEY:
+        # The SDK reads a single key from the environment. Export only the first configured key; the
+        # whole comma-separated list there would be sent as one invalid key.
+        keys = _settings.get_gemini_api_keys()
+        if keys:
             import os
-            os.environ["GOOGLE_API_KEY"] = _settings.GEMINI_API_KEY
-            os.environ["GEMINI_API_KEY"] = _settings.GEMINI_API_KEY
+            os.environ["GOOGLE_API_KEY"] = keys[0]
+            os.environ["GEMINI_API_KEY"] = keys[0]
     return _settings
 
 
