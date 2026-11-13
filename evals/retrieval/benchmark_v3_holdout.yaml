@@ -1,0 +1,55 @@
+# Held-out retrieval benchmark: written after the method was designed on benchmark_v2 and never used to
+# tune any threshold, lexicon or prompt. It exists to report an honest number for unsupported-query
+# rejection and retrieval quality. Same format and same rules as benchmark_v2.yaml (no temporal cases).
+
+queries:
+  # ---- answerable
+  - {id: H01, kind: paraphrase, split: test, q: "Đồ mua rồi mà hối hận thì mình gửi trả được không, tối đa mấy ngày?", expected: [POL-RETURN-02]}
+  - {id: H02, kind: paraphrase, split: test, q: "Giày nhận về bị bong keo, tôi phải làm gì để được đổi?", expected: [POL-RETURN-01]}
+  - {id: H03, kind: paraphrase, split: test, q: "Nếu tôi nhận hàng nhưng thiếu một món so với đơn thì cần chứng minh bằng gì?", expected: [POL-RETURN-01]}
+  - {id: H04, kind: paraphrase, split: test, q: "Đồ bơi mới mua có đổi ý trả lại được không?", expected: [POL-RETURN-03]}
+  - {id: H05, kind: paraphrase, split: test, q: "Mua mỹ phẩm đã mở nắp rồi không hợp da, có hoàn lại không?", expected: [POL-RETURN-03]}
+  - {id: H06, kind: paraphrase, split: test, q: "Được chấp nhận trả hàng rồi mà quên gửi quá 5 ngày thì sao?", expected: [POL-RETURN-04]}
+  - {id: H07, kind: paraphrase, split: test, q: "Tiền hoàn về tài khoản ngân hàng thường mất mấy ngày làm việc?", expected: [POL-REFUND-01]}
+  - {id: H08, kind: paraphrase, split: test, q: "Hoàn tiền khoảng một triệu thì nhân viên hay hệ thống duyệt?", expected: [POL-REFUND-02]}
+  - {id: H09, kind: paraphrase, split: test, q: "Đơn đang đóng gói thì tôi có tự hủy được ngay không?", expected: [POL-CANCEL-01]}
+  - {id: H10, kind: paraphrase, split: test, q: "Hàng đã tới tay rồi thì còn hủy đơn được nữa không?", expected: [POL-CANCEL-01]}
+  - {id: H11, kind: paraphrase, split: test, q: "Áo bị rộng, muốn đổi sang cỡ nhỏ hơn thì điều kiện thế nào?", expected: [POL-EXCHANGE-01]}
+  - {id: H12, kind: paraphrase, split: test, q: "Đổi màu khác cho cùng một sản phẩm thì giá có phải bằng nhau không?", expected: [POL-EXCHANGE-01]}
+  - {id: H13, kind: paraphrase, split: test, q: "Ở tỉnh xa thì đặt hàng bao lâu mới nhận được?", expected: [POL-SHIP-01]}
+  - {id: H14, kind: paraphrase, split: test, q: "Đề xuất hủy đơn tôi bấm xác nhận sau nửa tiếng có còn hiệu lực không?", expected: [POL-GENERAL-01]}
+  - {id: H15, kind: slang, split: test, q: "hàng lỗi mà shop bắt mik chịu ship trả ko z", expected: [POL-RETURN-01]}
+  - {id: H16, kind: slang, split: test, q: "đổi ý dc trả ko, trả trong bao lâu ạ", expected: [POL-RETURN-02]}
+  - {id: H17, kind: slang, split: test, q: "tiền hoàn về ví momo mất mấy hôm", expected: [POL-REFUND-01]}
+  - {id: H18, kind: slang, split: test, q: "hủy đơn dc hok shop, đơn mới xác nhận thôi", expected: [POL-CANCEL-01]}
+  - {id: H19, kind: slang, split: test, q: "đổi sz khác cho áo đã mua có dc ko ad", expected: [POL-EXCHANGE-01]}
+  - {id: H20, kind: typo, split: test, q: "tra hang do loi nha san xuat mat phi ship ko", expected: [POL-RETURN-01]}
+  - {id: H21, kind: typo, split: test, q: "hoan tien ve the visa mat bao lau", expected: [POL-REFUND-01]}
+  - {id: H22, kind: typo, split: test, q: "mon do doi y co duoc tra lai khong", expected: [POL-RETURN-02]}
+  - {id: H23, kind: unaccented, split: test, q: "don hang dang van chuyen co huy duoc khong", expected: [POL-CANCEL-01]}
+  - {id: H24, kind: unaccented, split: test, q: "hang giam gia xa kho co tra duoc khong", expected: [POL-RETURN-03]}
+  - {id: H25, kind: unaccented, split: test, q: "thoi gian giao hang noi thanh la bao nhieu ngay", expected: [POL-SHIP-01]}
+  - {id: H26, kind: unaccented, split: test, q: "hoan tien tren hai trieu can ai phe duyet", expected: [POL-REFUND-02]}
+  - {id: H27, kind: multi_intent, split: test, q: "Hủy đơn thanh toán thẻ rồi thì bao lâu tiền hoàn về thẻ?", expected: [POL-CANCEL-01, POL-REFUND-01]}
+  - {id: H28, kind: multi_intent, split: test, q: "Áo lỗi muốn trả, ai chịu phí ship và hạn gửi hàng là bao lâu?", expected: [POL-RETURN-01, POL-RETURN-04]}
+  # ---- out of domain (the policy says nothing)
+  - {id: X01, kind: out_of_domain, split: test, q: "Bóng đá tối nay đội nào đá?", expected: []}
+  - {id: X02, kind: out_of_domain, split: test, q: "Cho tôi công thức làm bánh flan", expected: []}
+  - {id: X03, kind: out_of_domain, split: test, q: "Giá vàng hôm nay bao nhiêu một chỉ?", expected: []}
+  - {id: X04, kind: out_of_domain, split: test, q: "Giải phương trình bậc hai giúp mình", expected: []}
+  - {id: X05, kind: out_of_domain, split: test, q: "Laptop nào chơi game tốt dưới 20 triệu?", expected: []}
+  - {id: X06, kind: out_of_domain, split: test, q: "Shop có cửa hàng ở Đà Nẵng không?", expected: []}
+  - {id: X07, kind: out_of_domain, split: test, q: "Làm thế nào để giảm cân nhanh?", expected: []}
+  - {id: X08, kind: out_of_domain, split: test, q: "Dịch giúp tôi đoạn văn này sang tiếng Anh", expected: []}
+  - {id: X09, kind: out_of_domain, split: test, q: "Điện thoại của tôi bị treo máy phải làm sao?", expected: []}
+  - {id: X10, kind: out_of_domain, split: test, q: "Cho tôi số điện thoại của giám đốc công ty", expected: []}
+  - {id: X11, kind: out_of_domain, split: test, q: "Mã giảm giá hôm nay là gì?", expected: []}
+  - {id: X12, kind: out_of_domain, split: test, q: "Shop có bán quần áo trẻ em cỡ nhỏ không?", expected: []}
+  - {id: X13, kind: out_of_domain, split: test, q: "Thuê nhà ở quận 1 giá bao nhiêu", expected: []}
+  - {id: X14, kind: out_of_domain, split: test, q: "ban nhac nao dang noi nhat hien nay", expected: []}
+  - {id: X15, kind: out_of_domain, split: test, q: "cach cai dat windows 11 tu usb", expected: []}
+  - {id: X16, kind: out_of_domain, split: test, q: "mik muon xin viec lam them o shop dc ko", expected: []}
+  - {id: X17, kind: out_of_domain, split: test, q: "Hãy viết email xin nghỉ phép giúp tôi", expected: []}
+  - {id: X18, kind: out_of_domain, split: test, q: "Thủ đô của nước Pháp là gì?", expected: []}
+  - {id: X19, kind: out_of_domain, split: test, q: "Bảo hiểm xe máy mua ở đâu rẻ nhất?", expected: []}
+  - {id: X20, kind: out_of_domain, split: test, q: "Shop nhận in logo lên áo theo yêu cầu riêng không?", expected: []}

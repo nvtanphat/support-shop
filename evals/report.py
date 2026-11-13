@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+import yaml
 from shopagent.agent.grounding import claimed_numbers, normalize_number
 
 from evals.harness.gates import load_gates
@@ -90,6 +91,46 @@ def grounding_metrics(results: list[dict[str, Any]]) -> dict[str, tuple[int, int
     return {"citation_provenance": (cited_ok, cited_total), "supported_numeric_claims": (claims_ok, claims_total)}
 
 
+def _numbers_in(text: str) -> set[str]:
+    """Every number written in a text, thousands separators removed (30.000 -> 30000)."""
+    return {normalize_number(n) for n in NUMBER_RE.findall(text)}
+
+
+def _ints_in(value: Any) -> set[str]:
+    return _numbers_in(json.dumps(value, ensure_ascii=False, default=str))
+
+
+def _order_totals(fixtures: dict[str, Any]) -> set[str]:
+    """Amounts a person can derive from the fixture: line totals, order totals, totals net of discount/shipping."""
+    derived: set[str] = set()
+    for order in (fixtures or {}).get("orders", []):
+        subtotal = sum(int(it["unit_price"]) * int(it["qty"]) for it in order.get("items", []))
+        derived |= {str(subtotal), str(subtotal - int(order.get("discount_total", 0)) + int(order.get("shipping_fee", 0)))}
+        derived |= {str(int(it["unit_price"]) * int(it["qty"])) for it in order.get("items", [])}
+    return derived
+
+
+def independent_numeric_support(results: list[dict[str, Any]], scenario_dir: Path, truth_files: list[Path]) -> tuple[int, int]:
+    """Check every numeric claim against ground truth written independently of the agent.
+
+    Truth = numbers in the scenario (fixtures and expected facts, authored by hand) + the hand-written
+    business specification and decision table + amounts derivable from the fixture. Neither tool results
+    nor the policy configuration the agent itself reads are consulted (evals must not depend on them).
+    """
+    spec_numbers = set().union(*(_numbers_in(f.read_text(encoding="utf-8")) for f in truth_files))
+    supported = total = 0
+    for r in results:
+        scenario = yaml.safe_load((scenario_dir / f"{r['scenario_id']}.yaml").read_text(encoding="utf-8"))
+        truth = _ints_in(scenario) | spec_numbers | _order_totals(scenario.get("fixtures", {}))
+        for turn in r["dialogue"]:
+            if turn["role"] != "assistant":
+                continue
+            for value in claimed_numbers(turn["content"]):
+                total += 1
+                supported += value in truth
+    return supported, total
+
+
 def status_for(value: float | None, threshold: float, higher_is_better: bool = True) -> str:
     if value is None:
         return "NOT VERIFIED"
@@ -137,6 +178,23 @@ def build(args: argparse.Namespace) -> str:
             )
         out.append("")
 
+    holdout_rows: list[dict[str, Any]] = json.loads(Path(args.holdout).read_text(encoding="utf-8")) if args.holdout else []
+    if holdout_rows:
+        out += [
+            "## Retrieval holdout (benchmark_v3_holdout, ngưỡng chốt từ benchmark_v2 trước khi chấm)",
+            "",
+            "| Khôi phục dấu | Tập | Ngưỡng | R@1 | R@1 (đủ mọi điều khoản) | R@4 | MRR | Từ chối ngoài phạm vi | Từ chối nhầm | Mẫu (hợp lệ/ngoài phạm vi) |",
+            "|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        for row in holdout_rows:
+            for label, key in (("calibration v2", "calibration_v2"), ("holdout v3", "holdout_v3")):
+                x = row[key]
+                out.append(
+                    f"| {'có' if row['diacritic_restoration'] else 'không'} | {label} | {x['threshold']} | {x['recall@1']} | {x['recall@1_all_required']} | {x['recall@4']} | "
+                    f"{x['mrr']} | {x['unsupported_rejection']} | {x['false_rejection']} | {x['answerable']}/{x['out_of_domain']} |"
+                )
+        out.append("")
+
     # ---- acceptance matrix
     matrix: list[tuple[str, str, str, str]] = []
     pytest_ok = args.pytest_failed == 0 and args.pytest_skipped == 0 and args.pytest_passed > 0
@@ -151,12 +209,32 @@ def build(args: argparse.Namespace) -> str:
         ok, total = grounding["citation_provenance"]
         matrix.append(("Valid Citation Provenance", "100%", f"{ok}/{total} citations backed by a successful lookup", ("PASS" if ok == total else "FAIL") if total else "NOT VERIFIED"))
         ok, total = grounding["supported_numeric_claims"]
-        matrix.append(("Supported Factual Claims", ">= 98%", f"{ok}/{total} numeric claims recomputed with the verifier rules; no independent human labels", "NOT VERIFIED"))
+        ok_i, total_i = independent_numeric_support(
+            runs["Gemini"][1],
+            Path(args.scenario_dir),
+            [Path(f) for f in args.truth_file],
+        )
+        rate = ok_i / total_i if total_i else None
+        matrix.append(
+            (
+                "Supported Factual Claims",
+                ">= 98%",
+                f"{ok_i}/{total_i} numeric claims match the scenario fixtures, business spec and decision table (independent of tool results and of config); "
+                f"{ok}/{total} also match successful tool results",
+                status_for(rate, 0.98),
+            )
+        )
     else:
         for _key, label in GATE_ROWS:
             matrix.append((label, "see quality_gates.yaml", "no Gemini run supplied", "NOT VERIFIED"))
     strategy = rag_rows.get(args.rag_strategy or "")
-    if strategy:
+    held = holdout_rows[0]["holdout_v3"] if holdout_rows else None
+    if held:
+        note = f" (holdout v3, n={held['answerable']}/{held['out_of_domain']}, ngưỡng chốt từ v2)"
+        matrix.append(("RAG Recall@1", ">= 0.90", f"{held['recall@1']}{note}", status_for(held["recall@1"], 0.90)))
+        matrix.append(("RAG Recall@4", ">= 0.95", f"{held['recall@4']}{note}", status_for(held["recall@4"], 0.95)))
+        matrix.append(("Unsupported-Query Rejection", ">= 0.95", f"{held['unsupported_rejection']}{note}", status_for(held["unsupported_rejection"], 0.95)))
+    elif strategy:
         matrix.append(("RAG Recall@1", ">= 0.90", str(strategy["recall@1"]), status_for(strategy["recall@1"], 0.90)))
         matrix.append(("RAG Recall@4", ">= 0.95", str(strategy["recall@4"]), status_for(strategy["recall@4"], 0.95)))
         matrix.append(("Unsupported-Query Rejection", ">= 0.95", str(strategy["unsupported_rejection"]), status_for(strategy["unsupported_rejection"], 0.95)))
@@ -180,13 +258,22 @@ def main() -> None:
     parser.add_argument("--gemini")
     parser.add_argument("--retrieval")
     parser.add_argument("--rag-strategy")
+    parser.add_argument("--holdout", help="JSON from evals.retrieval.holdout; preferred over --retrieval for the RAG rows")
     parser.add_argument("--pytest-passed", type=int, default=0)
     parser.add_argument("--pytest-failed", type=int, default=0)
     parser.add_argument("--pytest-skipped", type=int, default=0)
     parser.add_argument("--postgres-tests", type=int, default=0)
     parser.add_argument("--ci", default="NOT VERIFIED")
+    parser.add_argument("--scenario-dir", default="evals/scenarios", help="Scenario YAML files (independent ground truth)")
+    parser.add_argument(
+        "--truth-file",
+        action="append",
+        default=None,
+        help="Hand-written files whose numbers count as independent truth (repeatable)",
+    )
     parser.add_argument("--out", type=Path, default=Path("docs/eval-report.md"))
     args = parser.parse_args()
+    args.truth_file = args.truth_file or ["docs/business-spec.md", "evals/ground_truth/policy_decision_table.csv"]
     args.out.write_text(build(args), encoding="utf-8")
     print(f"Đã ghi {args.out}")
 

@@ -9,6 +9,7 @@ hard error: retrieval never silently falls back to the weaker ranking.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Protocol
 
 from shopagent.core.config import get_app_config, get_settings
@@ -45,8 +46,16 @@ class CrossEncoderReranker:
 _cached: tuple[str, Reranker] | None = None
 
 
-def get_configured_reranker() -> tuple[Reranker, int] | None:
-    """The reranker and its candidate count when enabled in config, else None."""
+@dataclass(frozen=True)
+class RerankSettings:
+    reranker: Reranker
+    candidates: int
+    # Best cross-encoder score below which the question is treated as outside the policy (None: never).
+    min_score: float | None
+
+
+def get_configured_reranker() -> RerankSettings | None:
+    """The reranker and its settings when enabled in config, else None."""
     global _cached
     cfg = (get_app_config().get("retrieval") or {}).get("reranker") or {}
     override = get_settings().RETRIEVAL_RERANKER_ENABLED
@@ -55,4 +64,9 @@ def get_configured_reranker() -> tuple[Reranker, int] | None:
     model = str(cfg["model"])
     if _cached is None or _cached[0] != model:
         _cached = (model, CrossEncoderReranker(model))
-    return _cached[1], int(cfg.get("candidates", 10))
+    min_score = cfg.get("min_score")
+    return RerankSettings(
+        reranker=_cached[1],
+        candidates=int(cfg.get("candidates", 10)),
+        min_score=None if min_score is None else float(min_score),
+    )

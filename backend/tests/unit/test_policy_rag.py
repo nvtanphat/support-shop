@@ -370,3 +370,48 @@ async def test_production_retriever_meets_the_measured_benchmark_floor() -> None
         top4 += all(c in got for c in item["expected"])
     assert top4 / len(items) >= 0.95
     assert top1 / len(items) >= 0.60
+
+
+# ---------------------------------------------------------------------------
+# Unsupported-question threshold and diacritic restoration
+# ---------------------------------------------------------------------------
+class FixedScores:
+    """Stub cross-encoder returning one score for every clause, and remembering what it was asked."""
+
+    def __init__(self, score: float) -> None:
+        self.score = score
+        self.queries: list[str] = []
+
+    def scores(self, query, texts):  # type: ignore[no-untyped-def]
+        self.queries.append(query)
+        return [self.score] * len(texts)
+
+
+@pytest.mark.asyncio
+async def test_question_below_the_score_threshold_returns_no_evidence() -> None:
+    weak = HybridRetriever(in_memory=True, reranker=FixedScores(-9.0), min_rerank_score=-4.76)
+    assert await weak.retrieve("đổi trả hàng lỗi", top_k=4) == []
+    strong = HybridRetriever(in_memory=True, reranker=FixedScores(3.0), min_rerank_score=-4.76)
+    assert await strong.retrieve("đổi trả hàng lỗi", top_k=4)
+    unguarded = HybridRetriever(in_memory=True, reranker=FixedScores(-9.0), min_rerank_score=None)
+    assert await unguarded.retrieve("đổi trả hàng lỗi", top_k=4)  # no threshold configured: never rejects
+
+
+@pytest.mark.asyncio
+async def test_cross_encoder_reads_the_query_with_diacritics_restored() -> None:
+    stub = FixedScores(1.0)
+    retriever = HybridRetriever(in_memory=True, reranker=stub)
+    await retriever.retrieve("hang loi toi muon doi tra", top_k=2)
+    assert "hàng" in stub.queries[0] and "tôi" in stub.queries[0] and "muốn" in stub.queries[0]
+    await retriever.retrieve("Đơn đã giao rồi, mình hủy được không?", top_k=2)
+    assert stub.queries[1] == "đơn đã giao rồi mình hủy được không"  # already accented: normalised, never rewritten
+
+
+def test_diacritic_restoration_uses_the_policy_vocabulary_and_function_words() -> None:
+    from shopagent.rag.diacritics import build_restorer
+
+    restore = build_restorer(["Thời hạn đổi trả hàng lỗi trong vòng 15 ngày", "Tối đa 5 ngày"])
+    assert restore("toi muon doi tra hang") == "tôi muốn đổi trả hàng"  # 'tôi' beats the corpus word 'tối'
+    assert restore("thoi han 15 ngay") == "thời hạn 15 ngày"
+    assert restore("Đổi trả") == "Đổi trả"  # accented input is left alone
+    assert restore("zzz qwerty") == "zzz qwerty"  # unknown words pass through

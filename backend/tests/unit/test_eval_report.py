@@ -33,8 +33,13 @@ def write_run(directory: Path, gate_values: dict[str, float | None]) -> None:
     )
 
 
-def namespace(**overrides) -> argparse.Namespace:  # type: ignore[no-untyped-def]
-    base = {"oracle": None, "null": None, "gemini": None, "retrieval": None, "rag_strategy": None, "pytest_passed": 10, "pytest_failed": 0, "pytest_skipped": 0, "postgres_tests": 4, "ci": "PASS"}
+def namespace(tmp_path: Path | None = None, **overrides) -> argparse.Namespace:  # type: ignore[no-untyped-def]
+    base = {"oracle": None, "null": None, "gemini": None, "retrieval": None, "holdout": None, "rag_strategy": None, "pytest_passed": 10, "pytest_failed": 0, "pytest_skipped": 0, "postgres_tests": 4, "ci": "PASS", "scenario_dir": "evals/scenarios", "truth_file": []}
+    if tmp_path is not None:  # a synthetic scenario S-1 and a truth file that states the policy numbers
+        (tmp_path / "scenarios").mkdir(exist_ok=True)
+        (tmp_path / "scenarios" / "S-1.yaml").write_text("id: S-1" + chr(10) + "expect: {}" + chr(10), encoding="utf-8")
+        (tmp_path / "truth.md").write_text("Đổi ý trong 7 ngày.", encoding="utf-8")
+        base |= {"scenario_dir": str(tmp_path / "scenarios"), "truth_file": [str(tmp_path / "truth.md")]}
     return argparse.Namespace(**{**base, **overrides})
 
 
@@ -55,8 +60,21 @@ def test_report_never_passes_without_gemini_or_retrieval_evidence(tmp_path: Path
 def test_report_fails_when_a_measured_gate_fails_and_keeps_oracle_separate(tmp_path: Path) -> None:
     write_run(tmp_path / "oracle", {})
     write_run(tmp_path / "gemini", {"task_success": None})
-    text = build(namespace(oracle=str(tmp_path / "oracle"), gemini=str(tmp_path / "gemini")))
+    text = build(namespace(tmp_path, oracle=str(tmp_path / "oracle"), gemini=str(tmp_path / "gemini")))
     assert "## Oracle" in text and "## Gemini" in text
     # Real-model rows come only from the Gemini run: its missing task_success cannot be covered by Oracle.
     assert "Real LLM End-to-End Task Success | >= 0.9 | n/a (1/1) | NOT VERIFIED" in text
     assert "Valid Citation Provenance | 100% | 1/2" in text and "| FAIL |" in text
+
+
+def test_independent_numeric_support_ignores_tool_results_and_uses_hand_written_truth(tmp_path: Path) -> None:
+    from evals.report import independent_numeric_support
+
+    ns = namespace(tmp_path)
+    run = {
+        "scenario_id": "S-1",
+        "dialogue": [{"role": "assistant", "content": "Đổi ý trong 7 ngày, hoàn 99.000 đ."}],
+        "tool_calls": [{"tool": "check_return_eligibility", "result": {"refund": 99000}}],  # tool says 99.000, truth does not
+    }
+    supported, total = independent_numeric_support([run], Path(ns.scenario_dir), [Path(f) for f in ns.truth_file])
+    assert (supported, total) == (1, 2)  # 7 ngày is in the spec; 99.000 đ only in a tool result

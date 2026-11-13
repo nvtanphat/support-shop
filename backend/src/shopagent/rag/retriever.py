@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -19,9 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shopagent.core.clock import get_clock
 from shopagent.infra.db.tables import PolicyChunkModel
 from shopagent.rag.chunker import build_chunks_from_clauses
+from shopagent.rag.diacritics import build_restorer
 from shopagent.rag.generator import generate_policy_clauses
 from shopagent.rag.lexical import Bm25Index, normalize_query
-from shopagent.rag.reranker import Reranker, get_configured_reranker
+from shopagent.rag.reranker import Reranker, RerankSettings, get_configured_reranker
 
 # The snapshot is also revalidated by fingerprint on every call; the TTL bounds staleness if the
 # fingerprint query ever misses a change.
@@ -64,13 +66,19 @@ class _Snapshot:
         self.chunks = chunks
         self.loaded_at = time.monotonic()
         self.index_by_ids: dict[tuple[str, ...], Bm25Index] = {}
+        self._restorer: Callable[[str], str] | None = None
+
+    def restore_diacritics(self, query: str) -> str:
+        if self._restorer is None:
+            self._restorer = build_restorer(c["text"] for c in self.chunks)
+        return self._restorer(query)
 
     def fresh(self, fingerprint: object) -> bool:
         return fingerprint == self.fingerprint and time.monotonic() - self.loaded_at < SNAPSHOT_TTL_SECONDS
 
 
 _snapshot: _Snapshot | None = None
-_rerank_cache: OrderedDict[tuple[str, tuple[str, ...]], list[float]] = OrderedDict()
+_rerank_cache: OrderedDict[tuple[int, str, tuple[str, ...]], list[float]] = OrderedDict()
 
 
 def clear_retrieval_caches() -> None:
@@ -94,20 +102,21 @@ class HybridRetriever:
         in_memory: bool = False,
         reranker: Reranker | None = None,
         rerank_candidates: int = 10,
+        min_rerank_score: float | None = None,
     ) -> None:
         if session is None and not in_memory:
             raise ValueError("HybridRetriever needs a database session, or in_memory=True for offline benchmarks")
         self.session = session
         self._explicit_reranker = reranker
         self._explicit_candidates = rerank_candidates
+        self._explicit_min_score = min_rerank_score
         self._in_memory_snapshot: _Snapshot | None = None
 
-    def _resolve_reranker(self) -> tuple[Reranker | None, int]:
+    def _resolve_reranker(self) -> RerankSettings | None:
         """An explicitly injected reranker, else the configured one; failure to load raises."""
         if self._explicit_reranker is not None:
-            return self._explicit_reranker, self._explicit_candidates
-        configured = get_configured_reranker()
-        return configured if configured is not None else (None, self._explicit_candidates)
+            return RerankSettings(self._explicit_reranker, self._explicit_candidates, self._explicit_min_score)
+        return get_configured_reranker()
 
     async def _load_snapshot(self) -> _Snapshot:
         global _snapshot
@@ -166,7 +175,7 @@ class HybridRetriever:
         return visible
 
     async def _rerank(self, reranker: Reranker, query: str, pool: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        key = (query, tuple(f"{c['clause_id']}@{c['version']}" for c in pool))
+        key = (id(reranker), query, tuple(f"{c['clause_id']}@{c['version']}" for c in pool))
         scores = _rerank_cache.get(key)
         if scores is None:
             scores = await asyncio.to_thread(reranker.scores, query, [c["text"] for c in pool])
@@ -204,10 +213,13 @@ class HybridRetriever:
 
         order = sorted(range(len(chunks)), key=lambda i: scores[i], reverse=True)
         ranked = [{**chunks[i], "score": scores[i]} for i in order]
-        reranker, candidates = self._resolve_reranker()
-        if reranker is not None:
-            pool = ranked[: max(top_k, candidates)]
-            ranked = await self._rerank(reranker, normalized, pool)
+        settings = self._resolve_reranker()
+        if settings is not None:
+            pool = ranked[: max(top_k, settings.candidates)]
+            # The cross-encoder reads natural text: restore diacritics a customer left out.
+            ranked = await self._rerank(settings.reranker, snapshot.restore_diacritics(normalized), pool)
+            if settings.min_score is not None and ranked[0]["score"] < settings.min_score:
+                return []  # the best clause is still too weak to present as evidence
 
         return [
             {
