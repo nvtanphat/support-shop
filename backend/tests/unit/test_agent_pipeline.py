@@ -558,3 +558,35 @@ def test_system_prompt_keeps_internal_codes_out_of_customer_replies() -> None:
     assert "CÁCH TRÌNH BÀY VỚI KHÁCH" in prompt
     assert "UUID" in prompt and "không mã lý do" in prompt
     assert "không hỏi lại" in prompt
+    assert "pending_payment" in prompt  # named only as an example of what not to show
+
+
+@pytest.mark.asyncio
+async def test_blocked_reply_leaves_its_reason_in_the_audit_log() -> None:
+    """When verify_output replaces a reply, the reason is kept (once, even if the turn is retried)."""
+    from shopagent.infra.db.tables import AuditLogModel
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    conv_id = uuid.uuid4()
+
+    async with factory() as session:
+        state: AgentState = {
+            "conversation_id": str(conv_id),
+            "turn_id": "turn-blocked",
+            "messages": [HumanMessage(content="Trả đơn SL-001500", id="m-h")],
+            "verified_output": "Dạ em chưa thể xác nhận chính xác nội dung này.",
+            "error": "Verification failed: UNVERIFIED_NUMBER: 99.000 (no tool evidence)",
+        }
+        config = {"configurable": {"session": session}}
+        await persist_emit_node(state, config=config)
+        await session.commit()
+        await persist_emit_node(state, config=config)  # retry of the same turn
+        await session.commit()
+
+        rows = (await session.execute(select(AuditLogModel).where(AuditLogModel.action == "turn.blocked"))).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].subject_id == str(conv_id) and "UNVERIFIED_NUMBER" in rows[0].after_state["reason"]
+    await engine.dispose()

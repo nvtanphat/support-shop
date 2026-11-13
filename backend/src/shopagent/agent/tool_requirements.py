@@ -195,3 +195,23 @@ def steering_message(unmet: list[ToolRequirement]) -> str:
         else:
             lines.append("- search_policy với truy vấn bám sát câu hỏi của khách để lấy điều khoản có phiên bản.")
     return "\n".join(lines)
+
+
+_CLAUSE_CITATION_RE = re.compile(r"\[(POL-[A-Z0-9\-]+)\]")
+
+
+def unretrieved_citations(answer: str, retrieved_clauses: Iterable[str]) -> list[str]:
+    """Clause ids the draft answer cites although no lookup of this turn returned them."""
+    known = set(retrieved_clauses)
+    return sorted({c for c in _CLAUSE_CITATION_RE.findall(answer) if c not in known})
+
+
+def citation_steering_message(clause_ids: list[str]) -> str:
+    """Instruction for a draft that cites clauses nobody looked up: look them up or drop the citation."""
+    return (
+        "YÊU CẦU NGHIỆP VỤ BẮT BUỘC: câu trả lời trước trích dẫn điều khoản chưa được tra cứu trong lượt này: "
+        + ", ".join(clause_ids)
+        + ". Hãy gọi search_policy với truy vấn bám sát câu hỏi để lấy điều khoản thật rồi mới trả lời. "
+        "Không trích dẫn điều khoản nào không có trong kết quả tra cứu."
+    )
+

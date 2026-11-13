@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.agent.state import AgentState
 from shopagent.infra.db.tables import (
+    AuditLogModel,
     ConversationEventModel,
     ConversationModel,
     IdempotencyKeyModel,
@@ -131,6 +132,17 @@ async def persist_emit_node(state: AgentState, config: RunnableConfig) -> dict[s
                         citations=list(state.get("retrieved_clauses", [])),
                     )
                     session.add(a_msg)
+                    if state.get("error"):  # keep why a reply was replaced, so a blocked answer can be diagnosed later
+                        session.add(
+                            AuditLogModel(
+                                actor_type="agent",
+                                actor_id="verify_output",
+                                action="turn.blocked",
+                                subject_type="conversation",
+                                subject_id=str(c_uuid),
+                                after_state={"reason": str(state["error"])[:1500], "turn_status": state.get("turn_status")},
+                            )
+                        )
 
                     # Persist message.completed event for SSE replay & turn idempotency
                     conv.last_event_seq += 1

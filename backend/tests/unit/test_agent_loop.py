@@ -153,6 +153,35 @@ async def test_verbal_escalation_promise_is_steered_into_a_real_tool_call(
 
 
 @pytest.mark.asyncio
+async def test_draft_citing_an_unlooked_up_clause_is_steered_instead_of_blocked(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Seen live: the reply cited [POL-RETURN-01] without a lookup, verify_output blocked it and the customer got a refusal."""
+    model = ScriptedModel(
+        [
+            AIMessage(content="Theo [POL-RETURN-01], hàng lỗi được trả trong 15 ngày."),
+            AIMessage(content="Mình chưa tra cứu điều khoản nên chưa thể nêu thời hạn cụ thể, bạn cho mình biết mã đơn nhé."),
+        ]
+    )
+    use_model(monkeypatch, model)
+    state = make_state("Hàng bị lỗi thì sao")
+    out = await agent_node(state, run_config(session))
+
+    assert out["turn_status"] == "completed" and model.calls == 2
+    texts = [str(m.content) for m in out["messages"] if isinstance(m, AIMessage)]
+    assert not any("POL-RETURN-01" in t for t in texts)  # the unsupported draft never enters history
+    verified = verify_output_node({**state, **out, "messages": [*state["messages"], *out["messages"]]})
+    assert "error" not in verified
+
+
+def test_unretrieved_citations_ignores_clauses_that_were_looked_up() -> None:
+    from shopagent.agent.tool_requirements import unretrieved_citations
+
+    assert unretrieved_citations("Theo [POL-A-01] và [POL-B-02].", ["POL-A-01"]) == ["POL-B-02"]
+    assert unretrieved_citations("Không trích dẫn gì.", []) == []
+
+
+@pytest.mark.asyncio
 async def test_model_that_never_calls_required_tool_gets_no_promise_through(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

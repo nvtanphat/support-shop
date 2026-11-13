@@ -34,10 +34,12 @@ from shopagent.agent.slot_guard import (
 from shopagent.agent.state import AgentState
 from shopagent.agent.tool_requirements import (
     ToolRequirement,
+    citation_steering_message,
     classify_result,
     derive_requirements,
     steering_message,
     unmet_requirements,
+    unretrieved_citations,
 )
 from shopagent.agent.tools.registry import ToolRegistry
 from shopagent.core.config import get_models_config
@@ -268,11 +270,19 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
 
         if not ai.tool_calls:
             unmet = unmet_requirements(requirements, recorded)
+            unretrieved = unretrieved_citations(extract_text_content(ai.content), retrieved_clauses)
+            is_last = iteration == budget.max_iterations - 1
+            if not unmet and unretrieved and steering_rounds < _MAX_STEERING_ROUNDS and not is_last:
+                # A draft that cites a clause it never looked up would be blocked by verify_output; ask once more instead.
+                steering_rounds += 1
+                working.append(
+                    HumanMessage(content="[HỆ THỐNG - không phải lời khách]" + chr(10) + citation_steering_message(unretrieved))
+                )
+                continue
             if not unmet:
                 new_messages.append(ai)
                 turn_status = "completed"
                 break
-            is_last = iteration == budget.max_iterations - 1
             if steering_rounds >= _MAX_STEERING_ROUNDS or is_last:
                 turn_status = "requirements_unmet"
                 break

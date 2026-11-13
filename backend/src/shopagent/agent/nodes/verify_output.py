@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
@@ -10,6 +11,8 @@ from langchain_core.messages import AIMessage
 from shopagent.agent.grounding import check_claims
 from shopagent.agent.state import AgentState
 from shopagent.core.text import extract_text_content
+
+logger = logging.getLogger(__name__)
 
 _CLAUSE_REGEX = re.compile(r"\[(POL-[A-Z0-9\-]+)\]")
 # Sensitive PII patterns
@@ -132,6 +135,7 @@ def verify_output_node(state: AgentState) -> dict[str, Any]:
 
     # If violations are detected, replace with safe compliant response
     if violations:
+        logger.warning("Câu trả lời bị chặn ở bước kiểm tra đầu ra: %s | nội dung: %.300s", "; ".join(violations), content)
         safe_response = (
             "Dạ em chưa thể xác nhận chính xác nội dung này nên xin phép không đưa ra thông tin chưa kiểm chứng. "
             "Quý khách vui lòng thử lại hoặc bấm nút gặp nhân viên để được hỗ trợ trực tiếp ạ."
