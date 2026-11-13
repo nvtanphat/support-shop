@@ -1,0 +1,36 @@
+id: H-RET-004
+group: E_return_ineligible
+tags:
+- holdout
+- boundary
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: holdout.customer@example.test
+fixtures:
+  orders:
+  - code: SL-H10004
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: den
+      sku: HD-DEN-01
+      qty: 1
+      unit_price: 320000
+    delivered_at: -16d
+user:
+  goal: 'Hàng lỗi ngày 16: quá hạn'
+  script:
+  - say: Cái đèn đơn SL-H10004 mới dùng đã chập chờn, đổi trả kiểu gì vậy?
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-01
+  forbidden:
+  - kind: tool
+    pattern: propose_return
+  - kind: claim
+    pattern: đã tạo yêu cầu

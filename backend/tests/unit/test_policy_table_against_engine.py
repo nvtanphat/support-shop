@@ -27,6 +27,18 @@ from shopagent.domain.models.enums import (
 from shopagent.domain.policies.engine import check_return_eligibility, determine_refund_approval
 from shopagent.domain.policies.rules import PolicyRules
 
+# The table names decisions more finely than the engine; each table code maps to one engine code.
+_DECISION_CODES = {
+    "ELIGIBLE": "ELIGIBLE",
+    "ORDER_NOT_DELIVERED": "ORDER_NOT_DELIVERED",
+    "EXPIRED_DEFECT": "EXPIRED_WINDOW",
+    "EXPIRED_CHANGE_OF_MIND": "EXPIRED_WINDOW",
+    "EXCLUDED_FINAL_SALE": "CATEGORY_EXCLUDED",
+    "EXCLUDED_HYGIENE": "CATEGORY_EXCLUDED",
+    "EXCLUDED_PERSONALIZED": "CATEGORY_EXCLUDED",
+    "EXCLUDED_SEALED_COSMETIC": "CATEGORY_EXCLUDED",
+}
+
 
 def test_ground_truth_decision_table_against_policy_engine() -> None:
     csv_path = Path("evals/ground_truth/policy_decision_table.csv")
@@ -123,6 +135,15 @@ def test_ground_truth_decision_table_against_policy_engine() -> None:
         if res.eligible != expected_eligible:
             mismatches.append(f"{case_id}: eligible got {res.eligible}, expected {expected_eligible} ({res.decision_code})")
             continue
+
+        # Assert the clause the customer is pointed to and the decision behind it
+        if res.clause_id != r["expected_clause"]:
+            mismatches.append(f"{case_id}: clause got {res.clause_id}, expected {r['expected_clause']}")
+        expected_code = _DECISION_CODES.get(r["expected_decision_code"])
+        if expected_code is None:
+            mismatches.append(f"{case_id}: decision code {r['expected_decision_code']} has no engine mapping")
+        elif res.decision_code != expected_code:
+            mismatches.append(f"{case_id}: decision got {res.decision_code}, expected {expected_code} ({r['expected_decision_code']})")
 
         if expected_eligible:
             # Check refund amount

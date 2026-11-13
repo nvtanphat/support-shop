@@ -27,6 +27,8 @@ Bộ đánh giá độc lập (`evals/ground_truth/policy_decision_table.csv`) �
     - `sealed_cosmetic`: Mỹ phẩm, sản phẩm chăm sóc cá nhân đã bóc niêm phong.
     - `personalized`: Hàng in/khắc theo yêu cầu cá nhân.
 
+- **Đơn mua qua sàn TMĐT** (`channel = marketplace`): không đổi trả qua ShopLab; khách tạo yêu cầu trên ứng dụng của sàn (ngoài phạm vi tự phục vụ, điều khoản `POL-GENERAL-01`).
+
 ### 1.2 Thời hạn gửi trả hàng (Ship-back Deadline)
 - Sau khi yêu cầu trả hàng được phê duyệt (`approved` hoặc tự động chấp nhận `awaiting_return`), khách có **5 ngày** để gửi hàng cho đơn vị vận chuyển.
 - Nếu sau 5 ngày khách chưa gửi hàng, yêu cầu trả hàng tự động chuyển sang `expired`.

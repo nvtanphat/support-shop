@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from evals.harness.claims import StateSnapshot, snapshot_state
 from evals.harness.fixtures import setup_scenario_fixtures
 from evals.harness.gates import compute_gate_metrics, evaluate_gates, load_gates, save_run_artifacts
 from evals.harness.graders import (
@@ -49,6 +50,8 @@ from evals.harness.staff_actor import StaffActor
 from evals.harness.tool_graders import grade_tool_execution, score_tool_use
 
 SCENARIO_DIR = Path("evals/scenarios")
+# Held-out scenarios: never used to tune the agent or the graders (see evals/scenarios_holdout/README.md).
+SCENARIO_SETS = {"dev": SCENARIO_DIR, "holdout": Path("evals/scenarios_holdout")}
 EVAL_DB_PATH = Path("evals/results/eval_fixtures.sqlite")
 
 __all__ = ["eval_database_url", "load_scenario_from_yaml", "run_eval_cli", "run_scenario"]
@@ -82,6 +85,7 @@ class Trajectory:
     replies: list[str] = field(default_factory=list)
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
+    states: list[StateSnapshot] = field(default_factory=list)  # database facts right after each reply
 
 
 async def _reset_eval_database() -> async_sessionmaker[AsyncSession]:
@@ -172,6 +176,7 @@ async def _play_conversation(
         )
         last_reply = reply
         trajectory.replies.append(reply)
+        trajectory.states.append(await snapshot_state(session))
         trajectory.tool_calls.extend(tool_calls)
         trajectory.dialogue.append(
             {
@@ -200,7 +205,7 @@ async def _grade(scenario: Scenario, session: AsyncSession, trajectory: Trajecto
     facts_ok, facts_errors = grade_required_facts(trajectory.replies, expect.required_facts)
     tool_names = [call.get("tool") or call.get("name", "") for call in calls]
     forbidden_ok, forbidden_errors = grade_forbidden_patterns(trajectory.replies, tool_names, expect.forbidden)
-    invariants_ok, invariant_errors = check_safety_invariants(calls, trajectory.events, trajectory.replies)
+    invariants_ok, invariant_errors = check_safety_invariants(calls, trajectory.replies, trajectory.states)
     tools_ok, tools_errors = grade_tool_execution(
         tool_calls=calls,
         required_tools=expect.required_tools,
@@ -251,9 +256,9 @@ async def run_scenario(
         return await _grade(scenario, session, trajectory, scripted_user, agent, started)
 
 
-def _select_scenarios(group: str, tag: str, scenario_ids: list[str] | None) -> list[Scenario]:
+def _select_scenarios(group: str, tag: str, scenario_ids: list[str] | None, scenario_set: str = "dev") -> list[Scenario]:
     selected: list[Scenario] = []
-    for path in sorted(SCENARIO_DIR.glob("*.yaml")):
+    for path in sorted(SCENARIO_SETS[scenario_set].glob("*.yaml")):
         scenario = load_scenario_from_yaml(path)
         if scenario_ids and scenario.id not in scenario_ids:
             continue
@@ -288,10 +293,11 @@ async def run_eval_cli(
     gate: bool = False,
     out_dir: Path | None = None,
     scenario_ids: list[str] | None = None,
+    scenario_set: str = "dev",
 ) -> tuple[EvalSummary, list[dict[str, Any]]]:
     """Run scenarios, save raw trajectories and gate table; return the summary and gate rows."""
-    scenarios = _select_scenarios(group, tag, scenario_ids)
-    print(f"Bắt đầu đánh giá: {len(scenarios)} kịch bản | agent={agent} | group={group} | mode={mode} | k={k}", flush=True)
+    scenarios = _select_scenarios(group, tag, scenario_ids, scenario_set)
+    print(f"Bắt đầu đánh giá: {len(scenarios)} kịch bản | tập={scenario_set} | agent={agent} | group={group} | mode={mode} | k={k}", flush=True)
 
     runs: dict[str, list[ScenarioRunResult]] = {}
     for scenario in scenarios:
@@ -310,13 +316,13 @@ async def run_eval_cli(
     every_run = [r for group_runs in runs.values() for r in group_runs]
     gate_rows = evaluate_gates(compute_gate_metrics(every_run), load_gates())
 
-    run_id = f"{agent}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    run_id = f"{agent}{'_holdout' if scenario_set == 'holdout' else ''}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     target = out_dir or Path("evals/results") / run_id
     save_run_artifacts(
         target,
         every_run,
         gate_rows,
-        {"agent": agent, "k": k, "scenarios": len(scenarios), "group": group, "tag": tag, "run_id": run_id},
+        {"agent": agent, "set": scenario_set, "k": k, "scenarios": len(scenarios), "group": group, "tag": tag, "run_id": run_id},
     )
     _print_overview(summary, gate_rows, target)
     if gate and any(row["status"] != "PASS" for row in gate_rows):
@@ -328,6 +334,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run Shop Support Agent Evaluation Suite")
     parser.add_argument("--agent", choices=["oracle", "null", "langgraph"], default="oracle", help="Agent implementation")
     parser.add_argument("-k", "--k", type=int, default=1, help="Independent runs per scenario")
+    parser.add_argument("--set", choices=sorted(SCENARIO_SETS), default="dev", dest="scenario_set", help="dev (tuning) or holdout (never tuned on)")
     parser.add_argument("--group", default="all", help="Scenario group filter")
     parser.add_argument("--tag", default="all", help="Scenario tag filter")
     parser.add_argument("--gate", action="store_true", help="Exit 1 unless every quality gate PASSes")
@@ -336,7 +343,7 @@ def main() -> None:
     args = parser.parse_args()
 
     _, rows = asyncio.run(
-        run_eval_cli(agent=args.agent, k=args.k, group=args.group, tag=args.tag, gate=args.gate, out_dir=args.out, scenario_ids=args.scenarios)
+        run_eval_cli(agent=args.agent, k=args.k, group=args.group, tag=args.tag, gate=args.gate, out_dir=args.out, scenario_ids=args.scenarios, scenario_set=args.scenario_set)
     )
     sys.exit(1 if args.gate and any(row["status"] != "PASS" for row in rows) else 0)
 

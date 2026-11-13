@@ -52,12 +52,14 @@ def check_return_eligibility(
     """
     flags = risk_flags or []
 
-    # 1. Check order sales channel: marketplace orders cannot be returned here
+    # 1. Check order sales channel: marketplace orders cannot be returned here. The policy index has no
+    # marketplace clause (adding one shifts BM25 ranking for unrelated questions), so the general clause
+    # on requests outside self-service is cited.
     if order.channel == "marketplace":
         return EligibilityResult(
             eligible=False,
             decision_code="ORDER_FROM_MARKETPLACE",
-            clause_id="POL-RETURN-06",
+            clause_id="POL-GENERAL-01",
             message="Đơn hàng được mua qua sàn TMĐT (Shopee/TikTok). Vui lòng tạo yêu cầu trực tiếp trên ứng dụng của sàn.",
         )
 

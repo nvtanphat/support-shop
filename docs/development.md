@@ -20,6 +20,9 @@ npm --prefix frontend exec playwright test -- --config playwright.live.config.ts
 uv run python -m evals.harness.runner --agent oracle --gate       # không gọi LLM
 uv run python -m evals.harness.runner --agent null                # phải trượt cổng chất lượng
 uv run python -m evals.harness.runner --agent langgraph --gate    # gọi Gemini thật, tốn hạn mức
+uv run python -m evals.harness.runner --agent langgraph --set holdout -k 3   # tập để dành, chỉ chạy khi chốt mốc
+uv run --extra rerank python -m evals.retrieval.calibrate --check   # sau khi đổi điều khoản; --write để ghi ngưỡng mới
+uv run python -m shopagent.cli validate-policies                    # kiểm kho chính sách, không cần DB
 uv run --extra rerank python -m evals.retrieval.holdout           # đo retrieval, không gọi LLM
 ```
 
@@ -30,3 +33,11 @@ Mỗi lần chạy lưu quỹ đạo thô và bảng cổng chất lượng vào
 ```bash
 npm --prefix frontend run shots    # ghi vào docs/images/, dùng API giả lập, không cần backend
 ```
+
+## Tập kịch bản để dành
+
+`evals/scenarios_holdout/` chứa 16 kịch bản với tình huống và cách diễn đạt không có trong tập phát triển. Không sửa agent hay bộ chấm theo lỗi ở tập này; quy tắc đầy đủ ở [README của tập](../evals/scenarios_holdout/README.md). Oracle chỉ đạt 7/16 ở đây (nó dò từ khóa của tập phát triển), nên con số oracle 44/44 trên tập phát triển không chứng minh agent tổng quát được.
+
+## Tuyên bố hoàn tất (S5)
+
+Mỗi câu trả lời được đối chiếu với trạng thái cơ sở dữ liệu ngay sau lượt đó ([claims.py](../evals/harness/claims.py)): "đã hoàn tiền" cần một khoản hoàn `succeeded`, "đã hủy" cần một đơn `cancelled`, "đã tạo yêu cầu" cần một phiếu trả. Bộ phát hiện nhận các cách nói khác nhau và bỏ qua câu điều kiện, phủ định hoặc nói về tương lai; nó độc lập với bộ kiểm `grounding` của agent.

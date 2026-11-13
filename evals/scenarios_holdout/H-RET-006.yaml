@@ -1,0 +1,51 @@
+id: H-RET-006
+group: B_return_eligible
+tags:
+- holdout
+- paraphrase
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: holdout.customer@example.test
+fixtures:
+  orders:
+  - code: SL-H10006
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: ao
+      sku: HD-AO-DEN
+      qty: 1
+      unit_price: 350000
+    delivered_at: -3d
+user:
+  goal: 'Giao nhầm màu: lỗi shop, không trừ phí ship'
+  script:
+  - say: Shop giao nhầm màu cho mình rồi, đơn SL-H10006 đặt màu đen mà nhận màu trắng
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Đồng ý
+staff: []
+expect:
+  db:
+    return_requests:
+    - order: SL-H10006
+      reason_code: wrong_item
+  required_facts:
+  - kind: amount_vnd
+    value: 350000
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-H10006
+      reason_code: wrong_item

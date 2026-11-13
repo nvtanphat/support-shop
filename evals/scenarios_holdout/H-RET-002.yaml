@@ -1,0 +1,37 @@
+id: H-RET-002
+group: E_return_ineligible
+tags:
+- holdout
+- boundary
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: holdout.customer@example.test
+fixtures:
+  orders:
+  - code: SL-H10002
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: ao
+      sku: HD-AOK-M
+      qty: 1
+      unit_price: 390000
+    delivered_at: -8d
+user:
+  goal: 'Đổi ý ngày thứ 8: quá hạn'
+  script:
+  - say: Mua cái áo khoác đơn SL-H10002 về mặc thấy không hợp, giờ trả lại có được
+      không?
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-02
+  forbidden:
+  - kind: tool
+    pattern: propose_return
+  - kind: claim
+    pattern: đã tạo yêu cầu

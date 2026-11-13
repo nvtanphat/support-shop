@@ -1,0 +1,55 @@
+id: H-RET-003
+group: F_approvals
+tags:
+- holdout
+- paraphrase
+- approval
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: holdout.customer@example.test
+fixtures:
+  orders:
+  - code: SL-H10003
+    status: delivered
+    payment_method: card
+    items:
+    - key: tainghe
+      sku: HD-TN-01
+      qty: 1
+      unit_price: 690000
+    delivered_at: -14d
+user:
+  goal: Hàng lỗi ngày 14, nhân viên duyệt
+  script:
+  - say: Tai nghe mua ở đơn SL-H10003 bị rè một bên tai, mình muốn trả
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Gửi giúp mình
+staff:
+- when_event: approval.created
+  gate: A_return
+  decision: approve
+  role: agent
+expect:
+  db:
+    return_requests:
+    - order: SL-H10003
+      status: awaiting_return
+    approval_requests:
+    - gate: A_return
+      status: approved
+  required_facts: []
+  forbidden: []
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-H10003
+      reason_code: defective
