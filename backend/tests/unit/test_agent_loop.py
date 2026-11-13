@@ -792,3 +792,48 @@ def test_rate_limit_hint_sets_the_wait_within_bounds() -> None:
     assert _retry_wait_s(RuntimeError("429 ... retry in 600s"), 1.0) == 20.0  # bounded
     assert _retry_wait_s(RuntimeError("503 UNAVAILABLE"), 3.0) == 3.0  # no hint: the configured backoff
     assert _retry_wait_s(RuntimeError("retry in 0.5s"), 3.0) == 3.0  # never shorter than the backoff
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_stuck_with_tools_off_still_ends_with_the_explanation(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Once the tools are off, the model cannot fetch the clause a refusal asks for; the turn must not fail for it."""
+    from langchain_core.tools import StructuredTool
+    from pydantic import BaseModel
+
+    class Args(BaseModel):
+        order_code: str
+
+    class Query(BaseModel):
+        query: str
+
+    async def refuse(order_code: str) -> dict[str, Any]:
+        return {"error_code": "ORDER_NOT_CANCELLABLE", "message": "Đơn đang giao."}
+
+    async def search(query: str) -> dict[str, Any]:
+        return {"status": "success", "results": []}
+
+    tools = [
+        StructuredTool.from_function(coroutine=refuse, name="propose_cancel_order", description="x", args_schema=Args),
+        StructuredTool.from_function(coroutine=search, name="search_policy", description="x", args_schema=Query),
+    ]
+
+    class Registry:
+        def __init__(self, _session: Any) -> None: ...
+
+        def get_tools(self, **_: Any) -> list[Any]:
+            return tools
+
+    monkeypatch.setattr(agent_module, "ToolRegistry", Registry)
+    model = ToolAwareModel(
+        [
+            tool_call_msg("propose_cancel_order", {"order_code": "SL-100001"}),
+            tool_call_msg("propose_cancel_order", {"order_code": "SL-100001"}),
+            AIMessage(content="Đơn đang giao nên chưa hủy được. Bạn có thể từ chối nhận hàng khi shipper gọi nhé?"),
+        ]
+    )
+    use_model(monkeypatch, model)
+    out = await agent_node(make_state("Hủy đơn SL-100001 giúp mình"), run_config(session))
+
+    assert out["turn_status"] == "completed"

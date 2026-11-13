@@ -255,3 +255,28 @@ def test_an_eligibility_refusal_already_carries_its_clause() -> None:
 def test_a_missing_slot_is_not_a_refusal_to_explain() -> None:
     missing = {"tool": "propose_cancel_order", "args": {}, "result": {"error_code": "MISSING_SLOT", "slot": "order_code"}}
     assert refusal_requirements([missing], _TOOLS) == []
+
+
+# --- Review fixes ----------------------------------------------------------------------------------------------
+def test_telling_the_customer_what_they_confirmed_is_not_a_false_card_claim() -> None:
+    text = "Bạn đã bấm Xác nhận trên thẻ, yêu cầu trả hàng RT-ABC123 đã được tạo."
+    assert "FALSE_PROPOSAL_CLAIM" in _claims(text)  # with nothing in the conversation it is still caught
+    assert "FALSE_PROPOSAL_CLAIM" not in _claims(text, dynamic_context={"conversation_outcomes": _CONFIRMED_RETURN})
+
+
+@pytest.mark.parametrize(("said", "code", "ok"), [
+    ("Hủy đơn gần nhất giúp mình", "SL-A00001", True),
+    ("Hủy đơn gần nhất giúp mình", "SL-B00002", False),   # "gần nhất" is the first of the list, not any order
+    ("Mình muốn hủy đơn thứ hai", "SL-B00002", True),
+    ("Mình muốn hủy đơn thứ hai", "SL-A00001", False),
+])
+def test_an_ordinal_reference_chooses_that_position_of_the_recent_list(said: str, code: str, ok: bool) -> None:
+    result = find_ungrounded_slot("propose_cancel_order", {"order_code": code}, _ctx(("customer", said), recent=_TWO))
+    assert (result is None) is ok
+
+
+def test_a_reason_the_eligibility_check_accepted_need_not_be_quoted_again() -> None:
+    checked = json.dumps({"eligible": True, "checked": {"order_code": "SL-A00001", "item_ids": ["it-1"], "reason_code": "defective"}})
+    ctx = _ctx(("customer", _SAID), ("tool", _HEADPHONES), ("tool", checked))
+    args = {"order_code": "SL-A00001", "items": [{"item_id": "it-1", "qty": 1}], "reason_code": "defective"}
+    assert find_ungrounded_slot("propose_return", args, ctx) is None

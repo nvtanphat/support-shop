@@ -244,8 +244,12 @@ def _policy_numbers(evidence: Evidence) -> set[str]:
 
 
 def _proposal_exists(state: AgentState) -> bool:
-    """A confirmation card was created this turn, or one is still waiting from an earlier turn."""
-    if state.get("pending_action") or (state.get("dynamic_context") or {}).get("active_pending_action"):
+    """A confirmation card was created this turn, is still waiting, or was already confirmed in this conversation
+    ("bạn đã bấm Xác nhận trên thẻ" is then a true statement, not a promise of a card that does not exist)."""
+    context = state.get("dynamic_context") or {}
+    if state.get("pending_action") or context.get("active_pending_action"):
+        return True
+    if (context.get("conversation_outcomes") or {}).get("confirmed_actions"):
         return True
     return any(
         call.get("tool") in _PROPOSAL_TOOLS and "action_id" in (call.get("result") or {}) and "error_code" not in (call.get("result") or {})

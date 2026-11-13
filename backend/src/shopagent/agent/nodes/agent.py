@@ -256,6 +256,12 @@ async def _synthesize_final(
     return final if extract_text_content(final.content).strip() else None
 
 
+def _refusal_requirements(recorded: list[dict[str, Any]], tools_by_name: dict[str, Any], tools_off: bool) -> list[ToolRequirement]:
+    """The clause behind a refusal, unless the tools are already off: then the model cannot fetch it, and an
+    explanation without a citation serves the customer better than the turn failing on an unmeetable requirement."""
+    return [] if tools_off else refusal_requirements(recorded, tools_by_name)
+
+
 async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
     """Run the bounded tool loop and report how the turn ended in `turn_status`."""
     session = config.get("configurable", {}).get("session")
@@ -349,7 +355,7 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
         working.append(ai)
 
         if not ai.tool_calls:
-            unmet = unmet_requirements([*requirements, *refusal_requirements(recorded, tools_by_name)], recorded)
+            unmet = unmet_requirements([*requirements, *_refusal_requirements(recorded, tools_by_name, tools_off)], recorded)
             draft = extract_text_content(ai.content)
             unretrieved = unretrieved_citations(draft, retrieved_clauses)
             draft_state: dict[str, Any] = {
@@ -408,7 +414,7 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
     if turn_status == "incomplete" and recorded:
         final = await _synthesize_final(llm, sys_msg, working, budget.synthesis_timeout_s)
         if final is not None:
-            unmet = unmet_requirements([*requirements, *refusal_requirements(recorded, tools_by_name)], recorded)
+            unmet = unmet_requirements([*requirements, *_refusal_requirements(recorded, tools_by_name, tools_off)], recorded)
             if unmet:
                 turn_status = "requirements_unmet"
             else:

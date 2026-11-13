@@ -35,11 +35,14 @@ _ORDER_TOOLS = frozenset(
 _RETURN_TOOLS = frozenset({"check_return_eligibility", "propose_return"})
 # Tools that start a write proposal: the order must be one the customer chose, not merely one in the recent list.
 _PROPOSAL_ORDER_TOOLS = frozenset({"check_return_eligibility", "propose_return", "propose_cancel_order"})
-# "đơn gần nhất", "đơn thứ hai", "đơn mới đặt": the customer points into the recent-orders list shown to the model.
-_RECENT_ORDER_REFERENCE_RE = re.compile(
-    r"\bđơn(?:\s+hàng)?\s+(?:gần\s+(?:nhất|đây)|mới\s+nhất|mới\s+đặt|vừa\s+(?:đặt|mua)|cuối(?:\s+cùng)?|đầu\s+tiên"
-    r"|thứ\s+(?:nhất|hai|ba|1|2|3)|số\s+[123]|hôm\s+(?:qua|nay|trước))"
+# How a customer points into the recent-orders list shown to the model (newest first). A position chooses that order;
+# a vague reference ("đơn hôm qua") leaves the matching to the model among the recent orders.
+_ORDER_POSITION_RE: tuple[tuple[int, re.Pattern[str]], ...] = (
+    (0, re.compile(r"\bđơn(?:\s+hàng)?\s+(?:gần\s+nhất|mới\s+nhất|mới\s+đặt|vừa\s+(?:đặt|mua)|đầu\s+tiên|thứ\s+(?:nhất|1)|số\s+1)")),
+    (1, re.compile(r"\bđơn(?:\s+hàng)?\s+(?:thứ\s+(?:hai|2)|số\s+2)")),
+    (2, re.compile(r"\bđơn(?:\s+hàng)?\s+(?:thứ\s+(?:ba|3)|số\s+3)")),
 )
+_VAGUE_ORDER_REFERENCE_RE = re.compile(r"\bđơn(?:\s+hàng)?\s+(?:gần\s+đây|cuối(?:\s+cùng)?|hôm\s+(?:qua|nay|trước))")
 # Words of a return request itself, not of the problem: a quote made only of these describes nothing.
 _NON_DESCRIPTIVE_TOKENS = frozenset(
     {
@@ -84,7 +87,8 @@ class GroundingContext:
     """Values the model is allowed to reuse, collected from verifiable sources."""
 
     def __init__(self, messages: Iterable[BaseMessage], recent_order_codes: Iterable[str]) -> None:
-        self._recent_codes: set[str] = {c.upper() for c in recent_order_codes}
+        self._recent_list: list[str] = [c.upper() for c in recent_order_codes]
+        self._recent_codes: set[str] = set(self._recent_list)
         self._order_codes: set[str] = set(self._recent_codes)
         self._customer_codes: set[str] = set()
         self._tool_text: list[str] = []
@@ -163,8 +167,14 @@ class GroundingContext:
         code = code.strip().upper()
         if code in self._customer_codes:
             return True
-        if code in self._recent_codes and (len(self._recent_codes) == 1 or any(_RECENT_ORDER_REFERENCE_RE.search(h) for h in self._human_raw)):
-            return True
+        if code in self._recent_codes:
+            if len(self._recent_codes) == 1:
+                return True
+            positions = {i for h in self._human_raw for i, pattern in _ORDER_POSITION_RE if pattern.search(h)}
+            if any(i < len(self._recent_list) and self._recent_list[i] == code for i in positions):
+                return True
+            if not positions and any(_VAGUE_ORDER_REFERENCE_RE.search(h) for h in self._human_raw):
+                return True
         asked = {m.group(0).upper() for m in ORDER_CODE_RE.finditer(self._assistant_before_latest)}
         return asked == {code} and _AFFIRMATION_RE.match(self._latest_human) is not None
 
@@ -270,8 +280,13 @@ def find_ungrounded_slot(
             "và hỏi khách muốn trả sản phẩm nào; không tự chọn.",
         )
     reason = args.get("reason_code")
+    # A proposal for the very order, items and reason an eligibility check already ran for: that check passed this
+    # guard, so the reason need not be quoted a second time.
+    already_checked = tool == "propose_return" and grounding.eligibility_for(str(code), ids, str(reason)) is not None
     if reason not in _REASONS or not (
-        grounding.customer_stated_reason(str(reason)) or grounding.quote_supports_reason(str(reason), args.get("reason_quote"))
+        already_checked
+        or grounding.customer_stated_reason(str(reason))
+        or grounding.quote_supports_reason(str(reason), args.get("reason_quote"))
     ):
         return _missing(
             "reason_code",
