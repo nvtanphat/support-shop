@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.core.clock import get_clock
+from shopagent.core.config import get_rules_config
 from shopagent.core.errors import ConflictError, ForbiddenError, NotFoundError
 from shopagent.core.principal import Principal, PrincipalRole
 from shopagent.domain.models.enums import (
@@ -15,6 +17,7 @@ from shopagent.domain.models.enums import (
     RefundStatus,
     ReturnStatus,
 )
+from shopagent.domain.policies.rules import PolicyRules
 from shopagent.domain.state_machines import (
     transition_approval_status,
     transition_order_status,
@@ -27,7 +30,7 @@ from shopagent.infra.db.repositories.order_repo import OrderRepository
 from shopagent.infra.db.repositories.outbox_repo import OutboxRepository
 from shopagent.infra.db.repositories.refund_repo import RefundRepository
 from shopagent.infra.db.repositories.return_repo import ReturnRepository
-from shopagent.infra.db.tables import ApprovalRequestModel
+from shopagent.infra.db.tables import ApprovalRequestModel, EvidenceFileModel
 
 
 def check_role_hierarchy(staff_role: str, required_role: str) -> bool:
@@ -65,6 +68,27 @@ class ApprovalService:
             raise ForbiddenError("Chỉ nhân viên mới có quyền xem danh sách phê duyệt.")
         return await self.approval_repo.list_pending(required_role=required_role, limit=limit)
 
+    async def _ensure_evidence_supplied(self, return_id: uuid.UUID) -> None:
+        """Gate A cannot pass a return whose reason requires photos/video until the customer supplied them."""
+        return_req = await self.return_repo.get_by_id(return_id)
+        if return_req is None:
+            return
+        evidence_rules = PolicyRules.model_validate(get_rules_config()).return_policy.evidence
+        if return_req.reason_code not in evidence_rules.required_for:
+            return
+        kinds = (await self.session.execute(select(EvidenceFileModel.kind).where(EvidenceFileModel.return_id == return_id))).scalars().all()
+        photos, videos = kinds.count("photo"), kinds.count("video")
+        missing = []
+        if photos < evidence_rules.min_photos:
+            missing.append(f"{evidence_rules.min_photos} ảnh (hiện có {photos})")
+        if return_req.reason_code in evidence_rules.video_required_for and videos == 0:
+            missing.append("1 video")
+        if missing:
+            raise ConflictError(
+                "Chưa đủ bằng chứng để duyệt yêu cầu trả hàng: cần " + ", ".join(missing) + ". Có thể từ chối hoặc chờ khách bổ sung.",
+                error_code="EVIDENCE_MISSING",
+            )
+
     async def decide_approval(
         self,
         principal: Principal,
@@ -101,6 +125,9 @@ class ApprovalService:
                 "Nguyên tắc bốn mắt (four-eyes): Người đề xuất không được tự phê duyệt yêu cầu của mình.",
                 error_code="FOUR_EYES_VIOLATION",
             )
+
+        if decision.lower() == "approved" and approval.subject_type == "return_request":
+            await self._ensure_evidence_supplied(approval.subject_id)
 
         now = self.clock.now()
         target_status = (

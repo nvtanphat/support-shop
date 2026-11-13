@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.core.clock import get_clock, to_utc
+from shopagent.core.config import get_rules_config
 from shopagent.core.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from shopagent.core.ids import generate_refund_code, generate_uuid
 from shopagent.core.principal import Principal
@@ -22,6 +23,7 @@ from shopagent.domain.models.enums import (
     PendingActionType,
     RefundStatus,
 )
+from shopagent.domain.policies.rules import PolicyRules
 from shopagent.domain.state_machines import transition_order_status
 from shopagent.infra.db.repositories.action_repo import ActionRepository
 from shopagent.infra.db.repositories.approval_repo import ApprovalRepository
@@ -123,7 +125,7 @@ class CancellationService:
             preview=preview,
             status=PendingActionStatus.PROPOSED.value,
             presented_at=now,
-            expires_at=now + timedelta(minutes=30),
+            expires_at=now + timedelta(minutes=PolicyRules.model_validate(get_rules_config()).pending_action_ttl_minutes),
         )
         await self.action_repo.save(action)
 

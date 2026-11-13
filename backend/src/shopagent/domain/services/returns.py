@@ -269,7 +269,7 @@ class ReturnService:
             preview=preview,
             status=PendingActionStatus.PROPOSED.value,
             presented_at=now,
-            expires_at=now + timedelta(minutes=30),
+            expires_at=now + timedelta(minutes=rules.pending_action_ttl_minutes),
         )
         await self.action_repo.save(action)
 

@@ -17,10 +17,12 @@ from pathlib import Path
 from typing import Any
 
 from shopagent.core.clock import Clock, set_global_clock
-from shopagent.core.config import get_settings
+from shopagent.core.config import get_rules_config, get_settings
 from shopagent.core.principal import Principal
+from shopagent.domain.policies.rules import PolicyRules
 from shopagent.domain.services.actions import ActionService
-from shopagent.infra.db.tables import Base
+from shopagent.infra.db.tables import Base, EvidenceFileModel, ReturnRequestModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -106,6 +108,19 @@ async def _resolve_staff(staff_actor: StaffActor, session: AsyncSession, traject
         trajectory.events.append({"type": "staff.action", "note": note})
 
 
+async def _supply_evidence(session: AsyncSession, return_code: str, trajectory: Trajectory) -> None:
+    """The simulated customer uploads the photos/video the policy asks for, as a real one does in the UI."""
+    ret = (await session.execute(select(ReturnRequestModel).where(ReturnRequestModel.code == return_code))).scalar_one()
+    rules = PolicyRules.model_validate(get_rules_config()).return_policy.evidence
+    kinds = ["photo"] * rules.min_photos + (["video"] if ret.reason_code in rules.video_required_for else [])
+    for index, kind in enumerate(kinds):
+        session.add(
+            EvidenceFileModel(return_id=ret.id, kind=kind, path=f"eval://{return_code}/{index}", sha256=f"{index:064d}", size=1, uploaded_by="customer")
+        )
+    await session.flush()
+    trajectory.events.append({"type": "evidence.uploaded", "return_code": return_code, "files": len(kinds)})
+
+
 async def _apply_user_decision(
     decision: str,
     pending: dict[str, Any],
@@ -117,8 +132,10 @@ async def _apply_user_decision(
 ) -> None:
     action_id = uuid.UUID(pending["id"])
     if decision == "confirm":
-        await service.confirm_action(action_id=action_id, preview_hash=pending["preview_hash"], principal=principal)
+        result = await service.confirm_action(action_id=action_id, preview_hash=pending["preview_hash"], principal=principal)
         trajectory.events.append({"type": "action.confirmed", "action_id": str(action_id)})
+        if result.get("requires_evidence") and result.get("return_code"):
+            await _supply_evidence(session, result["return_code"], trajectory)
         await _resolve_staff(staff_actor, session, trajectory)  # approvals created by the confirmation
     elif decision == "cancel":
         await service.cancel_action(action_id=action_id, principal=principal)

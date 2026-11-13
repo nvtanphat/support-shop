@@ -23,7 +23,7 @@ rate_limits:
   guest_otp_requests_max_per_order: 3
   guest_otp_max_failed_attempts: 5
 
-pending_action_ttl_minutes: 30
+# Proposal lifetime is a published policy term: see pending_action_ttl_minutes in policy/rules.yaml.
 guest_view_token_ttl_minutes: 30
 
 allowed_link_domains:

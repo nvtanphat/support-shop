@@ -23,7 +23,7 @@ Trong node `agent`, các guard xác định chạy ngoài LLM: `tool_requirement
 
 ## Vòng đời một hành động ghi
 
-1. Tool `propose_*` tạo `PendingAction` kèm `preview_hash`, hạn 15 phút.
+1. Tool `propose_*` tạo `PendingAction` kèm `preview_hash`; thời hạn lấy từ `pending_action_ttl_minutes` trong `config/policy/rules.yaml`.
 2. Khách gọi `POST /actions/{id}/confirm` với `preview_hash`; service kiểm tra lại điều kiện và tính tiền.
 3. Cần duyệt (hoàn từ 500.000 đ hoặc rủi ro cao) thì tạo `ApprovalRequest`; nhân viên quyết định qua `/staff/approvals/{id}/decision`.
 4. Sự kiện được ghi vào `outbox_events` cùng giao dịch; worker giải ngân và `PaymentReconciler` đối soát các khoản kẹt.

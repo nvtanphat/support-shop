@@ -53,6 +53,14 @@ async def db_session():
     await engine.dispose()
 
 
+async def add_evidence(session: AsyncSession, return_id: uuid.UUID, photos: int) -> None:
+    from shopagent.infra.db.tables import EvidenceFileModel
+
+    for index in range(photos):
+        session.add(EvidenceFileModel(return_id=return_id, kind="photo", path=f"test://{index}", sha256=f"{index:064d}", size=1, uploaded_by="customer"))
+    await session.flush()
+
+
 @pytest.mark.asyncio
 async def test_full_return_and_refund_lifecycle_pure_domain(db_session):
     """Phase 1 Acceptance Criteria:
@@ -165,6 +173,11 @@ async def test_full_return_and_refund_lifecycle_pure_domain(db_session):
     if pending_approvals:
         gate_a = pending_approvals[0]
         approval_service = ApprovalService(session)
+        from shopagent.core.errors import ConflictError
+
+        with pytest.raises(ConflictError):  # a defective-item return cannot pass gate A without the photos
+            await approval_service.decide_approval(principal=sup_principal, approval_id=gate_a.id, decision="approved", note="Chưa có ảnh")
+        await add_evidence(session, ret_req.id, photos=2)
         await approval_service.decide_approval(
             principal=sup_principal,
             approval_id=gate_a.id,
@@ -345,6 +358,9 @@ async def test_large_refund_needs_a_second_staff_member_and_settles_the_return(d
     )
     confirmed = await ActionService(session).confirm_action(principal=customer, action_id=uuid.UUID(proposal["action_id"]), preview_hash=proposal["preview_hash"])
     return_code = confirmed["return_code"]
+    ret_before = await ReturnRepository(session).get_by_code(return_code)
+    assert ret_before is not None
+    await add_evidence(session, ret_before.id, photos=2)
     for gate_a in await ApprovalRepository(session).list_pending():
         await ApprovalService(session).decide_approval(principal=approver, approval_id=gate_a.id, decision="approved", note="Ảnh hợp lệ")
 

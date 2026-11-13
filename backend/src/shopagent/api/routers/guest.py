@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shopagent.api.deps import get_db_session
 from shopagent.api.schemas.models import GuestVerificationRequest, GuestVerifyOtpRequest
 from shopagent.core.clock import get_clock
-from shopagent.core.config import get_settings
+from shopagent.core.config import get_app_config, get_settings
 from shopagent.core.security import create_access_token
 from shopagent.infra.db.tables import CustomerModel, GuestVerificationModel, OrderModel
 
@@ -275,7 +275,7 @@ async def verify_guest_otp(
 
     # 5. Success: record verification timestamp and grant duration (30 minutes)
     record.verified_at = now_dt
-    record.grant_expires_at = now_dt + timedelta(minutes=30)
+    record.grant_expires_at = now_dt + timedelta(minutes=int(get_app_config().get("guest_view_token_ttl_minutes", 30)))
     await session.commit()
 
     # Invalidate in-memory tracker

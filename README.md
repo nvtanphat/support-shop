@@ -6,7 +6,7 @@ Nguyên tắc cốt lõi: **LLM đề xuất, khách hàng xác nhận, hệ th�
 
 ## Kiến trúc
 
-- LLM chỉ tạo `ActionProposal` có `preview_hash` và hạn 15 phút. Hành động chỉ chạy khi khách gọi `POST /actions/{id}/confirm`; domain service kiểm tra lại điều kiện và tính tiền hoàn bằng code.
+- LLM chỉ tạo `ActionProposal` có `preview_hash` và thời hạn theo `pending_action_ttl_minutes` trong `config/policy/rules.yaml` (hiện 30 phút). Hành động chỉ chạy khi khách gọi `POST /actions/{id}/confirm`; domain service kiểm tra lại điều kiện và tính tiền hoàn bằng code.
 - Hoàn tiền trên 500.000 đ cần nhân viên duyệt, trên 2.000.000 đ hoặc có cờ rủi ro cần trưởng ca (`config/policy/rules.yaml`). Người kiểm hàng không được tự duyệt khoản hoàn mình vừa lập.
 - Số thứ tự tin nhắn và sự kiện SSE cấp phát nguyên tử bằng khóa bi quan trên PostgreSQL; client gửi `X-Idempotency-Key` để khử trùng lặp.
 
@@ -102,7 +102,7 @@ uv run python -m shopagent.worker                                 # outbox worke
 npm --prefix frontend run dev                                     # giao diện: http://localhost:5173
 ```
 
-Giao diện nhân viên ở `/staff`. Dữ liệu mẫu có `customer1@example.com` / `pass123` và `agent@shop.vn` / `staff123`; chỉ dùng cho môi trường phát triển.
+Giao diện nhân viên ở `/staff`. Dữ liệu mẫu (`python -m shopagent.cli seed`, xóa và tạo lại toàn bộ bảng): khách `customer1@example.com` / `pass123`; nhân viên `agent@shop.vn` và `supervisor@shop.vn` / `staff123`; quản trị `admin@shop.vn` / `admin123`. Chỉ dùng cho môi trường phát triển.
 
 ### Cấu hình đáng chú ý
 
