@@ -84,7 +84,7 @@ export const GuestOtpModal: React.FC<GuestOtpModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 text-slate-800 relative border border-purple-100 animate-in fade-in zoom-in-95"
+        className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 text-slate-800 relative border border-brand-100 animate-in fade-in zoom-in-95"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
       >
@@ -96,7 +96,7 @@ export const GuestOtpModal: React.FC<GuestOtpModalProps> = ({
         </button>
 
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-2xl bg-brand-100 text-brand-700 flex items-center justify-center">
             <KeyRound className="w-5 h-5" />
           </div>
           <div>
@@ -121,7 +121,7 @@ export const GuestOtpModal: React.FC<GuestOtpModalProps> = ({
         )}
 
         {infoMessage && (
-          <div className="p-3 mb-4 bg-purple-50 text-purple-800 text-xs rounded-xl border border-purple-200">
+          <div className="p-3 mb-4 bg-brand-50 text-brand-800 text-xs rounded-xl border border-brand-200">
             {infoMessage}
           </div>
         )}
@@ -139,7 +139,7 @@ export const GuestOtpModal: React.FC<GuestOtpModalProps> = ({
                   placeholder="Ví dụ: SL-XXXXXX"
                   value={orderCode}
                   onChange={(e) => setOrderCode(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:bg-white focus:outline-none transition uppercase font-mono"
+                  className="w-full pl-9 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:bg-white focus:outline-none transition uppercase font-mono"
                   required
                 />
               </div>
@@ -156,7 +156,7 @@ export const GuestOtpModal: React.FC<GuestOtpModalProps> = ({
                   placeholder="Số điện thoại dùng khi đặt hàng"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:bg-white focus:outline-none transition"
+                  className="w-full pl-9 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:bg-white focus:outline-none transition"
                   required
                 />
               </div>
@@ -165,7 +165,7 @@ export const GuestOtpModal: React.FC<GuestOtpModalProps> = ({
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 bg-purple-700 hover:bg-purple-700 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-md shadow-purple-200"
+              className="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Gửi mã OTP qua SMS'}
             </button>
@@ -182,14 +182,14 @@ export const GuestOtpModal: React.FC<GuestOtpModalProps> = ({
                 placeholder="123456"
                 value={otp}
                 onChange={(e) => setOtp(e.target.value)}
-                className="w-full text-center tracking-widest text-xl font-mono py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:bg-white focus:outline-none transition"
+                className="w-full text-center tracking-widest text-xl font-mono py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:bg-white focus:outline-none transition"
                 required
               />
             </div>
 
             {otp && (
-              <div className="bg-purple-50 border border-purple-100 rounded-xl p-2.5 text-xs text-purple-700 flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-purple-700 flex-shrink-0" />
+              <div className="bg-brand-50 border border-brand-100 rounded-xl p-2.5 text-xs text-brand-700 flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-brand-700 flex-shrink-0" />
                 <span>Mã OTP mô phỏng đã được nạp tự động: <strong>{otp}</strong></span>
               </div>
             )}
@@ -205,7 +205,7 @@ export const GuestOtpModal: React.FC<GuestOtpModalProps> = ({
               <button
                 type="submit"
                 disabled={loading || otp.length < 6}
-                className="flex-1 py-2.5 bg-purple-700 hover:bg-purple-700 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-md shadow-purple-200"
+                className="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50"
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Xác thực & Xem đơn'}
               </button>

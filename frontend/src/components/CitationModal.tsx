@@ -37,7 +37,7 @@ export const CitationModal: React.FC<CitationModalProps> = ({ clauseId, onClose 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={onClose}>
       <div
-        className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 text-slate-800 relative border border-purple-100"
+        className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 text-slate-800 relative border border-brand-100"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-labelledby="modal-title"
@@ -50,9 +50,9 @@ export const CitationModal: React.FC<CitationModalProps> = ({ clauseId, onClose 
           <X className="w-5 h-5" />
         </button>
 
-        <div className="flex items-center gap-2.5 text-purple-700 font-bold mb-2">
+        <div className="flex items-center gap-2.5 text-brand-700 font-bold mb-2">
           <BookOpen className="w-5 h-5" />
-          <span id="modal-title" className="text-sm tracking-wide font-mono bg-purple-100 px-2 py-0.5 rounded-lg">
+          <span id="modal-title" className="text-sm tracking-wide font-mono bg-brand-100 px-2 py-0.5 rounded-lg">
             {clauseId}
           </span>
         </div>
@@ -62,11 +62,11 @@ export const CitationModal: React.FC<CitationModalProps> = ({ clauseId, onClose 
         {load.status === 'loading' && <p className="text-sm text-slate-500" role="status">Đang tải điều khoản...</p>}
         {load.status === 'error' && <p className="text-sm text-red-700" role="alert">{load.message}</p>}
         {load.status === 'ready' && (
-          <div className="p-4 bg-purple-50/50 border border-purple-100 rounded-2xl text-sm text-slate-700 leading-relaxed mb-4">
+          <div className="p-4 bg-brand-50/50 border border-brand-100 rounded-2xl text-sm text-slate-700 leading-relaxed mb-4">
             <p className="font-semibold text-slate-900 mb-1">{load.policy.title}</p>
             <p className="whitespace-pre-wrap">{load.policy.text}</p>
-            <div className="text-xs text-slate-500 flex items-center gap-1 mt-3 pt-3 border-t border-purple-100">
-              <Calendar className="w-3.5 h-3.5 text-purple-500" />
+            <div className="text-xs text-slate-500 flex items-center gap-1 mt-3 pt-3 border-t border-brand-100">
+              <Calendar className="w-3.5 h-3.5 text-brand-500" />
               Phiên bản {load.policy.version}, hiệu lực từ {formatDate(load.policy.effective_from)}
               {load.policy.effective_to ? ` đến ${formatDate(load.policy.effective_to)}` : ''}
             </div>
@@ -76,7 +76,7 @@ export const CitationModal: React.FC<CitationModalProps> = ({ clauseId, onClose 
         <div className="flex justify-end">
           <button
             onClick={onClose}
-            className="px-5 py-2.5 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-semibold shadow-md shadow-purple-200 transition"
+            className="px-5 py-2.5 bg-brand-700 hover:bg-brand-800 text-white rounded-xl text-xs font-semibold shadow-md shadow-brand-200 transition"
           >
             Đã hiểu
           </button>

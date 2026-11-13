@@ -1,18 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
-import { EnvironmentBanner } from '../../src/components/EnvironmentBanner';
 import { CitationModal } from '../../src/components/CitationModal';
 import { ActionCard } from '../../src/features/chat/ActionCard';
 import { PendingAction } from '../../src/lib/types';
 import { api } from '../../src/lib/api';
-
-describe('EnvironmentBanner', () => {
-  it('renders simulated mode warning text', () => {
-    render(<EnvironmentBanner />);
-    expect(screen.getByText(/Môi trường mô phỏng — Không có giao dịch thật/i)).toBeInTheDocument();
-  });
-});
 
 describe('CitationModal', () => {
   const policy = {

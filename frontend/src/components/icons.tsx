@@ -146,8 +146,8 @@ export const PolicyBookIcon = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" aria-hidden="true" style={{ fill: 'url(#ss-book)', stroke: 'none' }}>
     <defs>
       <linearGradient id="ss-book" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stopColor="#a855f7" />
-        <stop offset="1" stopColor="#6d28d9" />
+        <stop offset="0" stopColor="#2a9d8f" />
+        <stop offset="1" stopColor="#0f766e" />
       </linearGradient>
     </defs>
     <path d="M12 6.2C9.8 4.4 6.6 3.9 2.5 4.3v13.6c4.1-.4 7.3.1 9.5 1.9 2.2-1.8 5.4-2.3 9.5-1.9V4.3c-4.1-.4-7.3.1-9.5 1.9z" />

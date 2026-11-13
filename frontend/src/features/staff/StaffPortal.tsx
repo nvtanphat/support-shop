@@ -193,8 +193,8 @@ export const StaffPortal: React.FC = () => {
             Cổng phê duyệt, quản lý phiếu hỗ trợ và bảng điều khiển mô phỏng ShopLab.
           </p>
         </div>
-        <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 text-indigo-900 px-3 py-1.5 rounded-lg text-xs font-semibold">
-          <Headphones className="w-4 h-4 text-indigo-700" />
+        <div className="flex items-center gap-2 bg-brand-50 border border-brand-200 text-brand-900 px-3 py-1.5 rounded-lg text-xs font-semibold">
+          <Headphones className="w-4 h-4 text-brand-700" />
           <span>Vai trò: {ROLE_LABELS[role] ?? ROLE_LABELS.agent}</span>
         </div>
       </div>
@@ -205,7 +205,7 @@ export const StaffPortal: React.FC = () => {
           onClick={() => setTab('approvals')}
           className={`pb-3 border-b-2 flex items-center gap-2 transition ${
             tab === 'approvals'
-              ? 'border-indigo-600 text-indigo-600 font-bold'
+              ? 'border-brand-600 text-brand-600 font-bold'
               : 'border-transparent text-slate-600 hover:text-slate-900'
           }`}
         >
@@ -222,7 +222,7 @@ export const StaffPortal: React.FC = () => {
           onClick={() => setTab('tickets')}
           className={`pb-3 border-b-2 flex items-center gap-2 transition ${
             tab === 'tickets'
-              ? 'border-indigo-600 text-indigo-600 font-bold'
+              ? 'border-brand-600 text-brand-600 font-bold'
               : 'border-transparent text-slate-600 hover:text-slate-900'
           }`}
         >
@@ -239,7 +239,7 @@ export const StaffPortal: React.FC = () => {
           onClick={() => setTab('returns')}
           className={`pb-3 border-b-2 flex items-center gap-2 transition ${
             tab === 'returns'
-              ? 'border-indigo-600 text-indigo-600 font-bold'
+              ? 'border-brand-600 text-brand-600 font-bold'
               : 'border-transparent text-slate-600 hover:text-slate-900'
           }`}
         >
@@ -252,7 +252,7 @@ export const StaffPortal: React.FC = () => {
           onClick={() => setTab('metrics')}
           className={`pb-3 border-b-2 flex items-center gap-2 transition ${
             tab === 'metrics'
-              ? 'border-indigo-600 text-indigo-600 font-bold'
+              ? 'border-brand-600 text-brand-600 font-bold'
               : 'border-transparent text-slate-600 hover:text-slate-900'
           }`}
         >
@@ -266,7 +266,7 @@ export const StaffPortal: React.FC = () => {
           onClick={() => setTab('sandbox')}
           className={`pb-3 border-b-2 flex items-center gap-2 transition ${
             tab === 'sandbox'
-              ? 'border-indigo-600 text-indigo-600 font-bold'
+              ? 'border-brand-600 text-brand-600 font-bold'
               : 'border-transparent text-slate-600 hover:text-slate-900'
           }`}
         >
@@ -307,7 +307,7 @@ export const StaffPortal: React.FC = () => {
                       <span className="text-xs font-mono font-bold bg-slate-100 text-slate-800 px-2 py-0.5 rounded">
                         Cổng: {req.gate}
                       </span>
-                      <span className="text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                      <span className="text-xs font-semibold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
                         Vai trò yêu cầu: {req.required_role}
                       </span>
                       <span className="text-xs text-slate-400 flex items-center gap-1">
@@ -331,7 +331,7 @@ export const StaffPortal: React.FC = () => {
 
                   <button
                     onClick={() => setSelectedApproval(req)}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium flex items-center gap-1.5 transition"
+                    className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-medium flex items-center gap-1.5 transition"
                   >
                     <span>Xem xét & Duyệt</span>
                     <ArrowRight className="w-4 h-4" />
@@ -355,12 +355,12 @@ export const StaffPortal: React.FC = () => {
                 onClick={() => setSelectedTicket(t)}
                 className={`p-4 rounded-xl border cursor-pointer transition ${
                   selectedTicket?.id === t.id
-                    ? 'border-indigo-600 bg-indigo-50/50'
+                    ? 'border-brand-600 bg-brand-50/50'
                     : 'border-slate-200 bg-white hover:border-slate-300'
                 }`}
               >
                 <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs font-mono font-bold text-indigo-700">{t.code}</span>
+                  <span className="text-xs font-mono font-bold text-brand-700">{t.code}</span>
                   <span className="text-[10px] font-semibold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">
                     {t.priority}
                   </span>
@@ -373,7 +373,7 @@ export const StaffPortal: React.FC = () => {
                       e.stopPropagation();
                       handleClaimTicket(t);
                     }}
-                    className="mt-2 text-xs text-indigo-600 font-bold hover:underline"
+                    className="mt-2 text-xs text-brand-600 font-bold hover:underline"
                   >
                     Tiếp nhận phiếu này →
                   </button>
@@ -412,7 +412,7 @@ export const StaffPortal: React.FC = () => {
                         </span>
                         <span
                           className={`inline-block px-3 py-1.5 rounded-lg whitespace-pre-wrap ${
-                            m.role === 'customer' ? 'bg-white border border-slate-200' : m.role === 'staff' ? 'bg-indigo-600 text-white' : 'bg-slate-200'
+                            m.role === 'customer' ? 'bg-white border border-slate-200' : m.role === 'staff' ? 'bg-brand-600 text-white' : 'bg-slate-200'
                           }`}
                         >
                           {m.content}
@@ -428,12 +428,12 @@ export const StaffPortal: React.FC = () => {
                     value={staffMessage}
                     onChange={(e) => setStaffMessage(e.target.value)}
                     placeholder="Nhập phản hồi trực tiếp tới khách hàng..."
-                    className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   />
                   <button
                     type="submit"
                     disabled={takeoverLoading || !staffMessage.trim()}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"
+                    className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"
                   >
                     <Send className="w-4 h-4" />
                     <span>Gửi</span>
@@ -481,7 +481,7 @@ export const StaffPortal: React.FC = () => {
                 {r.status === 'received' && (
                   <button
                     type="button"
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg"
+                    className="px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-medium rounded-lg"
                     onClick={() =>
                       runReturnStep(async () => {
                         const res = await api.inspectReturn(r.code, 'Kiểm hàng đạt');
@@ -553,7 +553,7 @@ export const StaffPortal: React.FC = () => {
                 placeholder="Mã vận đơn cần đẩy bước"
                 value={sandboxOrderCode}
                 onChange={(e) => setSandboxOrderCode(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
               />
             </div>
 
@@ -614,7 +614,7 @@ export const StaffPortal: React.FC = () => {
                 onChange={(e) => setDecisionNote(e.target.value)}
                 placeholder="Nhập lý do duyệt hoặc lý do từ chối..."
                 rows={3}
-                className="w-full p-3 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                className="w-full p-3 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
               />
             </div>
 

@@ -78,10 +78,10 @@ export const ActionCard: React.FC<ActionCardProps> = ({
   const isExpired = action.status === 'expired';
 
   return (
-    <div className="bg-white border-2 border-purple-400/90 rounded-2xl p-5 my-3 shadow-md transition-all">
-      <div className="flex items-center justify-between border-b border-purple-100 pb-3 mb-3">
+    <div className="bg-white border border-brand-200 rounded-2xl p-5 my-3 shadow-sm transition-all">
+      <div className="flex items-center justify-between border-b border-brand-100 pb-3 mb-3">
         <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-purple-700 animate-pulse"></span>
+          <span className="w-2.5 h-2.5 rounded-full bg-brand-700 animate-pulse"></span>
           <h4 className="font-bold text-slate-900 text-sm md:text-base">
             {action.preview.title || 'Đề xuất xử lý'}
           </h4>
@@ -98,7 +98,7 @@ export const ActionCard: React.FC<ActionCardProps> = ({
 
       {/* Breakdown Details & Estimated Refund */}
       {(action.preview.breakdown || action.preview.estimated_refund_vnd !== undefined) && (
-        <div className="bg-purple-50/50 rounded-xl p-3 text-xs mb-3 space-y-1.5 border border-purple-100">
+        <div className="bg-brand-50/50 rounded-xl p-3 text-xs mb-3 space-y-1.5 border border-brand-100">
           {action.preview.breakdown && (
             <>
               <div className="font-semibold text-slate-800 mb-1">Chi tiết giải trình số tiền:</div>
@@ -113,9 +113,9 @@ export const ActionCard: React.FC<ActionCardProps> = ({
             </>
           )}
           {action.preview.estimated_refund_vnd !== undefined && (
-            <div className="flex justify-between font-bold text-purple-900 pt-1.5 border-t border-purple-100 text-sm">
+            <div className="flex justify-between font-bold text-brand-900 pt-1.5 border-t border-brand-100 text-sm">
               <span>Khoản hoàn ước tính:</span>
-              <span className="font-mono text-purple-700 text-base">
+              <span className="font-mono text-brand-700 text-base">
                 {action.preview.estimated_refund_vnd.toLocaleString('vi-VN')} đ
               </span>
             </div>
@@ -129,8 +129,8 @@ export const ActionCard: React.FC<ActionCardProps> = ({
 
       {/* Evidence & Approval Notices */}
       {action.preview.requires_evidence && isProposed && (
-        <div className="bg-purple-50 text-purple-800 text-xs p-2.5 rounded-xl mb-3 flex items-start gap-2 border border-purple-200">
-          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-purple-700" />
+        <div className="bg-brand-50 text-brand-800 text-xs p-2.5 rounded-xl mb-3 flex items-start gap-2 border border-brand-200">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-brand-700" />
           <span>
             Yêu cầu cung cấp bằng chứng hình ảnh/video sản phẩm sau khi bấm xác nhận.
           </span>
@@ -138,8 +138,8 @@ export const ActionCard: React.FC<ActionCardProps> = ({
       )}
 
       {action.preview.requires_approval && (
-        <div className="bg-indigo-50 text-indigo-800 text-xs p-2.5 rounded-xl mb-3 flex items-start gap-2 border border-indigo-200">
-          <ShieldAlert className="w-4 h-4 flex-shrink-0 mt-0.5 text-indigo-600" />
+        <div className="bg-brand-50 text-brand-800 text-xs p-2.5 rounded-xl mb-3 flex items-start gap-2 border border-brand-200">
+          <ShieldAlert className="w-4 h-4 flex-shrink-0 mt-0.5 text-brand-600" />
           <span>Yêu cầu này sẽ được nhân viên duyệt trước khi thực thi giải ngân.</span>
         </div>
       )}
@@ -157,7 +157,7 @@ export const ActionCard: React.FC<ActionCardProps> = ({
           <button
             onClick={handleConfirm}
             disabled={loading}
-            className="flex-1 bg-purple-700 hover:bg-purple-700 text-white font-semibold py-2.5 px-4 rounded-xl text-sm flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-md shadow-purple-200"
+            className="flex-1 bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2.5 px-4 rounded-xl text-sm flex items-center justify-center gap-2 transition disabled:opacity-50"
           >
             <CheckCircle2 className="w-4 h-4" />
             <span>Xác nhận</span>
@@ -188,7 +188,7 @@ export const ActionCard: React.FC<ActionCardProps> = ({
           {action.result?.requires_evidence && onOpenEvidenceUpload && action.result.return_code && (
             <button
               onClick={() => onOpenEvidenceUpload(action.result?.return_code)}
-              className="mt-2 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition w-fit"
+              className="mt-2 text-xs bg-brand-600 hover:bg-brand-700 text-white font-medium py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition w-fit"
             >
               <span>Tải lên bằng chứng ảnh/video</span>
               <ArrowRight className="w-3.5 h-3.5" />

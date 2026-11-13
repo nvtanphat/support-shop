@@ -44,9 +44,6 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({ input, setInput, onS
           placeholder={mode === 'ai' ? 'Nhập câu hỏi hoặc yêu cầu hỗ trợ...' : 'Nhân viên đang tiếp nhận cuộc trò chuyện này...'}
           autoComplete="off"
         />
-        <span className="kb">
-          <b>Ctrl + Enter</b>Gửi nhanh
-        </span>
         <button type="button" className="mic" aria-label="Ghi âm (chưa hỗ trợ)" aria-disabled="true" title="Chưa hỗ trợ ghi âm">
           <MicIcon />
         </button>

@@ -86,7 +86,7 @@ export const EvidenceUploadModal: React.FC<EvidenceUploadModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 text-slate-800 relative border border-purple-100 animate-in fade-in zoom-in-95"
+        className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 text-slate-800 relative border border-brand-100 animate-in fade-in zoom-in-95"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
       >
@@ -100,7 +100,7 @@ export const EvidenceUploadModal: React.FC<EvidenceUploadModalProps> = ({
         <h3 className="text-base font-bold text-slate-900 mb-1">
           Cung cấp bằng chứng sản phẩm
         </h3>
-        <p className="text-xs text-purple-700 mb-4 font-mono font-semibold">
+        <p className="text-xs text-brand-700 mb-4 font-mono font-semibold">
           Yêu cầu trả hàng: {returnCode}
         </p>
 
@@ -183,7 +183,7 @@ export const EvidenceUploadModal: React.FC<EvidenceUploadModalProps> = ({
             <button
               type="submit"
               disabled={uploading || files.length === 0}
-              className="px-4 py-2 bg-purple-700 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold flex items-center gap-2 disabled:opacity-50 shadow-md shadow-purple-200 transition"
+              className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-semibold flex items-center gap-2 disabled:opacity-50 transition"
             >
               {uploading ? (
                 <>

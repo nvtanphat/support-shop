@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { LogIn } from 'lucide-react';
-import { EnvironmentBanner } from '../components/EnvironmentBanner';
 import { ChatView, ChatCommand } from '../features/chat/ChatView';
 import { StaffPortal } from '../features/staff/StaffPortal';
 import { api, SESSION_EXPIRED_EVENT } from '../lib/api';
@@ -141,7 +140,6 @@ export const App: React.FC = () => {
   return (
     <>
       <div className="ss">
-        <EnvironmentBanner />
         <header>
           <div className="logo">
             <img src="/images/ui/logo.png" alt="" />
@@ -211,13 +209,13 @@ export const App: React.FC = () => {
         createPortal(
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setShowLogin(false)}>
             <div
-              className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-purple-100"
+              className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-brand-100"
               onClick={(e) => e.stopPropagation()}
               role="dialog"
               aria-labelledby="login-title"
             >
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-2xl bg-brand-100 text-brand-700 flex items-center justify-center">
                   <LogIn className="w-5 h-5" />
                 </div>
                 <div>
@@ -242,7 +240,7 @@ export const App: React.FC = () => {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:bg-white focus:outline-none transition"
+                    className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:bg-white focus:outline-none transition"
                     autoComplete="username"
                     required
                   />
@@ -254,7 +252,7 @@ export const App: React.FC = () => {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:bg-white focus:outline-none transition"
+                    className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:bg-white focus:outline-none transition"
                     autoComplete="current-password"
                     required
                   />
@@ -263,7 +261,7 @@ export const App: React.FC = () => {
                   <button type="button" onClick={() => setShowLogin(false)} className="flex-1 py-2.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition">
                     Hủy
                   </button>
-                  <button type="submit" className="flex-1 py-2.5 text-xs font-semibold text-white bg-purple-700 hover:bg-purple-800 rounded-xl shadow-md shadow-purple-200 transition">
+                  <button type="submit" className="flex-1 py-2.5 text-xs font-semibold text-white bg-brand-700 hover:bg-brand-800 rounded-xl shadow-md shadow-brand-200 transition">
                     Đăng nhập
                   </button>
                 </div>
@@ -275,7 +273,7 @@ export const App: React.FC = () => {
                   setStaffLogin(!staffLogin);
                   setAuthError(null);
                 }}
-                className="mt-4 w-full text-center text-xs text-purple-700 hover:underline"
+                className="mt-4 w-full text-center text-xs text-brand-700 hover:underline"
               >
                 {staffLogin ? 'Đăng nhập với tư cách khách hàng' : 'Đăng nhập với tư cách nhân viên'}
               </button>
