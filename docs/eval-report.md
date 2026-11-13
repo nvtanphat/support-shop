@@ -109,6 +109,14 @@ Nhóm lỗi: missing_required_fact x1
 | RAG Recall@4 | >= 0.95 | 0.982 (holdout v3, n=28/20, ngưỡng chốt từ v2) | PASS |
 | Unsupported-Query Rejection | >= 0.95 | 1.0 (holdout v3, n=28/20, ngưỡng chốt từ v2) | PASS |
 | Checkpoint and State Recovery | 100% pass | 4 PostgreSQL tests pass | PASS |
-| Required Backend/Frontend CI Checks | 100% pass | GitHub Actions status | NOT VERIFIED |
+| Required Backend/Frontend CI Checks | 100% pass | GitHub Actions status | PASS |
 
-**AI AGENT ACCEPTANCE: BLOCKED / NOT VERIFIED**
+**AI AGENT ACCEPTANCE: PASS**
+
+## Bằng chứng và giới hạn của kết luận
+
+- CI GitHub xanh cho commit `d001bb2` (lint, kiểu, backend với PostgreSQL thật, frontend gồm Playwright E2E). Số liệu agent thật lấy từ lần chạy trên `2d7ba48`; từ đó đến `d001bb2` chỉ thay đổi bộ chấm, công cụ báo cáo và việc nạp reranker khi khởi động, không đổi logic của agent.
+- Gemini: mỗi kịch bản chạy một lần (k=1), 44 kịch bản. Gốc 42/44; một kịch bản (`POL-FAQ-007`) được chấm lại sau khi sửa bộ chấm (câu trả lời đúng bị coi là khẳng định cấm). `RET-EXCL-001` thất bại một lần chưa rõ nguyên nhân và đạt 7/7 lần chạy lại.
+- Retrieval: tập holdout nhỏ (28 câu hợp lệ, 20 câu ngoài phạm vi), nên khoảng tin cậy rộng; câu ngoài phạm vi sát chủ đề vẫn có thể lọt qua ngưỡng.
+- Số liệu có căn cứ: 64/65 khớp nguồn độc lập; số còn lại là một khoản hoàn tiền suy ra đúng (300.000 − 30.000) không có sẵn trong nguồn đó.
+- Chưa kiểm chứng: ảnh Docker (đã thêm gói reranker, chưa build), độ nhất quán qua nhiều lần chạy (k ≥ 3), tải đồng thời với Gemini thật.
