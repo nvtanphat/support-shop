@@ -278,10 +278,14 @@ def main() -> None:
         default=None,
         help="Hand-written files whose numbers count as independent truth (repeatable)",
     )
+    parser.add_argument("--notes", type=Path, default=Path("docs/eval-notes.md"), help="Hand-written limits of the evidence, appended as is")
     parser.add_argument("--out", type=Path, default=Path("docs/eval-report.md"))
     args = parser.parse_args()
     args.truth_file = args.truth_file or ["docs/business-spec.md", "evals/ground_truth/policy_decision_table.csv"]
-    args.out.write_text(build(args), encoding="utf-8")
+    report = build(args)
+    if args.notes.exists():
+        report = report.rstrip() + "\n\n" + args.notes.read_text(encoding="utf-8").strip() + "\n"
+    args.out.write_text(report, encoding="utf-8")
     print(f"Đã ghi {args.out}")
 
 

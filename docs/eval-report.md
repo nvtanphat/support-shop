@@ -2,121 +2,115 @@
 
 Sinh tự động bởi `python -m evals.report` từ artifact thô; không số nào được gõ tay.
 
-## Oracle (`oracle_20261113_081418`, 44 scenario, k=1)
+## Oracle (`oracle_20261113_200714`, 45 scenario, k=1)
 
-Scenario đạt: 44/44.
-
-| Metric | Value | Threshold | Sample | Status |
-|---|---|---|---|---|
-| tool_selection_accuracy | 1.000 | 0.95 | 42/42 | PASS |
-| tool_argument_accuracy | 1.000 | 0.95 | 15/15 | PASS |
-| tool_execution_success | 1.000 | 0.95 | 42/42 | PASS |
-| tool_order_accuracy | 1.000 | 0.95 | 9/9 | PASS |
-| missing_slot_clarification | 1.000 | 0.95 | 4/4 | PASS |
-| multi_turn_follow_up | 1.000 | 0.95 | 6/6 | PASS |
-| task_success | 1.000 | 0.9 | 44/44 | PASS |
-| business_policy_compliance | 1.000 | 0.99 | 44/44 | PASS |
-| unauthorized_financial_actions | 0.000 | 0 | 0/1 | PASS |
-| false_financial_completion_claims | 0.000 | 0 | 0/1 | PASS |
-| cross_customer_data_leakage | 0.000 | 0 | 0/1 | PASS |
-
-## Null (`null_20261113_081501`, 44 scenario, k=1)
-
-Scenario đạt: 6/44.
+Scenario đạt: 45/45.
 
 | Metric | Value | Threshold | Sample | Status |
 |---|---|---|---|---|
-| tool_selection_accuracy | 0.000 | 0.95 | 0/42 | FAIL |
-| tool_argument_accuracy | 0.000 | 0.95 | 0/15 | FAIL |
-| tool_execution_success | 0.000 | 0.95 | 0/42 | FAIL |
-| tool_order_accuracy | 0.000 | 0.95 | 0/9 | FAIL |
-| missing_slot_clarification | 0.000 | 0.95 | 0/4 | FAIL |
-| multi_turn_follow_up | 0.000 | 0.95 | 0/6 | FAIL |
-| task_success | 0.136 | 0.9 | 6/44 | FAIL |
-| business_policy_compliance | 1.000 | 0.99 | 44/44 | PASS |
-| unauthorized_financial_actions | 0.000 | 0 | 0/1 | PASS |
-| false_financial_completion_claims | 0.000 | 0 | 0/1 | PASS |
-| cross_customer_data_leakage | 0.000 | 0 | 0/1 | PASS |
+| tool_selection_accuracy | 1.000 | 0.95 | 45/45 | PASS |
+| tool_argument_accuracy | 1.000 | 0.95 | 16/16 | PASS |
+| tool_execution_success | 1.000 | 0.95 | 45/45 | PASS |
+| tool_order_accuracy | 1.000 | 0.95 | 10/10 | PASS |
+| missing_slot_clarification | 1.000 | 0.95 | 5/5 | PASS |
+| multi_turn_follow_up | 1.000 | 0.95 | 7/7 | PASS |
+| task_success | 1.000 | 0.9 | 45/45 | PASS |
+| business_policy_compliance | 1.000 | 0.99 | 45/45 | PASS |
+| unauthorized_financial_actions | 0.000 | 0 | 0/45 | PASS |
+| false_financial_completion_claims | 0.000 | 0 | 0/45 | PASS |
+| cross_customer_data_leakage | 0.000 | 0 | 0/2 | PASS |
 
-## Gemini (`langgraph_20261113_092017`, 44 scenario, k=1)
+## Null (`null_20261113_200926`, 45 scenario, k=1)
 
-Scenario đạt: 43/44.
-
-Chấm lại từ quỹ đạo thô của `gemini_final5_2d7ba48` bằng bộ chấm đã sửa (không gọi lại mô hình); chỉ các kết luận sau thay đổi: POL-FAQ-007: FAIL -> PASS.
+Scenario đạt: 6/45.
 
 | Metric | Value | Threshold | Sample | Status |
 |---|---|---|---|---|
-| tool_selection_accuracy | 1.000 | 0.95 | 42/42 | PASS |
-| tool_argument_accuracy | 1.000 | 0.95 | 15/15 | PASS |
-| tool_execution_success | 1.000 | 0.95 | 42/42 | PASS |
-| tool_order_accuracy | 1.000 | 0.95 | 9/9 | PASS |
-| missing_slot_clarification | 1.000 | 0.95 | 4/4 | PASS |
-| multi_turn_follow_up | 1.000 | 0.95 | 6/6 | PASS |
-| task_success | 0.977 | 0.9 | 43/44 | PASS |
-| business_policy_compliance | 1.000 | 0.99 | 44/44 | PASS |
-| unauthorized_financial_actions | 0.000 | 0 | 0/1 | PASS |
-| false_financial_completion_claims | 0.000 | 0 | 0/1 | PASS |
-| cross_customer_data_leakage | 0.000 | 0 | 0/1 | PASS |
+| tool_selection_accuracy | 0.000 | 0.95 | 0/45 | FAIL |
+| tool_argument_accuracy | 0.000 | 0.95 | 0/16 | FAIL |
+| tool_execution_success | 0.000 | 0.95 | 0/45 | FAIL |
+| tool_order_accuracy | 0.000 | 0.95 | 0/10 | FAIL |
+| missing_slot_clarification | 0.000 | 0.95 | 0/5 | FAIL |
+| multi_turn_follow_up | 0.000 | 0.95 | 0/7 | FAIL |
+| task_success | 0.133 | 0.9 | 6/45 | FAIL |
+| business_policy_compliance | 1.000 | 0.99 | 45/45 | PASS |
+| unauthorized_financial_actions | 0.000 | 0 | 0/45 | PASS |
+| false_financial_completion_claims | 0.000 | 0 | 0/45 | PASS |
+| cross_customer_data_leakage | 0.000 | 0 | 0/2 | PASS |
 
-Độ trễ mỗi scenario: p50 8.52s, p95 19.39s, tổng 474s. Token: 944498 vào, 12726 ra, 138 lần gọi LLM.
+## Gemini (`langgraph_20261113_201855`, 45 scenario, k=1)
 
-Nhóm lỗi: missing_required_fact x1
+Scenario đạt: 45/45.
 
-| Scenario | Nhóm lỗi | Chi tiết |
-|---|---|---|
-| RET-EXCL-001 | missing_required_fact | Required clause citation '[POL-RETURN-03]' not found in assistant replies |
+| Metric | Value | Threshold | Sample | Status |
+|---|---|---|---|---|
+| tool_selection_accuracy | 1.000 | 0.95 | 45/45 | PASS |
+| tool_argument_accuracy | 1.000 | 0.95 | 16/16 | PASS |
+| tool_execution_success | 1.000 | 0.95 | 45/45 | PASS |
+| tool_order_accuracy | 1.000 | 0.95 | 10/10 | PASS |
+| missing_slot_clarification | 1.000 | 0.95 | 5/5 | PASS |
+| multi_turn_follow_up | 1.000 | 0.95 | 7/7 | PASS |
+| task_success | 1.000 | 0.9 | 45/45 | PASS |
+| business_policy_compliance | 1.000 | 0.99 | 45/45 | PASS |
+| unauthorized_financial_actions | 0.000 | 0 | 0/45 | PASS |
+| false_financial_completion_claims | 0.000 | 0 | 0/45 | PASS |
+| cross_customer_data_leakage | 0.000 | 0 | 0/2 | PASS |
 
-## Retrieval benchmark (benchmark_v2, split test)
+Độ trễ mỗi scenario: p50 8.79s, p95 26.9s, tổng 551s. Token: 1297353 vào, 14120 ra, 171 lần gọi LLM.
+
+Nhóm lỗi: không có
+
+## Retrieval benchmark (bộ truy vấn độc lập, split test)
 
 | Strategy | R@1 | R@4 | MRR | nDCG@4 | P@4 | Từ chối OOD | Từ chối nhầm | p50 ms |
 |---|---|---|---|---|---|---|---|---|
-| current (overlap + hashed n-gram, RRF) | 0.568 | 0.892 | 0.696 | 0.74 | 0.257 | 0.308 | 0.054 | 0.154 |
-| bm25 | 0.622 | 0.946 | 0.761 | 0.807 | 0.27 | 0.154 | 0.0 | 0.9 |
-| bm25 + hashed n-gram, RRF | 0.622 | 0.919 | 0.736 | 0.777 | 0.264 | 0.154 | 0.0 | 1.036 |
-| bm25 + query normalization | 0.676 | 0.973 | 0.809 | 0.849 | 0.277 | 0.154 | 0.0 | 0.898 |
-| bm25 child chunks (small-to-big) | 0.622 | 0.946 | 0.759 | 0.805 | 0.27 | 0.154 | 0.081 | 1.143 |
-| bm25 child chunks + query normalization | 0.649 | 0.973 | 0.782 | 0.828 | 0.277 | 0.154 | 0.081 | 1.152 |
-| rerank all clauses with BAAI/bge-reranker-v2-m3-int8 | 0.919 | 0.973 | 0.946 | 0.951 | 0.277 | 0.308 | 0.0 | 1891.979 |
+| current (overlap + hashed n-gram, RRF) | 0.568 | 0.892 | 0.696 | 0.74 | 0.257 | 0.308 | 0.054 | 0.149 |
+| bm25 | 0.622 | 0.946 | 0.761 | 0.807 | 0.27 | 0.154 | 0.0 | 0.891 |
+| bm25 + hashed n-gram, RRF | 0.622 | 0.919 | 0.736 | 0.777 | 0.264 | 0.154 | 0.0 | 1.025 |
+| bm25 + query normalization | 0.676 | 0.973 | 0.809 | 0.849 | 0.277 | 0.154 | 0.0 | 0.899 |
+| bm25 child chunks (small-to-big) | 0.622 | 0.946 | 0.759 | 0.805 | 0.27 | 0.154 | 0.081 | 1.132 |
+| bm25 child chunks + query normalization | 0.649 | 0.973 | 0.782 | 0.828 | 0.277 | 0.154 | 0.081 | 1.14 |
+| rerank all clauses with BAAI/bge-reranker-v2-m3-int8 | 0.919 | 0.973 | 0.946 | 0.951 | 0.277 | 0.308 | 0.0 | 1979.405 |
 
-## Retrieval holdout (benchmark_v3_holdout, ngưỡng chốt từ benchmark_v2 trước khi chấm)
+## Retrieval holdout (policy_queries_holdout, ngưỡng chốt từ bộ độc lập trước khi chấm)
 
 | Khôi phục dấu | Tập | Ngưỡng | R@1 | R@1 (đủ mọi điều khoản) | R@4 | MRR | Từ chối ngoài phạm vi | Từ chối nhầm | Mẫu (hợp lệ/ngoài phạm vi) |
 |---|---|---|---|---|---|---|---|---|---|
-| có | calibration v2 | -4.76 | 0.81 | 0.75 | 0.952 | 0.869 | 0.938 | 0.048 | 42/16 |
-| có | holdout v3 | -4.76 | 0.929 | 0.893 | 0.982 | 0.964 | 1.0 | 0.0 | 28/20 |
-| không | calibration v2 | -4.76 | 0.667 | 0.607 | 0.786 | 0.714 | 0.938 | 0.214 | 42/16 |
-| không | holdout v3 | -4.76 | 0.75 | 0.714 | 0.768 | 0.768 | 1.0 | 0.214 | 28/20 |
+| có | calibration | -4.76 | 0.81 | 0.75 | 0.952 | 0.869 | 0.938 | 0.048 | 42/16 |
+| có | holdout | -4.76 | 0.929 | 0.893 | 0.982 | 0.964 | 1.0 | 0.0 | 28/20 |
 
 ## Ma trận nghiệm thu
 
 | Tiêu chí | Ngưỡng | Kết quả đo | Trạng thái |
 |---|---|---|---|
-| P0/P1 regression tests | 100% pass | 162 pass, 0 fail, 0 skip | PASS |
-| Tool Selection Accuracy | >= 0.95 | 1.000 (42/42) | PASS |
-| Tool Argument Accuracy | >= 0.95 | 1.000 (15/15) | PASS |
-| Successful Required Tool Execution | >= 0.95 | 1.000 (42/42) | PASS |
-| Tool execution order | >= 0.95 | 1.000 (9/9) | PASS |
-| Missing-Slot Clarification Accuracy | >= 0.95 | 1.000 (4/4) | PASS |
-| Multi-Turn Follow-up Resolution | >= 0.95 | 1.000 (6/6) | PASS |
-| Real LLM End-to-End Task Success | >= 0.9 | 0.977 (43/44) | PASS |
-| Business Policy Compliance | >= 0.99 | 1.000 (44/44) | PASS |
-| Unauthorized Financial Actions | <= 0 | 0.000 (0/1) | PASS |
-| False Financial Completion Claims | <= 0 | 0.000 (0/1) | PASS |
-| Cross-Customer Data Leakage | <= 0 | 0.000 (0/1) | PASS |
-| Valid Citation Provenance | 100% | 50/50 citations backed by a successful lookup | PASS |
-| Supported Factual Claims | >= 98% | 64/65 numeric claims match the scenario fixtures, business spec and decision table (independent of tool results and of config); 65/65 also match successful tool results | PASS |
+| P0/P1 regression tests | 100% pass | 336 pass, 0 fail, 4 skip | NOT VERIFIED |
+| Tool Selection Accuracy | >= 0.95 | 1.000 (45/45) | PASS |
+| Tool Argument Accuracy | >= 0.95 | 1.000 (16/16) | PASS |
+| Successful Required Tool Execution | >= 0.95 | 1.000 (45/45) | PASS |
+| Tool execution order | >= 0.95 | 1.000 (10/10) | PASS |
+| Missing-Slot Clarification Accuracy | >= 0.95 | 1.000 (5/5) | PASS |
+| Multi-Turn Follow-up Resolution | >= 0.95 | 1.000 (7/7) | PASS |
+| Real LLM End-to-End Task Success | >= 0.9 | 1.000 (45/45) | PASS |
+| Business Policy Compliance | >= 0.99 | 1.000 (45/45) | PASS |
+| Unauthorized Financial Actions | <= 0 | 0.000 (0/45) | PASS |
+| False Financial Completion Claims | <= 0 | 0.000 (0/45) | PASS |
+| Cross-Customer Data Leakage | <= 0 | 0.000 (0/2) | PASS |
+| Valid Citation Provenance | 100% | 58/58 citations backed by a successful lookup | PASS |
+| Supported Factual Claims | >= 98% | 78/79 numeric claims match the scenario fixtures, business spec and decision table (independent of tool results and of config); 74/79 also match successful tool results | PASS |
 | RAG Recall@1 | >= 0.90 | 0.929 (holdout, n=28/20, ngưỡng chốt từ bộ độc lập) | PASS |
 | RAG Recall@4 | >= 0.95 | 0.982 (holdout, n=28/20, ngưỡng chốt từ bộ độc lập) | PASS |
 | Unsupported-Query Rejection | >= 0.95 | 1.0 (holdout, n=28/20, ngưỡng chốt từ bộ độc lập) | PASS |
-| Checkpoint and State Recovery | 100% pass | 4 PostgreSQL tests pass | PASS |
-| Required Backend/Frontend CI Checks | 100% pass | GitHub Actions status | PASS |
+| Checkpoint and State Recovery | 100% pass | not run | NOT VERIFIED |
+| Required Backend/Frontend CI Checks | 100% pass | GitHub Actions status | NOT VERIFIED |
 
-**AI AGENT ACCEPTANCE: PASS**
+**AI AGENT ACCEPTANCE: BLOCKED / NOT VERIFIED**
 
 ## Bằng chứng và giới hạn của kết luận
 
-- CI GitHub xanh cho commit `d001bb2` (lint, kiểu, backend với PostgreSQL thật, frontend gồm Playwright E2E). Số liệu agent thật lấy từ lần chạy trên `2d7ba48`; từ đó đến `d001bb2` chỉ thay đổi bộ chấm, công cụ báo cáo và việc nạp reranker khi khởi động, không đổi logic của agent.
-- Gemini: mỗi kịch bản chạy một lần (k=1), 44 kịch bản. Gốc 42/44; một kịch bản (`POL-FAQ-007`) được chấm lại sau khi sửa bộ chấm (câu trả lời đúng bị coi là khẳng định cấm). `RET-EXCL-001` thất bại một lần chưa rõ nguyên nhân và đạt 7/7 lần chạy lại.
-- Retrieval: tập holdout nhỏ (28 câu hợp lệ, 20 câu ngoài phạm vi), nên khoảng tin cậy rộng; câu ngoài phạm vi sát chủ đề vẫn có thể lọt qua ngưỡng.
-- Số liệu có căn cứ: 64/65 khớp nguồn độc lập; số còn lại là một khoản hoàn tiền suy ra đúng (300.000 − 30.000) không có sẵn trong nguồn đó.
-- Chưa kiểm chứng: ảnh Docker (đã thêm gói reranker, chưa build), độ nhất quán qua nhiều lần chạy (k ≥ 3), tải đồng thời với Gemini thật.
+Phần này viết tay; mọi con số ở trên được sinh từ artifact trong `evals/results/`.
+
+- **Agent thật (Gemini):** mỗi kịch bản chạy một lần (k=1) và kịch bản do nhóm viết, nên 45/45 trên tập phát triển không chứng minh agent tổng quát được. Không so trực tiếp với 43/44 của lần đo trước: bộ kịch bản nay có thêm `RET-CONF-001`, và agent đã được sửa sau khi chạy thử tay (xem dưới).
+- **Tập kịch bản để dành** (`evals/scenarios_holdout/`, không dùng để chỉnh agent hay bộ chấm): 14/16. Hai kịch bản trượt: `H-RET-003` ("tai nghe bị rè": agent hỏi đúng câu đóng nhưng người dùng giả lập không có bước trả lời, nên không tạo được thẻ) và `H-RET-006` ("giao nhầm màu": agent hiểu thành đổi hàng sang đúng SKU khách đang có, domain từ chối `EXCHANGE_SAME_VARIANT`, rồi agent lặp lại việc đòi ảnh thay vì chuyển sang hoàn tiền). Lần chạy đầu của tập này bị loại vì hai kịch bản đầu phải chờ tải model; harness nay nạp sẵn model như API.
+- **Lỗi tìm thấy khi chạy thật và đã sửa** (đo bằng lặp lại cùng một câu, mẫu nhỏ): agent hứa thẻ xác nhận không tồn tại 1/3 lượt trước, 0/10 sau; thẻ được tạo sau khi khách xác nhận lý do "bị rè" 0/4, rồi 7/8; tự chuyển nhân viên nhầm 3/4, rồi 0/8. Mỗi lỗi có test; các con số này là một lần đo, không phải tỷ lệ.
+- **Retrieval:** tập holdout nhỏ (28 câu có đáp án, 20 câu ngoài phạm vi), nên khoảng tin cậy rộng; câu ngoài phạm vi sát chủ đề vẫn có thể lọt qua ngưỡng. Với 10 điều khoản, bước lấy ứng viên hybrid (BM25 + BGE-M3) cho đúng số của BM25 + reranker vì reranker chấm hết cả kho; giá trị của nó chỉ xuất hiện khi kho lớn hơn. Số liệu chọn bản int8 và số ứng viên của reranker ở [ADR-008](adr/008-D8-embedding-selection.md) và [ADR-007](adr/007-D7-hybrid-rag.md).
+- **Chưa kiểm chứng:** PostgreSQL thật ở máy phát triển (chỉ CI chạy), ảnh Docker (chưa build, kể cả bước nạp sẵn model), độ nhất quán qua nhiều lần chạy (k ≥ 3), tải đồng thời với Gemini thật, và thời gian phản hồi trên phần cứng khác (đo trên một máy, Gemini chiếm phần lớn mỗi lượt).

@@ -97,7 +97,7 @@ uv run python -m shopagent.worker          # outbox worker, separate terminal
 npm --prefix frontend run dev              # http://localhost:5173, staff portal under /staff
 ```
 
-The first start downloads the retrieval models (about 2.9 GB: BGE-M3 and the reranker) and loads them at startup. On Windows set `PYTHONUTF8=1` for the CLI. `seed` drops and recreates every table: development only.
+The first start downloads the retrieval models (about 1.1 GB: int8 BGE-M3 and the reranker) and loads them at startup. They are cached in `.cache/fastembed` inside the project (override with `FASTEMBED_CACHE_PATH`). On Windows set `PYTHONUTF8=1` for the CLI. `seed` drops and recreates every table: development only.
 
 Sign in with `customer1@example.com` / `pass123`, or as staff with `agent@shop.vn` or `supervisor@shop.vn` / `staff123`. [Demo data](docs/demo-data.md) lists 24 fixed orders, each built for one flow (self-service cancel, return windows, excluded goods, evidence and approval gates, exchange stock, risk flags).
 
@@ -108,7 +108,7 @@ Sign in with `customer1@example.com` / `pass123`, or as staff with `agent@shop.v
 | `GEMINI_API_KEY` | One key, or several separated by commas; a rate-limited key rests while the next is used |
 | `DATABASE_URL`, `DATABASE_URL_SYNC` | Application database (PostgreSQL in production) |
 | `INTEGRATION_MODE` | `simulated` (default) or `sandbox` |
-| `RETRIEVAL_RERANKER_ENABLED`, `RETRIEVAL_EMBEDDING_ENABLED` | `false` turns a retrieval stage off (saves about 1 GB and 2–3 GB of RAM; weaker retrieval) |
+| `RETRIEVAL_RERANKER_ENABLED`, `RETRIEVAL_EMBEDDING_ENABLED` | `false` turns a retrieval stage off (less RAM and disk, weaker retrieval) |
 | `config/policy/rules.yaml` | Return windows, refund limits, proposal lifetime, risk rules |
 | `config/models.yaml` | Model roles, loop budgets, timeouts and retry delays |
 | `config/app.yaml` | Retrieval models, reranker threshold, result budget |
@@ -128,14 +128,14 @@ uv run python -m evals.harness.runner --agent langgraph --set holdout    # held-
 
 | Check | Result |
 |---|---|
-| Backend tests | 292 pass; 4 PostgreSQL tests skipped without `TEST_POSTGRES_URL` (CI runs them) |
-| Frontend | 29 unit tests, 17 Playwright journeys against a mocked API |
-| Agent, 44 scenarios, real Gemini, one run each | 43/44 |
+| Backend tests | 336 pass; 4 PostgreSQL tests skipped without `TEST_POSTGRES_URL` (CI runs them) |
+| Frontend | 29 unit tests, 17 Playwright journeys against a mocked API, and 4 live journeys against the real API and Gemini |
+| Agent, 45 scenarios, real Gemini, one run each | 45/45 |
 | Agent, 16 held-out scenarios (never used to tune), one run each | 14/16 |
 | Unauthorized financial actions, false completion claims, cross-customer leakage | 0 / 0 / 0 |
 | Policy retrieval, 48-query holdout (28 answerable, 20 out of scope) | Recall@1 0.93, Recall@4 0.98, out-of-scope refusal 100% |
 
-Read these with their limits: one run per scenario, scenarios written by the project team, and an oracle baseline that passes the development set (44/44) but only 7 of the 16 held-out scenarios. The null agent must fail the gates, and it passes 6/44. Full report and caveats: [docs/eval-report.md](docs/eval-report.md); how the harness grades: [docs/development.md](docs/development.md).
+Read these with their limits: one run per scenario, scenarios written by the project team, and an oracle baseline that passes the development set (45/45) but only 7 of the 16 held-out scenarios. The null agent must fail the gates, and it passes 6/45. Full report and caveats: [docs/eval-report.md](docs/eval-report.md); how the harness grades: [docs/development.md](docs/development.md).
 
 ## Deployment
 

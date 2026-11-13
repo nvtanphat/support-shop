@@ -22,6 +22,8 @@ from shopagent.core.principal import Principal
 from shopagent.domain.policies.rules import PolicyRules
 from shopagent.domain.services.actions import ActionService
 from shopagent.infra.db.tables import Base, EvidenceFileModel, ReturnRequestModel
+from shopagent.rag.embeddings import warm_up_embedder
+from shopagent.rag.reranker import warm_up as warm_up_reranker
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -297,6 +299,13 @@ async def run_eval_cli(
 ) -> tuple[EvalSummary, list[dict[str, Any]]]:
     """Run scenarios, save raw trajectories and gate table; return the summary and gate rows."""
     scenarios = _select_scenarios(group, tag, scenario_ids, scenario_set)
+    if agent == "langgraph":
+        # The API loads the retrieval models at startup; do the same here. Otherwise the first policy lookup of a
+        # cold process (or one that has to download a model) exceeds the 12 s tool timeout and the scenario fails
+        # for a reason that has nothing to do with the agent.
+        print("Nạp mô hình retrieval...", flush=True)
+        await asyncio.to_thread(warm_up_reranker)
+        await asyncio.to_thread(warm_up_embedder)
     print(f"Bắt đầu đánh giá: {len(scenarios)} kịch bản | tập={scenario_set} | agent={agent} | group={group} | mode={mode} | k={k}", flush=True)
 
     runs: dict[str, list[ScenarioRunResult]] = {}
