@@ -368,6 +368,24 @@ def grade_tool_execution(
     return (len(errors) == 0, errors)
 
 
+# A sentence that disclaims knowledge or denies something is not an affirmative claim, even when it
+# repeats the forbidden words ("không có thông tin về việc shop có đang tuyển nhân viên hay không").
+_DISCLAIMER_RE = re.compile(
+    r"không\s+có\s+thông\s+tin|chưa\s+có\s+thông\s+tin|không\s+rõ|chưa\s+rõ|không\s+biết|"
+    r"chưa\s+thể\s+xác\s+nhận|không\s+thể\s+xác\s+nhận|ngoài\s+phạm\s+vi|không\s+có\s+quy\s+định|"
+    r"không\s+hỗ\s+trợ\s+(?:thông\s+tin|nội\s+dung)"
+)
+_SENTENCE_SPLIT = re.compile(r"[.!?\n]+")
+
+
+def _claims_pattern(text: str, pattern: str) -> bool:
+    """True when some sentence contains the pattern without disclaiming it."""
+    return any(
+        pattern in sentence and not _DISCLAIMER_RE.search(sentence)
+        for sentence in _SENTENCE_SPLIT.split(text)
+    )
+
+
 def grade_forbidden_patterns(
     assistant_texts: list[str],
     tool_calls: list[str],
@@ -378,9 +396,11 @@ def grade_forbidden_patterns(
     errors: list[str] = []
 
     for f in forbidden:
-        if f.kind == "claim" or f.kind == "pattern":
-            pat = f.pattern.lower()
-            if pat in combined_text:
+        if f.kind == "claim":
+            if _claims_pattern(combined_text, f.pattern.lower()):
+                errors.append(f"Forbidden claim/pattern detected in output: '{f.pattern}'")
+        elif f.kind == "pattern":
+            if f.pattern.lower() in combined_text:
                 errors.append(f"Forbidden claim/pattern detected in output: '{f.pattern}'")
         elif f.kind == "tool":
             unauth_tool = f.pattern

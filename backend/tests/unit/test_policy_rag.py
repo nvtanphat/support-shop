@@ -415,3 +415,20 @@ def test_diacritic_restoration_uses_the_policy_vocabulary_and_function_words() -
     assert restore("thoi han 15 ngay") == "thời hạn 15 ngày"
     assert restore("Đổi trả") == "Đổi trả"  # accented input is left alone
     assert restore("zzz qwerty") == "zzz qwerty"  # unknown words pass through
+
+
+def test_warm_up_loads_the_reranker_only_when_enabled_and_fails_loudly(monkeypatch: pytest.MonkeyPatch) -> None:
+    from shopagent.rag import reranker as reranker_module
+
+    monkeypatch.setattr(reranker_module, "_cached", None)
+    monkeypatch.setattr(reranker_module, "get_settings", lambda: type("S", (), {"RETRIEVAL_RERANKER_ENABLED": False})())
+    assert reranker_module.warm_up() is False  # disabled: nothing is loaded
+
+    def broken(model_name: str):  # type: ignore[no-untyped-def]
+        raise reranker_module.RerankerUnavailableError("model missing")
+
+    monkeypatch.setattr(reranker_module, "get_settings", lambda: type("S", (), {"RETRIEVAL_RERANKER_ENABLED": True})())
+    monkeypatch.setattr(reranker_module, "get_app_config", lambda: {"retrieval": {"reranker": {"enabled": True, "model": "x"}}})
+    monkeypatch.setattr(reranker_module, "CrossEncoderReranker", broken)
+    with pytest.raises(reranker_module.RerankerUnavailableError):
+        reranker_module.warm_up()

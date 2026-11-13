@@ -70,3 +70,12 @@ def get_configured_reranker() -> RerankSettings | None:
         candidates=int(cfg.get("candidates", 10)),
         min_score=None if min_score is None else float(min_score),
     )
+
+
+def warm_up() -> bool:
+    """Load the configured reranker now (startup) instead of on the first customer question.
+
+    Returns whether a reranker is enabled. A model that cannot load raises here, so a broken deployment
+    fails at startup rather than answering policy questions with silently weaker retrieval.
+    """
+    return get_configured_reranker() is not None

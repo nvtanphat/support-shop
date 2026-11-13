@@ -29,6 +29,7 @@ class LangGraphAgent:
         # Evaluation conversations live in memory: they must not pollute the application's checkpoint store.
         self.usage: dict[str, int] = {"input_tokens": 0, "output_tokens": 0, "llm_calls": 0}
         self._counted_ids: set[str] = set()
+        self.last_verification_error: str | None = None
         self.graph = build_agent_graph(checkpointer=InMemorySaver())
 
     async def step(
@@ -59,6 +60,8 @@ class LangGraphAgent:
         output = await self.graph.ainvoke(state, config=config)
 
         self._count_usage(output.get("messages") or [])
+        # Why verify_output replaced the model's answer, if it did (kept for failure analysis).
+        self.last_verification_error = output.get("error")
         asst_text = output.get("verified_output") or ""
         tool_calls = output.get("tool_calls") or []
         pending_action = output.get("pending_action")

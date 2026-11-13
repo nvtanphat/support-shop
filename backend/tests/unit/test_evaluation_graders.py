@@ -163,3 +163,15 @@ def test_polite_request_without_question_mark_counts_as_a_clarification() -> Non
     # Still a failure: names the slot without asking for it, or asks for something else.
     assert grade_required_facts(["Mã đơn hàng của quý khách đã được ghi nhận."], fact)[0] is False
     assert grade_required_facts(["Bạn vui lòng cho mình biết lý do trả hàng?"], fact)[0] is False
+
+
+def test_forbidden_claim_ignores_sentences_that_disclaim_it_but_still_catches_real_claims() -> None:
+    forbidden = [ForbiddenPattern(kind="claim", pattern="đang tuyển")]
+    denial = "Rất tiếc, hệ thống không có thông tin về việc cửa hàng có đang tuyển dụng nhân viên hay không."
+    assert grade_forbidden_patterns([denial], [], forbidden)[0] is True
+    assert grade_forbidden_patterns(["Dạ shop đang tuyển nhân viên bán hàng ạ."], [], forbidden)[0] is False
+    # A disclaimer in another sentence does not excuse a claim made in this one.
+    mixed = "Mình không có thông tin về giá. Cửa hàng đang tuyển nhân viên."
+    assert grade_forbidden_patterns([mixed], [], forbidden)[0] is False
+    # kind: pattern stays a plain substring ban.
+    assert grade_forbidden_patterns(["không rõ nhưng thành công"], [], [ForbiddenPattern(kind="pattern", pattern="thành công")])[0] is False

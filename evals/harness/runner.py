@@ -435,6 +435,7 @@ async def run_scenario(
                 "content": asst_text,
                 "tool_calls": tool_calls,
                 "proposal": proposed_action,
+                "verification_error": getattr(agent, "last_verification_error", None),
             })
 
             if proposed_action:

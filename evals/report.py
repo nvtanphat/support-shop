@@ -146,7 +146,14 @@ def build(args: argparse.Namespace) -> str:
         meta = summary["meta"]
         passed = sum(1 for r in results if r["passed"])
         out += [f"## {name} (`{meta['run_id']}`, {meta['scenarios']} scenario, k={meta['k']})", ""]
-        out += [f"Scenario đạt: {passed}/{len(results)}.", ""] + gate_table(summary) + [""]
+        out += [f"Scenario đạt: {passed}/{len(results)}.", ""]
+        if meta.get("regraded_changes"):
+            out += [
+                f"Chấm lại từ quỹ đạo thô của `{Path(meta['regraded_from']).name}` bằng bộ chấm đã sửa (không gọi lại mô hình); "
+                "chỉ các kết luận sau thay đổi: " + "; ".join(meta["regraded_changes"]) + ".",
+                "",
+            ]
+        out += gate_table(summary) + [""]
         if name == "Gemini":
             durations = sorted(r["duration_s"] for r in results)
             tokens_in = sum(r.get("usage", {}).get("input_tokens", 0) for r in results)

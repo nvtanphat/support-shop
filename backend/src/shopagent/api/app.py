@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from contextlib import asynccontextmanager
 
@@ -21,6 +22,7 @@ from shopagent.api.routers import (
 )
 from shopagent.core.config import get_settings
 from shopagent.core.errors import AppError
+from shopagent.rag.reranker import warm_up
 
 
 @asynccontextmanager
@@ -63,6 +65,14 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.critical("LỖI KHỞI ĐỘNG PRODUCTION: Không thể kết nối cơ sở dữ liệu: %s", e)
             raise RuntimeError(f"Database connection failed on startup: {e}") from e
+
+    # Policy reranker: loaded at startup so the first policy question is fast and a missing model fails fast.
+    try:
+        if await asyncio.to_thread(warm_up):
+            logger.info("Reranker chính sách đã nạp sẵn.")
+    except Exception as e:
+        logger.critical("Không nạp được reranker chính sách: %s", e)
+        raise RuntimeError(f"Policy reranker failed to load on startup: {e}") from e
 
     # Checkpointer: opened inside the running loop (async Postgres pool) and wired into the graph.
     try:
