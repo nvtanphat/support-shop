@@ -180,6 +180,8 @@ async def seed_demo_scenarios(session: AsyncSession, now: datetime) -> dict[str,
             it = OrderItemModel(id=_uid(5000 + i * 10 + j), order_id=order.id, variant_id=v.id, qty=q, unit_price=v.price, allocated_discount=alloc)
             items[case.code].append(it)
             session.add(it)
+        # Payments and shipments reference the order by foreign key only, so the order must be written first.
+        await session.flush()
 
         if pay_status in ("paid", "refunded") and case.method != "cod":
             session.add(PaymentModel(id=_uid(9000 + i), order_id=order.id, gateway=case.method, gateway_txn_id=f"DEMO-TXN-{i:04d}", amount=total, status="succeeded", mode="simulated", created_at=placed_at))

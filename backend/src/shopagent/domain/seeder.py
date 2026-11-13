@@ -12,6 +12,7 @@ import hashlib
 import random
 import uuid
 from datetime import datetime, timedelta
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -185,6 +186,9 @@ async def generate_seed_data(
     await session.flush()
 
     # 4. Orders & Items
+    # Payments and shipments reference orders by foreign key without an ORM relationship, so the unit of work
+    # does not order them after the orders. They are added once the orders have been written.
+    order_children: list[Any] = []
     orders: list[OrderModel] = []
     returnable_orders: list[OrderModel] = []
     for o_idx in range(1, num_orders + 1):
@@ -287,7 +291,7 @@ async def generate_seed_data(
             session.add(it)
 
         if p_status in (PaymentStatus.PAID.value, PaymentStatus.REFUNDED.value) and method != PaymentMethod.COD.value:
-            session.add(
+            order_children.append(
                 PaymentModel(
                     id=generate_uuid(), order_id=order.id, gateway=method, gateway_txn_id=f"SEED-TXN-{o_idx:06d}",
                     amount=total, status="succeeded", mode="simulated", created_at=placed_at,
@@ -308,13 +312,15 @@ async def generate_seed_data(
                 id=generate_uuid(), order_id=order.id, carrier="ShopLab Logistics", tracking_code=f"SLB{o_idx:06d}VN",
                 status=ship_events[-1][0], direction="outbound", created_at=ship_events[0][2],
             )
-            session.add(ship)
+            order_children.append(ship)
             for st, loc, at in ship_events:
-                session.add(ShipmentEventModel(id=generate_uuid(), shipment_id=ship.id, status=st, location=loc, occurred_at=at))
+                order_children.append(ShipmentEventModel(id=generate_uuid(), shipment_id=ship.id, status=st, location=loc, occurred_at=at))
 
         if delivered_at is not None:
             returnable_orders.append(order)
 
+    await session.flush()
+    session.add_all(order_children)
     await session.flush()
 
     # 5. Historical return requests (~150): items, evidence, and a refund where one was accepted.
@@ -327,6 +333,7 @@ async def generate_seed_data(
         items_by_order.setdefault(it.order_id, []).append(it)
 
     return_count = 0
+    refunds: list[RefundModel] = []  # reference return_requests by foreign key only: added after they are flushed
     used: set[uuid.UUID] = set()
     for ret_idx in range(1, 151):
         if not pool:
@@ -379,7 +386,7 @@ async def generate_seed_data(
                     )
                 )
         if ret_status == ReturnStatus.COMPLETED.value and net > 0:
-            session.add(
+            refunds.append(
                 RefundModel(
                     id=generate_uuid(), code=f"RF-{ret_idx:06d}", order_id=order.id, return_id=ret_id, amount=net,
                     breakdown={"net_refundable": net}, method="original", status="succeeded",
@@ -390,6 +397,8 @@ async def generate_seed_data(
             order.payment_status = PaymentStatus.REFUNDED.value if net >= order.paid_amount else PaymentStatus.PARTIALLY_REFUNDED.value
         return_count += 1
 
+    await session.flush()
+    session.add_all(refunds)
     await session.flush()
     demo = await seed_demo_scenarios(session, now)
 
