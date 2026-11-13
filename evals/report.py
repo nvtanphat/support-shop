@@ -177,7 +177,7 @@ def build(args: argparse.Namespace) -> str:
     rag_rows: dict[str, dict[str, Any]] = {}
     if args.retrieval:
         rag_rows = {r["strategy"]: r for r in json.loads(Path(args.retrieval).read_text(encoding="utf-8"))}
-        out += ["## Retrieval benchmark (benchmark_v2, split test)", "", "| Strategy | R@1 | R@4 | MRR | nDCG@4 | P@4 | Từ chối OOD | Từ chối nhầm | p50 ms |", "|---|---|---|---|---|---|---|---|---|"]
+        out += ["## Retrieval benchmark (bộ truy vấn độc lập, split test)", "", "| Strategy | R@1 | R@4 | MRR | nDCG@4 | P@4 | Từ chối OOD | Từ chối nhầm | p50 ms |", "|---|---|---|---|---|---|---|---|---|"]
         for r in rag_rows.values():
             out.append(
                 f"| {r['strategy']} | {r['recall@1']} | {r['recall@4']} | {r['mrr']} | {r['ndcg@4']} | {r['precision@4']} | "
@@ -188,13 +188,13 @@ def build(args: argparse.Namespace) -> str:
     holdout_rows: list[dict[str, Any]] = json.loads(Path(args.holdout).read_text(encoding="utf-8")) if args.holdout else []
     if holdout_rows:
         out += [
-            "## Retrieval holdout (benchmark_v3_holdout, ngưỡng chốt từ benchmark_v2 trước khi chấm)",
+            "## Retrieval holdout (policy_queries_holdout, ngưỡng chốt từ bộ độc lập trước khi chấm)",
             "",
             "| Khôi phục dấu | Tập | Ngưỡng | R@1 | R@1 (đủ mọi điều khoản) | R@4 | MRR | Từ chối ngoài phạm vi | Từ chối nhầm | Mẫu (hợp lệ/ngoài phạm vi) |",
             "|---|---|---|---|---|---|---|---|---|---|",
         ]
         for row in holdout_rows:
-            for label, key in (("calibration v2", "calibration_v2"), ("holdout v3", "holdout_v3")):
+            for label, key in (("calibration", "calibration"), ("holdout", "holdout")):
                 x = row[key]
                 out.append(
                     f"| {'có' if row['diacritic_restoration'] else 'không'} | {label} | {x['threshold']} | {x['recall@1']} | {x['recall@1_all_required']} | {x['recall@4']} | "
@@ -235,9 +235,9 @@ def build(args: argparse.Namespace) -> str:
         for _key, label in GATE_ROWS:
             matrix.append((label, "see quality_gates.yaml", "no Gemini run supplied", "NOT VERIFIED"))
     strategy = rag_rows.get(args.rag_strategy or "")
-    held = holdout_rows[0]["holdout_v3"] if holdout_rows else None
+    held = holdout_rows[0]["holdout"] if holdout_rows else None
     if held:
-        note = f" (holdout v3, n={held['answerable']}/{held['out_of_domain']}, ngưỡng chốt từ v2)"
+        note = f" (holdout, n={held['answerable']}/{held['out_of_domain']}, ngưỡng chốt từ bộ độc lập)"
         matrix.append(("RAG Recall@1", ">= 0.90", f"{held['recall@1']}{note}", status_for(held["recall@1"], 0.90)))
         matrix.append(("RAG Recall@4", ">= 0.95", f"{held['recall@4']}{note}", status_for(held["recall@4"], 0.95)))
         matrix.append(("Unsupported-Query Rejection", ">= 0.95", f"{held['unsupported_rejection']}{note}", status_for(held["unsupported_rejection"], 0.95)))

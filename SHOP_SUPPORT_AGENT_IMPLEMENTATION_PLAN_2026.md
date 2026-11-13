@@ -645,7 +645,7 @@ Agent tự viết truy vấn (đã giải đại từ theo ngữ cảnh hội th
 
 ### 7.5 Đánh giá truy xuất
 
-Bộ 80 truy vấn trong `evals/retrieval/queries.yaml`, mỗi truy vấn có danh sách `clause_id` đúng. Thành phần: 30 có dấu chuẩn, 20 không dấu, 15 viết tắt/teencode, 10 hỏi gián tiếp, 5 không có đáp án. Chỉ số: recall@4, MRR, tỉ lệ từ chối đúng với nhóm không đáp án.
+Bộ 80 truy vấn trong `evals/retrieval/policy_queries_baseline.yaml`, mỗi truy vấn có danh sách `clause_id` đúng. Thành phần: 30 có dấu chuẩn, 20 không dấu, 15 viết tắt/teencode, 10 hỏi gián tiếp, 5 không có đáp án. Chỉ số: recall@4, MRR, tỉ lệ từ chối đúng với nhóm không đáp án.
 
 ---
 
@@ -1192,7 +1192,7 @@ shop-support-agent/
 ├─ evals/
 │  ├─ scenarios/      A_policy/ … I_adversarial/
 │  ├─ personas/*.yaml
-│  ├─ retrieval/queries.yaml
+│  ├─ retrieval/policy_queries_baseline.yaml
 │  ├─ ground_truth/policy_decision_table.csv
 │  ├─ harness/        runner.py  scripted_user.py  simulated_user.py  staff_actor.py
 │  │                  oracle_agent.py  null_agent.py  graders.py  metrics.py  report.py

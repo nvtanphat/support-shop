@@ -1,6 +1,6 @@
 """Optional multilingual cross-encoder reranking for policy retrieval.
 
-Measured on evals/retrieval/benchmark_v2.yaml (test split, 37 answerable queries) it lifts
+Measured on evals/retrieval/policy_queries_independent.yaml (test split, 37 answerable queries) it lifts
 Recall@1 from 0.57 to 0.95 at about 2 s per query on CPU, so it is opt-in via
 config/app.yaml (`retrieval.reranker.enabled`). When enabled, a missing dependency or model is a
 hard error: retrieval never silently falls back to the weaker ranking.

@@ -1,6 +1,6 @@
 """Lexical ranking for policy retrieval: query normalisation and Okapi BM25.
 
-Both are measured against the independent benchmark (evals/retrieval/benchmark_v2.yaml): BM25 with
+Both are measured against the independent benchmark (evals/retrieval/policy_queries_independent.yaml): BM25 with
 normalisation beat the previous token-overlap + hashed n-gram fusion on Recall@1/4, MRR and nDCG
 without a new dependency.
 """

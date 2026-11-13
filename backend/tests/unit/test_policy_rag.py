@@ -57,7 +57,7 @@ def test_vietnamese_unaccent_normalization():
 @pytest.mark.asyncio
 async def test_policy_retrieval_benchmark_r1_and_r2():
     """Evaluate 80 queries benchmark: R1 (Recall@4 >= 95%) and R2 (Recall@4 >= 90%)."""
-    queries_path = Path(__file__).resolve().parents[3] / "evals" / "retrieval" / "queries.yaml"
+    queries_path = Path(__file__).resolve().parents[3] / "evals" / "retrieval" / "policy_queries_baseline.yaml"
     assert queries_path.exists(), f"Query benchmark file not found at {queries_path}"
 
     with open(queries_path, encoding="utf-8") as f:
@@ -360,7 +360,7 @@ def test_query_normalization_expands_shorthand_without_touching_words() -> None:
 @pytest.mark.asyncio
 async def test_production_retriever_meets_the_measured_benchmark_floor() -> None:
     """The production path (not only the research runner) keeps the benchmark gains."""
-    spec = yaml.safe_load((Path(__file__).resolve().parents[3] / "evals" / "retrieval" / "benchmark_v2.yaml").read_text(encoding="utf-8"))
+    spec = yaml.safe_load((Path(__file__).resolve().parents[3] / "evals" / "retrieval" / "policy_queries_independent.yaml").read_text(encoding="utf-8"))
     items = [i for i in spec["queries"] if i["split"] == "test" and i["expected"] and "as_of" not in i]
     retriever = HybridRetriever(in_memory=True)
     top1 = top4 = 0

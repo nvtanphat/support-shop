@@ -1,6 +1,6 @@
 """Policy retriever: BM25 over normalised queries, optional cross-encoder reranking, cached index.
 
-Ranking choices are justified by evals/retrieval (benchmark_v2). The index snapshot (parsed chunks)
+Ranking choices are justified by evals/retrieval (the independent query set). The index snapshot (parsed chunks)
 is cached per process and revalidated with a cheap fingerprint query, so a lookup no longer reloads
 and re-tokenises every clause; reranker results are cached per (query, candidates).
 """

@@ -2,7 +2,7 @@
 
 Customers often type "hang loi doi tra" with no accents. A multilingual cross-encoder scores such text
 far lower than the same words with diacritics, which makes unsupported-query rejection unreliable
-(reranker AUC 0.86 raw vs 0.985 restored on benchmark_v2). Restoration is a dictionary lookup built
+(reranker AUC 0.86 raw vs 0.985 restored on the independent query set). Restoration is a dictionary lookup built
 from the policy text itself plus a short list of very common function words, so it needs no model.
 """
 

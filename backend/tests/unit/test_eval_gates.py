@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 
 from evals.harness.gates import compute_gate_metrics, evaluate_gates, load_gates
-from evals.harness.graders import grade_tool_execution, score_tool_use
 from evals.harness.models import ScenarioRunResult
 from evals.harness.runner import eval_database_url
+from evals.harness.tool_graders import grade_tool_execution, score_tool_use
 
 
 def run_result(**overrides) -> ScenarioRunResult:  # type: ignore[no-untyped-def]

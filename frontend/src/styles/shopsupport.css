@@ -1,4 +1,4 @@
-/* ShopSupport AI interface. Ported from the approved design (ShopSupport_AI.html); rules are scoped
+/* ShopSupport AI interface. Ported from the approved design (docs/design/ShopSupport_AI.html); rules are scoped
    under `.ss` so they cannot leak into the Tailwind-styled staff portal and modals. */
 :root{color-scheme:light;--p:#7a2cf5;--p2:#6a14f0;--pl:#ede9fe;--pl2:#f3efff;--tx:#1b1535;--mu:#5d5878;--bd:#e4defa;--ok:#16a34a;--bg:#f2effe;--card:#fff;--bub:#ece6ff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 :root[data-theme="dark"]{--tx:#efeaff;--mu:#a9a2c8;--bd:#3a3260;--bg:#15112b;--card:#1e1940;--bub:#2d2557;--pl:#2d2557;--pl2:#262050}

@@ -17,10 +17,10 @@ from evals.harness.graders import (
     grade_db_state,
     grade_forbidden_patterns,
     grade_required_facts,
-    grade_tool_execution,
 )
 from evals.harness.models import ForbiddenPattern, RequiredFact
-from evals.harness.runner import load_scenario_from_yaml
+from evals.harness.scenario_loader import load_scenario_from_yaml
+from evals.harness.tool_graders import grade_tool_execution
 
 
 def test_grade_required_facts_pattern_success() -> None:

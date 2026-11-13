@@ -1,4 +1,4 @@
-"""Retrieval benchmark: compare ranking strategies on benchmark_v2.yaml.
+"""Retrieval benchmark: compare ranking strategies on policy_queries_independent.yaml.
 
 Strategies share the temporal filter and the chunk store, so differences come from ranking only.
 The unsupported-query threshold is calibrated on the `dev` split and every reported number comes
@@ -26,7 +26,7 @@ from shopagent.rag.embeddings import get_embedding_provider
 from shopagent.rag.generator import generate_policy_clauses
 from shopagent.rag.lexical import Bm25Index, normalize_query
 
-BENCHMARK_PATH = Path(__file__).with_name("benchmark_v2.yaml")
+BENCHMARK_PATH = Path(__file__).with_name("policy_queries_independent.yaml")
 TOP_K = 4
 RRF_K = 60
 

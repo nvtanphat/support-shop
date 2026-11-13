@@ -1,9 +1,9 @@
-"""Calibrate the unsupported-query threshold on benchmark_v2, then report on the untouched benchmark_v3.
+"""Calibrate the unsupported-query threshold on the independent query set, then report on the untouched holdout query set.
 
     uv run --extra rerank python -m evals.retrieval.holdout [--json out.json]
 
 The production retriever runs unchanged (BM25, normalised query, diacritic restoration, cross-encoder).
-The threshold is the score that maximises balanced accuracy on benchmark_v2; benchmark_v3 was written
+The threshold is the score that maximises balanced accuracy on the independent query set; the holdout set was written
 afterwards and is only ever scored with that frozen threshold.
 """
 
@@ -103,13 +103,13 @@ async def run(restore: bool) -> dict[str, Any]:
     if not restore:
         retriever_module._Snapshot.restore_diacritics = lambda self, query: query  # type: ignore[method-assign]
     retriever = HybridRetriever(in_memory=True, reranker=CrossEncoderReranker(MODEL), min_rerank_score=None)
-    calibration = await score_all(retriever, load("benchmark_v2.yaml"))
-    holdout = await score_all(retriever, load("benchmark_v3_holdout.yaml"))
+    calibration = await score_all(retriever, load("policy_queries_independent.yaml"))
+    holdout = await score_all(retriever, load("policy_queries_holdout.yaml"))
     threshold = calibrate(calibration)
     return {
         "diacritic_restoration": restore,
-        "calibration_v2": report(calibration, threshold),
-        "holdout_v3": report(holdout, threshold),
+        "calibration": report(calibration, threshold),
+        "holdout": report(holdout, threshold),
     }
 
 

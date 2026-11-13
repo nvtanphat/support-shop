@@ -72,7 +72,7 @@ Khi cửa hàng cập nhật quy định đổi trả/hủy đơn:
    ```
 3. **Đánh chỉ mục lại vào Policy Chunks (RAG):**
    ```bash
-   python -m shopagent.rag.indexer
+   python -m shopagent.cli index-policies
    ```
 4. **Kiểm tra hồi quy:**
    ```bash

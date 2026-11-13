@@ -35,8 +35,8 @@ allowed_link_domains:
 # Needs the `rerank` extra and a ~570 MB model, and costs ~2 s per policy lookup on CPU. If it is enabled
 # and cannot load, policy lookups fail loudly instead of falling back to the weaker ranking.
 # min_score: below this best cross-encoder score the question is treated as outside the policy. It was
-# calibrated on evals/retrieval/benchmark_v2.yaml and then measured once on the untouched
-# benchmark_v3_holdout.yaml (see docs/eval-report.md); recalibrate with `python -m evals.retrieval.holdout`
+# calibrated on evals/retrieval/policy_queries_independent.yaml and then measured once on the untouched
+# policy_queries_holdout.yaml (see docs/eval-report.md); recalibrate with `python -m evals.retrieval.holdout`
 # whenever the model or the clause texts change. Tests turn the reranker off (RETRIEVAL_RERANKER_ENABLED=false).
 retrieval:
   reranker:

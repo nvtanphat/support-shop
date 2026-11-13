@@ -1,184 +1,135 @@
-# ShopSupport AI — Customer Support Agent
+# ShopSupport AI
 
-Ứng dụng Trợ lý Chăm sóc Khách hàng AI cho sàn thương mại điện tử: Giải đáp chính sách (Hybrid RAG), tra cứu đơn hàng phân quyền bảo mật, và xử lý luồng hủy đơn / đổi hàng / trả hàng hoàn tiền theo nguyên tắc **Rule of Two** và quy định TMĐT Việt Nam 2026.
+Trợ lý chăm sóc khách hàng cho sàn thương mại điện tử: trả lời chính sách bằng RAG, tra cứu đơn hàng theo quyền, và xử lý hủy đơn, đổi hàng, trả hàng hoàn tiền theo quy định thương mại điện tử Việt Nam.
 
----
+Nguyên tắc cốt lõi: **LLM đề xuất, khách hàng xác nhận, hệ thống thực thi.** LLM không có quyền ghi vào cơ sở dữ liệu.
 
-## 1. Kiến trúc Cốt lõi & Kiểm soát An ninh
+## Kiến trúc
 
-Hệ thống áp dụng nguyên tắc **"LLM đề xuất — Khách hàng xác nhận — Hệ thống thực thi"**:
-- **Không trao quyền đột biến cho LLM**: LLM không có quyền sửa DB hay kích hoạt thanh toán trực tiếp; chỉ phát sinh đề xuất (`ActionProposal`) kèm mã băm `preview_hash` và thời hạn 15 phút.
-- **Xác nhận qua API bảo mật**: Khách hàng bấm nút xác nhận trực tiếp trên giao diện (`POST /actions/{id}/confirm`). Domain Service kiểm tra lại toàn bộ điều kiện và tính toán số tiền hoàn tất định trước khi ghi Outbox.
-- **Phân tách quyền hạn Dual-Key**: Đơn hoàn tiền $\ge 500.000$ đ hoặc rủi ro cao bắt buộc chuyển sang bàn làm việc nhân viên (`PENDING_STAFF_APPROVAL`).
-- **Chống Race Condition & Idempotency 2 tầng**: Sequence tin nhắn và sự kiện SSE được cấp phát nguyên tử qua khóa bi quan `with_for_update()` trên PostgreSQL. Phía Client gửi `X-Idempotency-Key` (turn_id) để khử trùng lặp hiển thị.
+- LLM chỉ tạo `ActionProposal` có `preview_hash` và hạn 15 phút. Hành động chỉ chạy khi khách gọi `POST /actions/{id}/confirm`; domain service kiểm tra lại điều kiện và tính tiền hoàn bằng code.
+- Hoàn tiền từ 500.000 đ trở lên hoặc có rủi ro cao chuyển sang nhân viên duyệt (`PENDING_STAFF_APPROVAL`).
+- Số thứ tự tin nhắn và sự kiện SSE cấp phát nguyên tử bằng khóa bi quan trên PostgreSQL; client gửi `X-Idempotency-Key` để khử trùng lặp.
 
 ```mermaid
 flowchart LR
-    Customer(["Khách hàng"]) -->|Tin nhắn| Agent["LangGraph 5 Nodes\n(Screen -> Context -> LLM -> Verify -> Persist)"]
+    Customer(["Khách hàng"]) -->|Tin nhắn| Agent["LangGraph: 5 node"]
     Agent -->|ActionCard| Customer
-    Customer -->|Xác nhận API| ConfirmAPI["POST /actions/{id}/confirm"]
-    ConfirmAPI --> Policy["Domain Policy Engine\n& State Machine"]
-    Policy --> Outbox[("Bảng Outbox Events")]
-    Outbox --> Worker["Outbox Worker Process"]
-    Worker --> Payment[("Cổng thanh toán mô phỏng")]
+    Customer -->|Xác nhận| Confirm["POST /actions/{id}/confirm"]
+    Confirm --> Domain["Domain service và state machine"]
+    Domain --> Outbox[("Outbox")]
+    Outbox --> Worker["Worker"]
 ```
 
-### Quy trình 5 Bước LangGraph trong Mỗi Lượt Hội thoại
-1. `load_context`: Nạp định danh (`Principal`), mốc thời gian hệ thống (`Clock`), và ngữ cảnh đề xuất đang chờ.
-2. `screen_input`: Nhận diện Prompt Injection, lọc đầu vào bất thường và che giấu PII (số thẻ, CCCD, điện thoại).
-3. `agent`: Lý luận và gọi công cụ (Gemini Flash Lite + 11 Tools nghiệp vụ phân quyền theo Principal).
-4. `verify_output`: Đối chiếu trích dẫn `[POL-...]`, kiểm tra nguồn gốc số liệu, chặn tuyên bố hoàn tất sai sự thật (Bất biến S5).
-5. `persist_emit`: Cấp phát số thứ tự tin nhắn nguyên tử, lưu DB và phát sự kiện qua Server-Sent Events (SSE).
+### Một lượt hội thoại
 
----
+1. `load_context`: nạp `Principal`, đồng hồ hệ thống, đề xuất đang chờ.
+2. `screen_input`: chặn prompt injection, che PII.
+3. `agent`: Gemini gọi tool. Vòng lặp có giới hạn số bước, số lần gọi tool và thời gian; thiếu tool bắt buộc thì bị nhắc tối đa 2 lần rồi trả lời `requirements_unmet`.
+4. `verify_output`: đối chiếu trích dẫn `[POL-...]`, số liệu và tuyên bố hoàn tất với kết quả tool thành công.
+5. `persist_emit`: lưu tin nhắn và phát sự kiện SSE.
 
-## 2. Danh mục 11 Công cụ Nghiệp vụ (Tools)
+Quyết định thiết kế chi tiết nằm ở [docs/adr/](docs/adr/), riêng cơ chế điều khiển lượt ở [ADR 022](docs/adr/022-D22-agent-turn-control.md).
 
-| # | Tên Tool | Quyền hạn | Mô tả |
-|:---:|---|:---:|---|
-| 1 | `search_policy` | Công khai | Tra cứu điều khoản chính sách Hybrid RAG (BM25 + Semantic Cosine + RRF). |
-| 2 | `lookup_order_guest` | Khách vãng lai | Tra cứu trạng thái đơn hàng sau khi xác thực OTP SMS; che thông tin nhạy cảm. |
-| 3 | `list_my_orders` | Khách đăng nhập | Xem danh sách đơn hàng gần đây của tài khoản. |
-| 4 | `get_order` | Khách đăng nhập | Xem chi tiết đơn hàng, sản phẩm, trạng thái thanh toán và vận chuyển. |
-| 5 | `track_shipment` | Khách đăng nhập | Theo dõi tiến trình vận chuyển và lịch sử quét mã kiện hàng. |
-| 6 | `check_return_eligibility`| Khách đăng nhập | Kiểm tra điều kiện đổi/trả, phân bổ voucher và tính toán tiền hoàn tất định. |
-| 7 | `check_variant_stock` | Khách đăng nhập | Kiểm tra số lượng tồn kho của SKU sản phẩm muốn đổi sang. |
-| 8 | `get_case_status` | Khách đăng nhập | Tra cứu tiến độ hồ sơ đổi trả (`RT-`), hoàn tiền (`RF-`), hoặc phiếu hỗ trợ (`TK-`). |
-| 9 | `propose_cancel_order` | Khách đăng nhập | Tạo đề xuất hủy đơn hàng để khách xác nhận (không tự ý hủy trực tiếp). |
-| 10 | `propose_return` | Khách đăng nhập | Tạo đề xuất đổi hàng hoặc trả hàng hoàn tiền kèm phân tích chi phí. |
-| 11 | `escalate_to_human` | Mọi người dùng | Tạo Ticket chuyển tiếp cho nhân viên hỗ trợ khi có tranh chấp hoặc sự cố thanh toán. |
+### Tìm kiếm chính sách
 
----
+BM25 trên điều khoản chính sách, chuẩn hóa câu hỏi (viết tắt, số tiền), khôi phục dấu tiếng Việt, rồi tùy chọn xếp hạng lại bằng cross-encoder `BAAI/bge-reranker-v2-m3-int8`. Câu hỏi có điểm dưới ngưỡng `retrieval.reranker.min_score` trong [config/app.yaml](config/app.yaml) bị từ chối thay vì trả điều khoản gần đúng.
 
-## 3. Kết quả Đánh giá Nghiệm thu (Quality Gates)
+## 11 công cụ nghiệp vụ
 
-Số liệu đã đo trong lần audit 12-13/11/2026 (chi tiết, giới hạn và mục `NOT VERIFIED` ở [`docs/eval-report.md`](docs/eval-report.md)):
+| Tool | Quyền | Mô tả |
+|---|---|---|
+| `search_policy` | Công khai | Tra cứu điều khoản chính sách |
+| `lookup_order_guest` | Khách vãng lai | Tra cứu đơn sau khi xác thực OTP |
+| `list_my_orders` | Đăng nhập | Danh sách đơn gần đây |
+| `get_order` | Đăng nhập | Chi tiết đơn, thanh toán, vận chuyển |
+| `track_shipment` | Đăng nhập | Lịch sử vận chuyển |
+| `check_return_eligibility` | Đăng nhập | Điều kiện đổi trả và số tiền hoàn |
+| `check_variant_stock` | Đăng nhập | Tồn kho SKU muốn đổi |
+| `get_case_status` | Đăng nhập | Tiến độ hồ sơ `RT-`, `RF-`, `TK-` |
+| `propose_cancel_order` | Đăng nhập | Đề xuất hủy đơn |
+| `propose_return` | Đăng nhập | Đề xuất đổi hoặc trả hàng |
+| `escalate_to_human` | Mọi người | Chuyển nhân viên khi có tranh chấp |
 
-| Nhóm kiểm thử | Công cụ / Tiêu chí | Kết quả thực tế | Trạng thái |
-|---|---|:---:|:---:|
-| **An toàn & Tài chính** | Hành động tài chính trái phép, tuyên bố hoàn tất sai, rò rỉ giữa khách (Gemini thật, 44 kịch bản) | **0 / 0 / 0** | **ĐẠT** |
-| **Mô hình chuẩn (Oracle)** | 44 kịch bản (có kiểm tra tool, tham số, thứ tự, hỏi thiếu thông tin) | **44/44** | **ĐẠT** |
-| **Mô hình thật (LangGraph)** | Gemini 3.5 Flash Lite, 44 kịch bản, k=1, bật reranker | **40/44 (90,9%)**; 4 lỗi còn lại đều do 429 giới hạn tốc độ, chạy lại 4/4 đạt | **ĐẠT** (cổng 90%, mẫu nhỏ, chưa lặp k≥3) |
-| **Tính độc lập (Null Agent)** | Chỉ từ chối mặc định, không thực thi giao dịch; phải trượt cổng chất lượng | **6/44, trượt cổng** | **ĐẠT** |
-| **Code Quality & Lint** | Ruff Linter & Formatter | **0 lỗi / 0 cảnh báo** | **ĐẠT** |
-| **Type Safety** | Mypy | **0 lỗi (113 source files)** | **ĐẠT** |
-| **Backend Unit & Integration** | Pytest với PostgreSQL thật (gồm checkpoint async) | **156/156 PASS** | **ĐẠT** |
-| **RAG (tập holdout mới, 28 câu hợp lệ + 20 câu ngoài phạm vi)** | Recall@1 / Recall@4 / từ chối câu ngoài phạm vi (reranker + khôi phục dấu, ngưỡng chốt từ benchmark cũ) | 0,93 / 0,98 / **1,00** | **ĐẠT** (mẫu nhỏ) |
-| **Frontend Unit Tests** | Vitest (gồm kiểm tra không còn dữ liệu demo cứng trong mã giao diện) | **28/28 PASS** | **ĐẠT** |
-| **Frontend E2E Journeys** | Playwright Chromium Headless (5 hành trình, cục bộ sau khi đổi giao diện) | **5/5 PASS** | **ĐẠT** |
-| **Frontend Build** | TypeScript + Vite Production Build | **0 lỗi** | **ĐẠT** |
+## Kết quả đánh giá
 
-Chi tiết báo cáo đo kiểm: [`docs/eval-report.md`](docs/eval-report.md).
+Số liệu đo ngày 12-13/11/2026. Báo cáo đầy đủ, giới hạn và mục chưa kiểm chứng: [docs/eval-report.md](docs/eval-report.md), sinh tự động từ artifact bằng `python -m evals.report`.
 
----
+| Hạng mục | Kết quả | Ghi chú |
+|---|---|---|
+| Gemini thật, 44 kịch bản | 43/44 (97,7%) | k=1; một kịch bản chấm lại sau khi sửa bộ chấm |
+| Oracle (không dùng LLM) | 44/44 | kiểm tra bộ chấm và kịch bản |
+| Null agent | 6/44, trượt cổng | bộ chấm không cho qua agent rỗng |
+| Hành động tài chính trái phép, tuyên bố sai, rò rỉ giữa khách | 0 / 0 / 0 | |
+| RAG trên tập holdout | Recall@1 0,93, Recall@4 0,98, từ chối ngoài phạm vi 1,00 | 28 câu hợp lệ, 20 câu ngoài phạm vi |
+| Backend | 162 test đạt, 4 test PostgreSQL bỏ qua khi không đặt `TEST_POSTGRES_URL` | CI chạy đủ với PostgreSQL |
+| Frontend | Vitest 28/28, Playwright 5/5 | |
 
-## 4. Cấu trúc Thư mục
+Chưa kiểm chứng: ảnh Docker chưa build, chưa chạy lặp k ≥ 3, chưa thử tải đồng thời với Gemini thật.
+
+## Cấu trúc thư mục
 
 ```
-shop-support-agent/
-├── backend/                        # Backend Python (FastAPI + LangGraph + SQLAlchemy)
-│   ├── src/shopagent/
-│   │   ├── agent/                  # LangGraph StateGraph (5 nodes, 11 tools, durable checkpoint)
-│   │   ├── api/                    # Routers, schemas, dependencies, health/readiness probes
-│   │   ├── core/                   # Principal identity, config, security, clock tiêm được
-│   │   ├── domain/                 # Logic nghiệp vụ thuần túy, policy engine, refund calculator
-│   │   ├── infra/                  # DB models, Alembic migrations, repositories, outbox worker
-│   │   └── rag/                    # Chunking, indexing, lexical BM25 + semantic hybrid retriever
-│   └── tests/                      # Bộ 57 tests backend (unit, integration, resilience)
-├── frontend/                       # Frontend React 18 SPA (Vite + Tailwind CSS)
-│   ├── src/
-│   │   ├── features/chat/          # Khung chat, bong bóng tin nhắn, ActionCard, OTP Modal
-│   │   ├── features/staff/         # Cổng làm việc nhân viên duyệt đơn hoàn tiền
-│   │   └── lib/                    # API client có truyền X-Idempotency-Key
-│   └── tests/                      # Vitest unit tests và Playwright E2E specs
-├── config/                         # Cấu hình tập trung (policy rules, models, system prompt)
-├── docs/                           # Tài liệu kỹ thuật, ADRs, eval report
-├── evals/                          # Bộ đánh giá độc lập (40 kịch bản, oracle, null agent, graders)
-└── docker-compose.yml              # Container Postgres 17 + pgvector, Phoenix, Mailpit
+backend/src/shopagent/
+  agent/    đồ thị LangGraph, tool, guard (tool_requirements, slot_guard, grounding), checkpoint
+  api/      router, schema, dependency, health
+  core/     Principal, cấu hình, đồng hồ tiêm được
+  domain/   nghiệp vụ, policy engine, tính tiền hoàn
+  infra/    bảng DB, migration, LLM factory, outbox
+  rag/      chunking, index, BM25, khôi phục dấu, reranker
+backend/tests/   unit, api, integration
+frontend/src/    app, features/chat, features/staff, components, lib, styles
+config/          app.yaml, models.yaml, policy, prompt hệ thống
+docs/            spec nghiệp vụ, runbook, threat model, ADR, báo cáo đánh giá, design/
+evals/           harness, 44 kịch bản, bộ truy vấn chính sách, báo cáo
 ```
 
----
+## Chạy cục bộ
 
-## 5. Hướng dẫn Khởi chạy (Quickstart)
+Cần Python 3.12+, `uv`, Node.js 20+. PostgreSQL 17 chạy qua `docker compose up -d postgres` (chuỗi kết nối mặc định ở `.env.example`).
 
-### Yêu cầu môi trường
-- Python 3.12+ và công cụ quản lý gói `uv`
-- Node.js v20+ và `npm`
-- PostgreSQL 17 (hoặc chạy qua Docker)
-
-### Bước 1: Cấu hình biến môi trường
 ```bash
-cp .env.example .env
-```
-Điền `GEMINI_API_KEY` trong file `.env`:
-```ini
-GEMINI_API_KEY=your_gemini_api_key_here
-LLM_PRIMARY_MODEL=gemini-3.5-flash-lite
-```
-
-### Bước 2: Cài đặt và khởi tạo dữ liệu
-```bash
-# Cài đặt dependencies backend
-uv sync
-
-# Chạy migration cơ sở dữ liệu
+cp .env.example .env              # điền GEMINI_API_KEY
+uv sync --extra rerank            # bỏ --extra rerank nếu không dùng reranker
 uv run alembic upgrade head
-
-# Khởi tạo dữ liệu mẫu và đánh chỉ mục tài liệu chính sách RAG
 uv run python -m shopagent.cli seed
-uv run python -m shopagent.rag.indexer
-
-# Cài đặt dependencies frontend
+uv run python -m shopagent.cli index-policies
 npm --prefix frontend install
 ```
 
-### Bước 3: Khởi chạy ứng dụng
-Mở 3 terminal riêng biệt:
-
-**Terminal 1 — Backend API (FastAPI):**
 ```bash
-uv run uvicorn shopagent.api.app:app --host 127.0.0.1 --port 8000 --reload
+uv run --extra rerank uvicorn shopagent.api.app:app --port 8000   # API, nạp reranker khi khởi động
+uv run python -m shopagent.worker                                 # outbox worker
+npm --prefix frontend run dev                                     # giao diện: http://localhost:5173
 ```
 
-**Terminal 2 — Outbox Background Worker:**
-```bash
-uv run python -m shopagent.worker
-```
+Giao diện nhân viên ở `/staff`. Dữ liệu mẫu có `customer1@example.com` / `pass123` và `agent@shop.vn` / `staff123`; chỉ dùng cho môi trường phát triển.
 
-**Terminal 3 — Frontend Web UI:**
-```bash
-npm --prefix frontend run dev
-```
+### Cấu hình đáng chú ý
 
-Truy cập giao diện chat khách hàng tại: [**http://localhost:5173**](http://localhost:5173)  
-Cổng làm việc nhân viên (Staff Portal) tại: [**http://localhost:5173/staff**](http://localhost:5173/staff)
+- `RETRIEVAL_RERANKER_ENABLED=false` tắt reranker (mặc định bật trong `config/app.yaml`; mô hình khoảng 1 GB RAM).
+- `GEMINI_API_KEY` nhận nhiều khóa cách nhau bằng dấu phẩy; khóa bị giới hạn tốc độ được nghỉ tạm và hệ thống chuyển sang khóa khác.
+- Hạn mức vòng lặp agent, thời gian chờ và số lần thử lại LLM ở [config/models.yaml](config/models.yaml).
+- Bộ nhớ đệm nặng (mô hình reranker) đặt qua `FASTEMBED_CACHE_PATH` và `HF_HOME`.
 
----
-
-## 6. Hướng dẫn Kiểm thử & Đánh giá
+## Kiểm thử và đánh giá
 
 ```bash
-# 1. Quét lỗi định dạng và kiểu dữ liệu
-uv run ruff check backend/src backend/tests evals
-uv run mypy backend/src/shopagent
-
-# 2. Chạy toàn bộ 57 bài test backend
-uv run pytest backend/tests -q
-
-# 3. Chạy kiểm thử thành phần giao diện (Vitest)
-npm --prefix frontend test -- --run
-
-# 4. Chạy kiểm thử luồng người dùng trình duyệt thực tế (Playwright E2E)
+uv run ruff check backend evals
+uv run mypy backend/src
+uv run pytest backend/tests -q                     # đặt TEST_POSTGRES_URL để chạy test PostgreSQL
+npm --prefix frontend test
 npm --prefix frontend run test:e2e
 
-# 5. Chạy đánh giá bộ 40 kịch bản nghiệp vụ (Oracle Agent chuẩn)
-uv run python -m evals.harness.runner --agent oracle
-
-# 6. Chạy đánh giá Agent LangGraph thực tế với LLM
-uv run python -m evals.harness.runner --agent langgraph
+uv run python -m evals.harness.runner --agent oracle --gate       # không gọi LLM
+uv run python -m evals.harness.runner --agent null                # phải trượt cổng chất lượng
+uv run python -m evals.harness.runner --agent langgraph --gate    # gọi Gemini thật, tốn hạn mức
+uv run --extra rerank python -m evals.retrieval.holdout           # đo retrieval, không gọi LLM
 ```
 
----
+Mỗi lần chạy lưu quỹ đạo thô và bảng cổng chất lượng vào `evals/results/<run>/`. Ngưỡng cổng ở [evals/quality_gates.yaml](evals/quality_gates.yaml). Harness ghi vào cơ sở dữ liệu riêng (`EVAL_DATABASE_URL`), không bao giờ vào cơ sở dữ liệu ứng dụng.
 
-## 7. Giấy phép
-Dự án được phân phối theo giấy phép **MIT License**.
+Tài liệu liên quan: [vận hành](docs/runbook.md), [mô hình đe dọa](docs/threat-model.md), [đặc tả nghiệp vụ](docs/business-spec.md), [quy tắc làm việc](AGENTS.md).
+
+## Giấy phép
+
+MIT.

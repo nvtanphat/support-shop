@@ -1,6 +1,6 @@
-# Held-out retrieval benchmark: written after the method was designed on benchmark_v2 and never used to
+# Held-out retrieval benchmark: written after the method was designed on the independent query set and never used to
 # tune any threshold, lexicon or prompt. It exists to report an honest number for unsupported-query
-# rejection and retrieval quality. Same format and same rules as benchmark_v2.yaml (no temporal cases).
+# rejection and retrieval quality. Same format and same rules as policy_queries_independent.yaml (no temporal cases).
 
 queries:
   # ---- answerable

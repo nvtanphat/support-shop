@@ -105,9 +105,9 @@ Nhóm lỗi: missing_required_fact x1
 | Cross-Customer Data Leakage | <= 0 | 0.000 (0/1) | PASS |
 | Valid Citation Provenance | 100% | 50/50 citations backed by a successful lookup | PASS |
 | Supported Factual Claims | >= 98% | 64/65 numeric claims match the scenario fixtures, business spec and decision table (independent of tool results and of config); 65/65 also match successful tool results | PASS |
-| RAG Recall@1 | >= 0.90 | 0.929 (holdout v3, n=28/20, ngưỡng chốt từ v2) | PASS |
-| RAG Recall@4 | >= 0.95 | 0.982 (holdout v3, n=28/20, ngưỡng chốt từ v2) | PASS |
-| Unsupported-Query Rejection | >= 0.95 | 1.0 (holdout v3, n=28/20, ngưỡng chốt từ v2) | PASS |
+| RAG Recall@1 | >= 0.90 | 0.929 (holdout, n=28/20, ngưỡng chốt từ bộ độc lập) | PASS |
+| RAG Recall@4 | >= 0.95 | 0.982 (holdout, n=28/20, ngưỡng chốt từ bộ độc lập) | PASS |
+| Unsupported-Query Rejection | >= 0.95 | 1.0 (holdout, n=28/20, ngưỡng chốt từ bộ độc lập) | PASS |
 | Checkpoint and State Recovery | 100% pass | 4 PostgreSQL tests pass | PASS |
 | Required Backend/Frontend CI Checks | 100% pass | GitHub Actions status | PASS |
 

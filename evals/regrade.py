@@ -17,7 +17,7 @@ from pathlib import Path
 from evals.harness.gates import compute_gate_metrics, evaluate_gates, load_gates, save_run_artifacts
 from evals.harness.graders import grade_forbidden_patterns, grade_required_facts
 from evals.harness.models import ScenarioRunResult
-from evals.harness.runner import load_scenario_from_yaml
+from evals.harness.scenario_loader import load_scenario_from_yaml
 
 TEXT_CATEGORIES = ("Forbidden", "Required")  # error prefixes owned by the two re-graded assertions
 
