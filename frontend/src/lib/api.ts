@@ -1,4 +1,13 @@
-import { Message, Order, PendingAction, ApprovalRequest, Ticket } from './types';
+import {
+  Message,
+  OrderDetail,
+  OrderListItem,
+  PendingAction,
+  PolicyDetail,
+  PolicySummary,
+  ApprovalRequest,
+  Ticket,
+} from './types';
 
 const API_BASE = '/api';
 
@@ -31,6 +40,21 @@ class ApiClient {
 
   getToken() {
     return this.token;
+  }
+
+  /** Who is signed in, for the header. Only the email's local part is kept (no other profile data). */
+  getProfile(): { kind: 'customer' | 'staff'; label: string } | null {
+    if (!this.token) return null;
+    try {
+      const raw = localStorage.getItem('session_profile');
+      return raw ? JSON.parse(raw) : { kind: 'customer', label: 'Tài khoản' };
+    } catch {
+      return { kind: 'customer', label: 'Tài khoản' };
+    }
+  }
+
+  private setProfile(kind: 'customer' | 'staff', email: string) {
+    localStorage.setItem('session_profile', JSON.stringify({ kind, label: email.split('@')[0] || 'Tài khoản' }));
   }
 
   getGuestToken() {
@@ -75,6 +99,7 @@ class ApiClient {
       body: JSON.stringify({ email, password }),
     });
     this.setToken(res.access_token);
+    this.setProfile('customer', email);
     return res;
   }
 
@@ -84,12 +109,14 @@ class ApiClient {
       body: JSON.stringify({ email, password }),
     });
     this.setToken(res.access_token);
+    this.setProfile('staff', email);
     return res;
   }
 
   logout() {
     this.setToken(null);
     this.setGuestToken(null);
+    localStorage.removeItem('session_profile');
   }
 
   // --- Guest Verification ---
@@ -146,21 +173,16 @@ class ApiClient {
   }
 
   async getOrder(orderCode: string) {
-    return this.request<{
-      order_id: string;
-      order_code: string;
-      status: string;
-      payment_method?: string;
-      total: number;
-      placed_at?: string;
-      delivered_at?: string;
-      items: Array<{
-        item_id: string;
-        product_name: string;
-        qty: number;
-        unit_price: number;
-      }>;
-    }>(`/orders/${encodeURIComponent(orderCode)}`);
+    return this.request<OrderDetail>(`/orders/${encodeURIComponent(orderCode)}`);
+  }
+
+  // --- Policies (public, current version) ---
+  async getPolicies() {
+    return this.request<{ policies: PolicySummary[] }>('/policies');
+  }
+
+  async getPolicy(clauseId: string) {
+    return this.request<PolicyDetail>(`/policies/${encodeURIComponent(clauseId)}`);
   }
 
   async sendMessage(conversationId: string, content: string, turnId?: string) {
@@ -226,8 +248,8 @@ class ApiClient {
   }
 
   // --- Customer Data ---
-  async getMyOrders(): Promise<{ orders: Order[] }> {
-    return this.request<{ orders: Order[] }>('/me/orders');
+  async getMyOrders(): Promise<{ orders: OrderListItem[] }> {
+    return this.request<{ orders: OrderListItem[] }>('/me/orders');
   }
 
   // --- Staff Workstation ---

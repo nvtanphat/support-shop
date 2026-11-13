@@ -9,7 +9,16 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from shopagent.api.routers import actions, auth, conversations, customer, guest, health, staff
+from shopagent.api.routers import (
+    actions,
+    auth,
+    conversations,
+    customer,
+    guest,
+    health,
+    policies,
+    staff,
+)
 from shopagent.core.config import get_settings
 from shopagent.core.errors import AppError
 
@@ -119,6 +128,7 @@ def create_app() -> FastAPI:
     app.include_router(conversations.router)
     app.include_router(actions.router)
     app.include_router(customer.router)
+    app.include_router(policies.router)
     app.include_router(staff.router)
 
     return app

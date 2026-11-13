@@ -95,3 +95,44 @@ export interface SSEEvent {
   data: any;
   id?: string;
 }
+
+/** Order as returned by GET /orders/{code} (see OrderService.get_order_for_principal). */
+export interface OrderDetail {
+  order_id: string;
+  order_code: string;
+  status: string;
+  payment_method?: string;
+  payment_status?: string;
+  total: number;
+  placed_at?: string | null;
+  delivered_at?: string | null;
+  items: Array<{
+    item_id: string;
+    product_name: string;
+    qty: number;
+    unit_price: number;
+  }>;
+  available_actions?: Array<{ action: string; type: string; label: string }>;
+}
+
+export interface PolicySummary {
+  clause_id: string;
+  topic: string;
+  title: string;
+  version: string;
+  effective_from: string;
+  effective_to: string | null;
+}
+
+export interface PolicyDetail extends PolicySummary {
+  text: string;
+}
+
+/** One row of GET /me/orders, newest first. */
+export interface OrderListItem {
+  order_code: string;
+  status: string;
+  total: number;
+  placed_at: string | null;
+  item_count: number;
+}

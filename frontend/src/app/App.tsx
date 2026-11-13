@@ -1,338 +1,228 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { LogIn } from 'lucide-react';
 import { EnvironmentBanner } from '../components/EnvironmentBanner';
-import { ChatView } from '../features/chat/ChatView';
+import { ChatView, ChatCommand } from '../features/chat/ChatView';
 import { StaffPortal } from '../features/staff/StaffPortal';
-import { CitationModal } from '../components/CitationModal';
-import { GuestOtpModal } from '../features/chat/GuestOtpModal';
 import { api } from '../lib/api';
 import {
-  Sparkles,
-  Search,
-  ShoppingCart,
-  User as UserIcon,
-  Bot,
-  Package,
-  FileText,
-  RefreshCw,
-  Headphones,
-  LogOut,
-  LogIn,
-  SlidersHorizontal,
-} from 'lucide-react';
+  CartIcon,
+  ChatIcon,
+  OrderLookupIcon,
+  ReceiptIcon,
+  RefreshIcon,
+  SearchIcon,
+  SupportIcon,
+  UserIcon,
+} from '../components/icons';
+
+type Tab = 'assistant' | 'staff';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'assistant' | 'lookup' | 'policy' | 'returns' | 'contact' | 'staff'>('assistant');
+  const [tab, setTab] = useState<Tab>('assistant');
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [loginEmail, setLoginEmail] = useState('lan.nguyen@example.vn');
-  const [loginPassword, setLoginPassword] = useState('SecurePass123!');
-  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [profile, setProfile] = useState(() => api.getProfile());
+  const [command, setCommand] = useState<ChatCommand | null>(null);
+  const [showLogin, setShowLogin] = useState(false);
+  const [staffLogin, setStaffLogin] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Global modals triggered from header tabs
-  const [selectedClause, setSelectedClause] = useState<string | null>(null);
-  const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
-
-  // Initialize or create new conversation
-  const initConversation = async () => {
+  const initConversation = useCallback(async () => {
     try {
       const res = await api.createConversation();
       setConversationId(res.conversation_id);
     } catch (err) {
       console.error('Error creating conversation:', err);
     }
-  };
+  }, []);
 
   useEffect(() => {
     initConversation();
-    const token = api.getToken();
-    if (token) setIsLoggedIn(true);
-  }, []);
+  }, [initConversation]);
+
+  const send = (type: ChatCommand['type']) => {
+    setTab('assistant');
+    setCommand({ type, nonce: Date.now() });
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
     try {
-      if (activeTab === 'staff') {
-        await api.staffLogin(loginEmail, loginPassword);
-      } else {
-        await api.login(loginEmail, loginPassword);
-      }
-      setIsLoggedIn(true);
-      setShowLoginModal(false);
+      if (staffLogin) await api.staffLogin(email, password);
+      else await api.login(email, password);
+      setProfile(api.getProfile());
+      setShowLogin(false);
+      setPassword('');
+      setTab(staffLogin ? 'staff' : 'assistant');
+      if (!staffLogin) initConversation();
+    } catch (err: unknown) {
+      setAuthError(err instanceof Error ? err.message : 'Đăng nhập thất bại.');
+    }
+  };
+
+  const handleLoginButton = () => {
+    if (!profile) {
+      setShowLogin(true);
+      return;
+    }
+    if (window.confirm('Đăng xuất khỏi tài khoản này?')) {
+      api.logout();
+      setProfile(null);
+      setTab('assistant');
       initConversation();
-    } catch (err: any) {
-      setAuthError(err.message || 'Đăng nhập thất bại.');
     }
   };
 
-  const handleLogout = () => {
-    api.logout();
-    setIsLoggedIn(false);
-    initConversation();
-  };
-
-  const handleTabClick = (tab: typeof activeTab) => {
-    if (tab === 'lookup') {
-      setIsOtpModalOpen(true);
-      return;
-    }
-    if (tab === 'policy') {
-      setSelectedClause('POL-RET-ELIG');
-      return;
-    }
-    setActiveTab(tab);
-  };
+  const isStaff = profile?.kind === 'staff';
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F6F5FC] text-slate-800 antialiased selection:bg-purple-200">
-      <EnvironmentBanner />
-
-      {/* Main Top Header matching ShopSupport AI style */}
-      <header className="bg-white sticky top-0 z-40 shadow-[0_1px_0_#EFE9FB,0_8px_24px_-16px_rgba(109,40,217,0.25)]">
-        <div className="max-w-[1680px] mx-auto px-6 lg:px-10 h-[64px] flex items-center justify-between gap-4">
-          
-          {/* Left Brand Logo */}
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('assistant')}>
-            <div className="w-11 h-11 flex items-center justify-center overflow-hidden">
-              <img
-                src="/images/brand/shopping-bag-icon.png"
-                alt="ShopSupport Logo"
-                className="w-full h-full object-contain"
-              />
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="font-extrabold text-slate-900 tracking-tight text-xl">
-                ShopSupport AI
-              </span>
-              <Sparkles className="w-5 h-5 text-purple-700 fill-purple-700" />
-            </div>
+    <>
+      <div className="ss">
+        <EnvironmentBanner />
+        <header>
+          <div className="logo">
+            <img src="/images/ui/logo.png" alt="" />
+            ShopSupport AI <span className="pl">✦</span>
           </div>
-
-          {/* Center Navigation Pill Tabs */}
-          <nav className="hidden md:flex items-center bg-transparent p-0 rounded-2xl text-[15px] font-semibold gap-2">
-            <button
-              onClick={() => handleTabClick('assistant')}
-              className={`px-4 py-2.5 rounded-2xl transition-all flex items-center gap-2 ${
-                activeTab === 'assistant'
-                  ? 'bg-[#E4D8FB] text-purple-800 font-bold'
-                  : 'text-slate-700 hover:text-purple-700 hover:bg-[#F4EEFF]'
-              }`}
-            >
-              <Bot className="w-4 h-4 text-purple-700" />
+          <nav>
+            <button type="button" className={tab === 'assistant' ? 'on' : ''} onClick={() => setTab('assistant')}>
+              <ChatIcon />
               <span>Trợ lý AI</span>
             </button>
-
-            <button
-              onClick={() => handleTabClick('lookup')}
-              className="px-4 py-2.5 rounded-2xl text-slate-700 hover:text-purple-700 hover:bg-[#F4EEFF] transition-all flex items-center gap-2"
-            >
-              <Package className="w-5 h-5 text-slate-600" />
+            <button type="button" onClick={() => send('lookup')}>
+              <OrderLookupIcon />
               <span>Tra cứu đơn hàng</span>
             </button>
-
-            <button
-              onClick={() => handleTabClick('policy')}
-              className="px-4 py-2.5 rounded-2xl text-slate-700 hover:text-purple-700 hover:bg-[#F4EEFF] transition-all flex items-center gap-2"
-            >
-              <FileText className="w-5 h-5 text-slate-600" />
+            <button type="button" onClick={() => send('policies')}>
+              <ReceiptIcon />
               <span>Chính sách</span>
             </button>
-
-            <button
-              onClick={() => handleTabClick('returns')}
-              className={`px-4 py-2.5 rounded-2xl transition-all flex items-center gap-2 ${
-                activeTab === 'returns'
-                  ? 'bg-[#E4D8FB] text-purple-800 font-bold'
-                  : 'text-slate-700 hover:text-purple-700 hover:bg-[#F4EEFF]'
-              }`}
-            >
-              <RefreshCw className="w-5 h-5 text-slate-600" />
+            <button type="button" onClick={() => send('returns')}>
+              <RefreshIcon />
               <span>Đổi trả</span>
             </button>
-
-            <button
-              onClick={() => handleTabClick('contact')}
-              className={`px-4 py-2.5 rounded-2xl transition-all flex items-center gap-2 ${
-                activeTab === 'contact'
-                  ? 'bg-[#E4D8FB] text-purple-800 font-bold'
-                  : 'text-slate-700 hover:text-purple-700 hover:bg-[#F4EEFF]'
-              }`}
-            >
-              <Headphones className="w-5 h-5 text-slate-600" />
+            <button type="button" onClick={() => send('contact')}>
+              <SupportIcon />
               <span>Liên hệ</span>
             </button>
-
-            <div className="h-4 w-[1px] bg-slate-300 mx-1"></div>
-
-            <button
-              onClick={() => setActiveTab('staff')}
-              className={`px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 ${
-                activeTab === 'staff'
-                  ? 'bg-indigo-600 text-white shadow-xs font-bold'
-                  : 'text-indigo-700 bg-indigo-50/80 hover:bg-indigo-100'
-              }`}
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span>Nhân viên</span>
-            </button>
+            {isStaff && (
+              <button type="button" className={tab === 'staff' ? 'on' : ''} onClick={() => setTab('staff')}>
+                <UserIcon />
+                <span>Nhân viên</span>
+              </button>
+            )}
           </nav>
-
-          {/* Right Action Icons & User Profile */}
-          <div className="flex items-center gap-3">
-            <button
-              className="w-10 h-10 rounded-xl hover:bg-purple-50 text-slate-900 hover:text-purple-700 flex items-center justify-center transition"
-              title="Tìm kiếm"
-            >
-              <Search className="w-5 h-5" />
+          <div className="hr">
+            <button type="button" className="ib" aria-label="Tìm kiếm (chưa hỗ trợ)" aria-disabled="true" title="Chưa hỗ trợ tìm kiếm">
+              <SearchIcon />
             </button>
-
-            <div className="relative">
-              <button
-                className="w-10 h-10 rounded-xl hover:bg-purple-50 text-slate-600 hover:text-purple-700 flex items-center justify-center transition"
-                title="Giỏ hàng"
-              >
-                <ShoppingCart className="w-5 h-5" />
-              </button>
-              <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-purple-700 text-white text-[10px] font-bold flex items-center justify-center shadow-xs">
-                1
-              </span>
-            </div>
-
-            {isLoggedIn ? (
-              <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-                <div className="hidden sm:flex flex-col text-right">
-                  <span className="text-xs font-bold text-slate-900 leading-tight">Lan Nguyễn</span>
-                  <span className="text-[10px] font-semibold text-purple-700">Khách hàng VIP</span>
-                </div>
-                <button
-                  onClick={handleLogout}
-                  className="w-10 h-10 rounded-xl bg-purple-50 hover:bg-red-50 text-purple-700 hover:text-red-600 flex items-center justify-center transition border border-purple-100"
-                  title="Đăng xuất"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowLoginModal(true)}
-                className="flex items-center gap-2 text-[15px] font-bold text-slate-900 hover:text-purple-700 bg-white hover:bg-[#F7F3FF] px-5 py-2.5 rounded-full transition shadow-pill"
-              >
-                <UserIcon className="w-5 h-5 text-slate-900" />
-                <span>Đăng nhập</span>
-              </button>
-            )}
+            <button type="button" className="ib" aria-label="Giỏ hàng (chưa hỗ trợ)" aria-disabled="true" title="Chưa hỗ trợ giỏ hàng">
+              <CartIcon />
+            </button>
+            <span style={{ width: 1, height: 24, background: 'var(--bd)', marginLeft: -1.6 }} />
+            <button type="button" className="login" onClick={handleLoginButton} title={profile ? 'Đăng xuất' : 'Đăng nhập'}>
+              <UserIcon />
+              <span>{profile ? profile.label : 'Đăng nhập'}</span>
+            </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Main Container Area */}
-      <main className="flex-1 max-w-[1680px] w-full mx-auto px-6 lg:px-10 py-4 flex flex-col min-h-0">
-        {activeTab === 'staff' ? (
-          <StaffPortal />
+        {tab === 'staff' && isStaff ? (
+          <div className="staff-view">
+            <StaffPortal />
+          </div>
         ) : conversationId ? (
-          <ChatView
-            conversationId={conversationId}
-            isGuest={!isLoggedIn}
-            quickFilter={activeTab === 'returns' ? 'returns' : activeTab === 'contact' ? 'contact' : undefined}
-          />
+          <ChatView conversationId={conversationId} isGuest={!profile || isStaff} command={command} />
         ) : (
-          <div className="py-24 text-center text-purple-500 text-sm flex flex-col items-center gap-3">
-            <div className="w-8 h-8 rounded-full border-2 border-purple-700 border-t-transparent animate-spin"></div>
-            <span>Đang khởi tạo phiên làm việc với ShopSupport AI...</span>
-          </div>
+          <main>
+            <section className="left">
+              <div className="chat" role="status">
+                <p className="empty">Đang khởi tạo phiên làm việc với ShopSupport AI...</p>
+              </div>
+            </section>
+          </main>
         )}
-      </main>
+      </div>
 
-      {/* Login Modal */}
-      {showLoginModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
-          onClick={() => setShowLoginModal(false)}
-        >
-          <div
-            className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-purple-100 animate-in fade-in zoom-in-95 duration-200"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center">
-                <LogIn className="w-5 h-5" />
+      {showLogin &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setShowLogin(false)}>
+            <div
+              className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-purple-100"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-labelledby="login-title"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center">
+                  <LogIn className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 id="login-title" className="font-bold text-slate-900 text-base">
+                    {staffLogin ? 'Đăng nhập nhân viên' : 'Đăng nhập khách hàng'}
+                  </h3>
+                  <p className="text-xs text-slate-500">Truy cập đầy đủ tính năng và bảo mật đơn hàng</p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-bold text-slate-900 text-base">
-                  {activeTab === 'staff' ? 'Đăng nhập Nhân viên' : 'Đăng nhập Khách hàng'}
-                </h3>
-                <p className="text-xs text-slate-500">Truy cập toàn bộ tính năng và bảo mật đơn hàng</p>
-              </div>
+
+              {authError && (
+                <div className="mb-4 p-3 bg-red-50 text-red-700 text-xs rounded-xl border border-red-200 font-medium" role="alert">
+                  {authError}
+                </div>
+              )}
+
+              <form onSubmit={handleLogin} className="space-y-3.5">
+                <div>
+                  <label htmlFor="login-email" className="block text-xs font-semibold text-slate-700 mb-1">Email</label>
+                  <input
+                    id="login-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:bg-white focus:outline-none transition"
+                    autoComplete="username"
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="login-password" className="block text-xs font-semibold text-slate-700 mb-1">Mật khẩu</label>
+                  <input
+                    id="login-password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:bg-white focus:outline-none transition"
+                    autoComplete="current-password"
+                    required
+                  />
+                </div>
+                <div className="pt-2 flex gap-2">
+                  <button type="button" onClick={() => setShowLogin(false)} className="flex-1 py-2.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition">
+                    Hủy
+                  </button>
+                  <button type="submit" className="flex-1 py-2.5 text-xs font-semibold text-white bg-purple-700 hover:bg-purple-800 rounded-xl shadow-md shadow-purple-200 transition">
+                    Đăng nhập
+                  </button>
+                </div>
+              </form>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStaffLogin(!staffLogin);
+                  setAuthError(null);
+                }}
+                className="mt-4 w-full text-center text-xs text-purple-700 hover:underline"
+              >
+                {staffLogin ? 'Đăng nhập với tư cách khách hàng' : 'Đăng nhập với tư cách nhân viên'}
+              </button>
             </div>
-
-            {authError && (
-              <div className="mb-4 p-3 bg-red-50 text-red-700 text-xs rounded-xl border border-red-200 font-medium">
-                {authError}
-              </div>
-            )}
-
-            <form onSubmit={handleLogin} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Email</label>
-                <input
-                  type="email"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:bg-white focus:outline-none transition"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Mật khẩu</label>
-                <input
-                  type="password"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:bg-white focus:outline-none transition"
-                  required
-                />
-              </div>
-
-              <div className="pt-2 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowLoginModal(false)}
-                  className="flex-1 py-2.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 text-xs font-semibold text-white bg-purple-700 hover:bg-purple-700 rounded-xl shadow-md shadow-purple-200 transition"
-                >
-                  Đăng nhập
-                </button>
-              </div>
-            </form>
-
-            <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-400 text-center">
-              Tài khoản mẫu: <span className="font-mono text-purple-700">lan.nguyen@example.vn</span> / <span className="font-mono text-purple-700">SecurePass123!</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Policy Citation Modal */}
-      <CitationModal
-        clauseId={selectedClause}
-        onClose={() => setSelectedClause(null)}
-      />
-
-      {/* Guest OTP Modal */}
-      <GuestOtpModal
-        isOpen={isOtpModalOpen}
-        onClose={() => setIsOtpModalOpen(false)}
-        onVerified={() => {
-          initConversation();
-        }}
-      />
-    </div>
+          </div>,
+          document.body
+        )}
+    </>
   );
 };

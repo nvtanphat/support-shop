@@ -76,7 +76,9 @@ test.describe('Guest OTP Verification Journey', () => {
     // Verify modal header is open
     await expect(page.getByText('Xác minh Đơn hàng Vãng lai')).toBeVisible();
 
-    // Submit OTP request form
+    // Fill and submit the OTP request form (the modal no longer ships prefilled demo values)
+    await page.getByPlaceholder('Ví dụ: SL-XXXXXX').fill('SL-TEST01');
+    await page.getByPlaceholder('Số điện thoại dùng khi đặt hàng').fill('0900000000');
     const submitRequestBtn = page.getByRole('button', { name: 'Gửi mã OTP qua SMS' });
     await expect(submitRequestBtn).toBeVisible();
     await submitRequestBtn.click();

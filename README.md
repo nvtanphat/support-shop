@@ -64,8 +64,8 @@ Số liệu đã đo trong lần audit 12-13/11/2026 (chi tiết, giới hạn v
 | **Type Safety** | Mypy | **0 lỗi (113 source files)** | **ĐẠT** |
 | **Backend Unit & Integration** | Pytest với PostgreSQL thật (gồm checkpoint async) | **156/156 PASS** | **ĐẠT** |
 | **RAG (benchmark độc lập, 50 câu test)** | Recall@1 / Recall@4 / từ chối câu ngoài phạm vi | 0,92 / 0,97 / **0,31** (ngưỡng từ chối 0,95) | **KHÔNG ĐẠT** |
-| **Frontend Unit Tests** | Vitest Component Tests | **5/5 PASS** | **ĐẠT** |
-| **Frontend E2E Journeys** | Playwright Chromium Headless | chưa chạy trong lần audit này | **NOT VERIFIED** |
+| **Frontend Unit Tests** | Vitest (gồm kiểm tra không còn dữ liệu demo cứng trong mã giao diện) | **28/28 PASS** | **ĐẠT** |
+| **Frontend E2E Journeys** | Playwright Chromium Headless (5 hành trình, cục bộ sau khi đổi giao diện) | **5/5 PASS** | **ĐẠT** |
 | **Frontend Build** | TypeScript + Vite Production Build | **0 lỗi** | **ĐẠT** |
 
 Chi tiết báo cáo đo kiểm: [`docs/eval-report.md`](docs/eval-report.md).

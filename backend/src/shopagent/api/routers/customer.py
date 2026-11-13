@@ -17,6 +17,12 @@ from shopagent.infra.db.tables import RefundModel, ReturnRequestModel, TicketMod
 
 router = APIRouter(tags=["Orders & Customer Data"])
 
+_ORDER_NOT_FOUND_DETAIL = "Không tìm thấy đơn hàng này trong tài khoản của quý khách."
+_GUEST_VERIFICATION_DETAIL = (
+    "Bạn không có quyền truy cập thông tin đơn hàng này. "
+    "Vui lòng xác thực OTP qua số điện thoại mua hàng hoặc đăng nhập."
+)
+
 
 @router.get("/orders/{code}")
 async def get_order_by_code(
@@ -29,13 +35,11 @@ async def get_order_by_code(
     clean_code = code.strip().upper()
     try:
         return await order_service.get_order_for_principal(principal, order_code=clean_code)
-    except ForbiddenError:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Bạn không có quyền truy cập thông tin đơn hàng này. Vui lòng xác thực OTP qua số điện thoại mua hàng hoặc đăng nhập.",
-        ) from None
-    except NotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except (ForbiddenError, NotFoundError):
+        # "Not yours" and "does not exist" must look the same, or order codes can be probed.
+        if principal.is_guest:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_GUEST_VERIFICATION_DETAIL) from None
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_ORDER_NOT_FOUND_DETAIL) from None
 
 
 @router.get("/me/orders")
@@ -64,9 +68,9 @@ async def get_my_order_detail(
     """Get full details of a specific customer order."""
     order_service = OrderService(session)
     try:
-        return await order_service.get_order_for_principal(principal, order_code=code)
-    except AppError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+        return await order_service.get_order_for_principal(principal, order_code=code.strip().upper())
+    except AppError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_ORDER_NOT_FOUND_DETAIL) from None
 
 
 @router.get("/me/cases")

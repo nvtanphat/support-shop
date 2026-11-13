@@ -5,6 +5,7 @@ import { EnvironmentBanner } from '../../src/components/EnvironmentBanner';
 import { CitationModal } from '../../src/components/CitationModal';
 import { ActionCard } from '../../src/features/chat/ActionCard';
 import { PendingAction } from '../../src/lib/types';
+import { api } from '../../src/lib/api';
 
 describe('EnvironmentBanner', () => {
   it('renders simulated mode warning text', () => {
@@ -14,15 +15,33 @@ describe('EnvironmentBanner', () => {
 });
 
 describe('CitationModal', () => {
-  it('renders citation details when clauseId is provided', () => {
+  const policy = {
+    clause_id: 'POL-RETURN-01',
+    topic: 'return',
+    title: 'Chính sách đổi trả do lỗi',
+    text: 'Thời hạn yêu cầu: trong vòng 15 ngày.',
+    version: '2026-11-01',
+    effective_from: '2026-11-01T00:00:00+07:00',
+    effective_to: null,
+  };
+
+  it('shows the clause text read from the policy index', async () => {
+    vi.spyOn(api, 'getPolicy').mockResolvedValue(policy);
     const handleClose = vi.fn();
     render(<CitationModal clauseId="POL-RETURN-01" onClose={handleClose} />);
     expect(screen.getByText('POL-RETURN-01')).toBeInTheDocument();
     expect(screen.getByText(/Điều khoản chính sách ShopLab/i)).toBeInTheDocument();
+    expect(await screen.findByText('Thời hạn yêu cầu: trong vòng 15 ngày.')).toBeInTheDocument();
+    expect(screen.getByText(/Phiên bản 2026-11-01/)).toBeInTheDocument();
 
-    const closeBtn = screen.getByLabelText('Đóng');
-    fireEvent.click(closeBtn);
+    fireEvent.click(screen.getByLabelText('Đóng'));
     expect(handleClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a failed lookup instead of showing placeholder text', async () => {
+    vi.spyOn(api, 'getPolicy').mockRejectedValue(new Error('Không tìm thấy điều khoản'));
+    render(<CitationModal clauseId="POL-NOPE-99" onClose={() => {}} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Không tìm thấy điều khoản');
   });
 
   it('renders null when clauseId is null', () => {

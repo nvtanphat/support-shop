@@ -1,23 +1,33 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Message, PendingAction } from '../../lib/types';
 import { api } from '../../lib/api';
+import { orderCodesIn } from '../../lib/orderView';
+import { clearOrderCache } from '../../lib/useOrder';
 import { ActionCard } from './ActionCard';
 import { CitationModal } from '../../components/CitationModal';
+import { PolicyListModal } from '../../components/PolicyListModal';
 import { EvidenceUploadModal } from './EvidenceUploadModal';
 import { GuestOtpModal } from './GuestOtpModal';
 import { HeroBanner } from './components/HeroBanner';
 import { MessageItem } from './components/MessageItem';
 import { TypingIndicator } from './components/TypingIndicator';
 import { ChatInputBar } from './components/ChatInputBar';
-import { OrderContextSidebar } from './components/OrderContextSidebar';
+import { OrderContextSidebar, PolicyListState } from './components/OrderContextSidebar';
+
+/** A one-shot command from the header; `nonce` makes repeating the same command work. */
+export interface ChatCommand {
+  type: 'returns' | 'contact' | 'policies' | 'lookup';
+  nonce: number;
+}
 
 interface ChatViewProps {
   conversationId: string;
   isGuest: boolean;
-  quickFilter?: 'returns' | 'contact';
+  command?: ChatCommand | null;
 }
 
-export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _isGuest, quickFilter }) => {
+export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest, command }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -25,21 +35,51 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
   const [mode, setMode] = useState<string>('ai');
   const [pendingActions, setPendingActions] = useState<PendingAction[]>([]);
   const [selectedClause, setSelectedClause] = useState<string | null>(null);
+  const [policyListOpen, setPolicyListOpen] = useState(false);
   const [evidenceReturnCode, setEvidenceReturnCode] = useState<string | null>(null);
   const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
-  const [activeOrderCode, setActiveOrderCode] = useState<string>('SL-8F3D9K');
+  const [policies, setPolicies] = useState<PolicyListState>({ status: 'loading', policies: [] });
+  const [latestOrderCode, setLatestOrderCode] = useState<string | null>(null);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const chatRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    scrollToBottom();
+    const el = chatRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages, progressText, pendingActions, loading]);
 
-  const loadConversation = async () => {
+  // Policies in force: shown in the sidebar and the "Chính sách" list.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getPolicies()
+      .then((res) => !cancelled && setPolicies({ status: 'ready', policies: res.policies }))
+      .catch((err: unknown) =>
+        !cancelled &&
+        setPolicies({ status: 'error', policies: [], message: err instanceof Error ? err.message : 'Không tải được chính sách.' })
+      );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // A signed-in customer starts with their most recent order selected; a guest has none until one is mentioned.
+  useEffect(() => {
+    if (isGuest) {
+      setLatestOrderCode(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .getMyOrders()
+      .then((res) => !cancelled && setLatestOrderCode(res.orders[0]?.order_code ?? null))
+      .catch(() => !cancelled && setLatestOrderCode(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [isGuest]);
+
+  const loadConversation = useCallback(async () => {
     try {
       const data = await api.getConversation(conversationId);
       setMessages(data.messages || []);
@@ -48,31 +88,36 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
     } catch (err) {
       console.error('Failed to load conversation:', err);
     }
-  };
-
-  useEffect(() => {
-    loadConversation();
   }, [conversationId]);
 
   useEffect(() => {
-    if (quickFilter === 'returns') {
-      executeSendMessage('Mình muốn đổi trả đơn hàng SL-8F3D9K vì tai nghe bị lỗi.');
-    } else if (quickFilter === 'contact') {
-      handleEscalate();
+    loadConversation();
+  }, [loadConversation]);
+
+  // The selected order is the latest one named in the conversation, else the customer's latest order.
+  const activeOrderCode = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const codes = orderCodesIn(messages[i].content);
+      if (codes.length) return codes[codes.length - 1];
     }
-  }, [quickFilter]);
+    return latestOrderCode;
+  }, [messages, latestOrderCode]);
+
+  const citedClauseIds = useMemo(() => {
+    const ids: string[] = [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      for (const id of messages[i].citations ?? []) if (!ids.includes(id)) ids.push(id);
+    }
+    return ids;
+  }, [messages]);
 
   // Setup authorized SSE event stream
   useEffect(() => {
     const guestToken = api.getGuestToken();
     const token = api.getToken();
     const params = new URLSearchParams();
-    if (token) {
-      params.set('token', token);
-    }
-    if (guestToken) {
-      params.set('guest_token', guestToken);
-    }
+    if (token) params.set('token', token);
+    if (guestToken) params.set('guest_token', guestToken);
     const queryStr = params.toString();
     const sseUrl = queryStr
       ? `/api/conversations/${conversationId}/events?${queryStr}`
@@ -82,8 +127,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
 
     eventSource.addEventListener('turn.progress', (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data);
-        setProgressText(data.label || 'Đang xử lý...');
+        setProgressText(JSON.parse(e.data).label || 'Đang xử lý...');
       } catch {
         setProgressText('Đang xử lý...');
       }
@@ -117,36 +161,19 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
         };
         setMessages((prev) => {
           // 1. Exact ID duplicate check
-          if (newMsg.id && prev.some((m) => m.id === newMsg.id)) {
-            return prev;
-          }
+          if (newMsg.id && prev.some((m) => m.id === newMsg.id)) return prev;
           // 2. Turn ID match: upgrade optimistic assistant message to canonical message
           if (newMsg.turn_id && prev.some((m) => m.turn_id === newMsg.turn_id && m.role === 'assistant')) {
-            return prev.map((m) =>
-              m.turn_id === newMsg.turn_id && m.role === 'assistant' ? { ...newMsg } : m
-            );
+            return prev.map((m) => (m.turn_id === newMsg.turn_id && m.role === 'assistant' ? { ...newMsg } : m));
           }
           // 3. Content match for pending assistant message in current turn
-          if (
-            prev.some(
-              (m) =>
-                m.role === 'assistant' &&
-                m.id.startsWith('asst-') &&
-                m.content.trim() === newMsg.content.trim()
-            )
-          ) {
+          if (prev.some((m) => m.role === 'assistant' && m.id.startsWith('asst-') && m.content.trim() === newMsg.content.trim())) {
             return prev.map((m) =>
-              m.role === 'assistant' &&
-              m.id.startsWith('asst-') &&
-              m.content.trim() === newMsg.content.trim()
-                ? { ...newMsg }
-                : m
+              m.role === 'assistant' && m.id.startsWith('asst-') && m.content.trim() === newMsg.content.trim() ? { ...newMsg } : m
             );
           }
           // 4. Sequence number duplicate check
-          if (newMsg.seq && prev.some((m) => m.seq === newMsg.seq && m.role === newMsg.role)) {
-            return prev;
-          }
+          if (newMsg.seq && prev.some((m) => m.seq === newMsg.seq && m.role === newMsg.role)) return prev;
           // 5. Fallback: replace trailing optimistic assistant message
           const lastIdx = prev.length - 1;
           if (lastIdx >= 0 && prev[lastIdx].id.startsWith('asst-') && prev[lastIdx].role === 'assistant') {
@@ -176,8 +203,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
 
     eventSource.addEventListener('conversation.mode_changed', (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data);
-        setMode(data.mode);
+        setMode(JSON.parse(e.data).mode);
       } catch (err) {
         console.error('Error parsing mode_changed event', err);
       }
@@ -206,11 +232,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
     setMessages((prev) => [...prev, tempUserMsg]);
     setLoading(true);
     setProgressText('Đang kết nối...');
-
-    const orderMatch = userText.match(/SL-[A-Z0-9]+/i);
-    if (orderMatch) {
-      setActiveOrderCode(orderMatch[0].toUpperCase());
-    }
+    clearOrderCache(); // an order may change during the turn (confirmed return, cancellation)
 
     try {
       const res = await api.sendMessage(conversationId, userText, turnId);
@@ -226,13 +248,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
         };
         setMessages((prev) => {
           // If SSE already added the assistant message with this turn_id or identical content:
-          if (
-            prev.some(
-              (m) =>
-                m.role === 'assistant' &&
-                (m.turn_id === turnId || m.content.trim() === assistantMsg.content.trim())
-            )
-          ) {
+          if (prev.some((m) => m.role === 'assistant' && (m.turn_id === turnId || m.content.trim() === assistantMsg.content.trim()))) {
             return prev;
           }
           return [...prev, assistantMsg];
@@ -245,14 +261,14 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
           return [...prev, res.pending_action!];
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Send message failed:', err);
       const errMsg: Message = {
         id: `err-${Date.now()}`,
         seq: messages.length + 2,
         role: 'assistant',
         content:
-          'Dạ hiện tại hệ thống hỗ trợ đang bận hoặc có sự cố mạng. Quý khách vui lòng thử lại sau giây lát hoặc bấm Hỗ trợ khác để kết nối với chuyên viên ạ.',
+          'Dạ hiện tại hệ thống hỗ trợ đang bận hoặc có sự cố mạng. Quý khách vui lòng thử lại sau giây lát hoặc bấm Liên hệ để kết nối với chuyên viên ạ.',
         citations: [],
         created_at: new Date().toISOString(),
       };
@@ -260,18 +276,6 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
     } finally {
       setLoading(false);
       setProgressText(null);
-    }
-  };
-
-  const handleSend = (e: React.FormEvent) => {
-    e.preventDefault();
-    executeSendMessage(input);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      executeSendMessage(input);
     }
   };
 
@@ -284,36 +288,48 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
     }
   };
 
+  // Header commands. The refs keep the latest handlers without re-running the effect on every render.
+  const sendRef = useRef(executeSendMessage);
+  sendRef.current = executeSendMessage;
+  const escalateRef = useRef(handleEscalate);
+  escalateRef.current = handleEscalate;
+  useEffect(() => {
+    if (!command) return;
+    if (command.type === 'returns') sendRef.current('Mình muốn đổi trả / hoàn tiền');
+    else if (command.type === 'contact') escalateRef.current();
+    else if (command.type === 'policies') setPolicyListOpen(true);
+    else if (command.type === 'lookup') setIsOtpModalOpen(true);
+  }, [command]);
+
+  const openReturnPolicy = () => {
+    const returnClause = policies.policies.find((p) => p.topic === 'return');
+    if (returnClause) setSelectedClause(returnClause.clause_id);
+    else setPolicyListOpen(true);
+  };
+
   return (
-    <div className="flex gap-6 h-[calc(100vh-7.5rem)] w-full">
-      {/* Left/Center Column: Chat Window */}
-      <div className="flex-1 min-w-0 flex flex-col h-full bg-white/95 rounded-[28px] border border-[#E8E0FA] shadow-card overflow-hidden">
-        <HeroBanner
-          onQuickPrompt={executeSendMessage}
-          onOpenOtpModal={() => setIsOtpModalOpen(true)}
-          onEscalate={handleEscalate}
-        />
+    <main>
+      <section className="left">
+        <HeroBanner onQuickPrompt={executeSendMessage} />
 
-        {/* Messages Stream */}
-        <div className="flex-1 overflow-y-auto px-6 md:px-10 py-3 space-y-3">
-
+        <div className="chat" ref={chatRef} aria-live="polite">
           {messages.map((msg) => (
             <MessageItem
               key={msg.id}
               message={msg}
-              onSelectClause={(clauseId) => setSelectedClause(clauseId)}
+              onSelectClause={setSelectedClause}
               onQuickPrompt={executeSendMessage}
+              onViewPolicy={openReturnPolicy}
             />
           ))}
 
           {pendingActions.map((action) => (
-            <div key={action.id} className="max-w-2xl mx-auto">
+            <div key={action.id} className="cardwrap">
               <ActionCard
                 action={action}
                 onActionUpdated={(updated) => {
-                  setPendingActions((prev) =>
-                    prev.map((a) => (a.id === updated.id ? updated : a))
-                  );
+                  setPendingActions((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+                  clearOrderCache();
                 }}
                 onOpenEvidenceUpload={(returnCode) => setEvidenceReturnCode(returnCode)}
               />
@@ -321,47 +337,53 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest: _is
           ))}
 
           {loading && <TypingIndicator progressText={progressText} />}
-
-          <div ref={messagesEndRef} />
         </div>
 
-        {/* Floating Input Bar */}
         <ChatInputBar
           input={input}
           setInput={setInput}
-          onSend={handleSend}
-          onKeyDown={handleKeyDown}
+          onSend={() => executeSendMessage(input)}
           onOpenOtpModal={() => setIsOtpModalOpen(true)}
           loading={loading}
           mode={mode}
         />
-      </div>
+      </section>
 
-      {/* Right Column: Order and Policy Context Sidebar */}
       <OrderContextSidebar
         orderCode={activeOrderCode}
+        policies={policies}
+        citedClauseIds={citedClauseIds}
+        isGuest={isGuest}
         onQuickPrompt={executeSendMessage}
-        onSelectClause={(clauseId) => setSelectedClause(clauseId)}
+        onSelectClause={setSelectedClause}
         onOpenOtp={() => setIsOtpModalOpen(true)}
       />
 
-      {/* Modals */}
-      <CitationModal
-        clauseId={selectedClause}
-        onClose={() => setSelectedClause(null)}
-      />
-
-      <EvidenceUploadModal
-        returnCode={evidenceReturnCode}
-        onClose={() => setEvidenceReturnCode(null)}
-        onSuccess={loadConversation}
-      />
-
-      <GuestOtpModal
-        isOpen={isOtpModalOpen}
-        onClose={() => setIsOtpModalOpen(false)}
-        onVerified={loadConversation}
-      />
-    </div>
+      {/* Modals are Tailwind-styled, so they live outside the `.ss` design scope. */}
+      {createPortal(
+        <>
+          <CitationModal clauseId={selectedClause} onClose={() => setSelectedClause(null)} />
+          <PolicyListModal
+            open={policyListOpen}
+            policies={policies.policies}
+            loading={policies.status === 'loading'}
+            error={policies.status === 'error' ? policies.message : undefined}
+            onSelect={(id) => {
+              setPolicyListOpen(false);
+              setSelectedClause(id);
+            }}
+            onClose={() => setPolicyListOpen(false)}
+          />
+          <EvidenceUploadModal returnCode={evidenceReturnCode} onClose={() => setEvidenceReturnCode(null)} onSuccess={loadConversation} />
+          <GuestOtpModal
+            isOpen={isOtpModalOpen}
+            onClose={() => setIsOtpModalOpen(false)}
+            onVerified={loadConversation}
+            defaultOrderCode={activeOrderCode}
+          />
+        </>,
+        document.body
+      )}
+    </main>
   );
 };

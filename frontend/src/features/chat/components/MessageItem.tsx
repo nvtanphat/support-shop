@@ -1,135 +1,100 @@
 import React from 'react';
-import { Message } from '../../../lib/types';
-import { EmbeddedOrderCard } from './EmbeddedOrderCard';
-import { User, Headphones, Sparkles, ShieldCheck } from 'lucide-react';
+import type { Message } from '../../../lib/types';
+import { formatTime, orderCodesIn } from '../../../lib/orderView';
+import { useOrder } from '../../../lib/useOrder';
+import { HeadsetIcon, UserIcon } from '../../../components/icons';
+import { OrderCard } from './OrderCard';
 
 interface MessageItemProps {
   message: Message;
   onSelectClause: (clauseId: string) => void;
   onQuickPrompt: (prompt: string) => void;
+  onViewPolicy: () => void;
 }
 
-export const MessageItem: React.FC<MessageItemProps> = ({
-  message,
-  onSelectClause,
-  onQuickPrompt,
-}) => {
-  const isAsst = message.role === 'assistant';
-  const isStaff = message.role === 'staff';
-  const isCust = message.role === 'customer';
+const INLINE = /(\*\*[^*]+\*\*|\[POL-[A-Z0-9-]+\])/g;
 
-  // Render message content with clickable policy badges and order embed
-  const renderContent = () => {
-    if (!isAsst) {
-      return <div className="whitespace-pre-wrap">{message.content}</div>;
-    }
-
-    const citationRegex = /\[(POL-[A-Z0-9-]+)\]/g;
-    const parts = [];
-    let lastIndex = 0;
-    let match;
-
-    while ((match = citationRegex.exec(message.content)) !== null) {
-      const clauseId = match[1];
-      if (match.index > lastIndex) {
-        parts.push(message.content.substring(lastIndex, match.index));
-      }
-      parts.push(
+/** Bold (**text**) and policy citations ([POL-...]) are the only inline formats the agent produces. */
+function renderInline(text: string, onSelectClause: (id: string) => void): React.ReactNode[] {
+  return text.split(INLINE).map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) return <b key={i}>{part.slice(2, -2)}</b>;
+    const cite = part.match(/^\[(POL-[A-Z0-9-]+)\]$/);
+    if (cite) {
+      return (
         <button
-          key={`${clauseId}-${match.index}`}
-          onClick={() => onSelectClause(clauseId)}
-          className="inline-flex items-center gap-1 mx-1 px-2 py-0.5 bg-purple-100 hover:bg-purple-200 text-purple-800 text-xs font-mono font-semibold rounded-md border border-purple-300 transition shadow-2xs"
-          title="Bấm để xem nguyên văn điều khoản chính sách"
+          key={i}
+          type="button"
+          className="cite"
+          title="Xem nguyên văn điều khoản chính sách"
+          onClick={() => onSelectClause(cite[1])}
         >
-          <ShieldCheck className="w-3 h-3 text-purple-700" />
-          <span>[{clauseId}]</span>
+          [{cite[1]}]
         </button>
       );
-      lastIndex = match.index + match[0].length;
     }
+    return <React.Fragment key={i}>{part}</React.Fragment>;
+  });
+}
 
-    if (lastIndex < message.content.length) {
-      parts.push(message.content.substring(lastIndex));
-    }
+const MAX_ORDER_CARDS = 2;
 
-    const hasOrderEmbed = message.content.includes('SL-8F3D9K') || message.content.includes('8F3D9K');
+const OrderCardFor: React.FC<{ code: string; onQuickPrompt: (p: string) => void; onViewPolicy: () => void }> = ({
+  code,
+  onQuickPrompt,
+  onViewPolicy,
+}) => {
+  const state = useOrder(code);
+  // No card when the order cannot be shown (not found, not verified yet): the assistant's text says why.
+  if (state.status !== 'ready') return null;
+  return <OrderCard order={state.order} onQuickPrompt={onQuickPrompt} onViewPolicy={onViewPolicy} />;
+};
 
+export const MessageItem: React.FC<MessageItemProps> = ({ message, onSelectClause, onQuickPrompt, onViewPolicy }) => {
+  const time = formatTime(message.created_at);
+
+  if (message.role === 'customer') {
     return (
-      <div className="space-y-3">
-        <div className="whitespace-pre-wrap leading-relaxed">{parts}</div>
-        {hasOrderEmbed && (
-          <EmbeddedOrderCard
-            orderCode="SL-8F3D9K"
-            onQuickPrompt={onQuickPrompt}
-            onSelectClause={onSelectClause}
-          />
-        )}
+      <div className="me">
+        <div className="bb">
+          {message.content}
+          <span className="time">{time}</span>
+        </div>
+        <div className="av">
+          <UserIcon />
+        </div>
       </div>
     );
-  };
+  }
 
-  const timeLabel = message.created_at
-    ? new Date(message.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-    : '';
+  const isStaff = message.role === 'staff';
+  const paragraphs = message.content.split(/\n{2,}/).filter((p) => p.trim());
+  const orderCodes = isStaff ? [] : orderCodesIn(message.content).slice(0, MAX_ORDER_CARDS);
 
   return (
-    <div className={`flex gap-3 items-start ${isCust ? 'justify-end' : 'justify-start'}`}>
-      {!isCust && (
-        <div className="w-12 h-12 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0 bg-white shadow-pill">
-          {isAsst ? (
-            <img
-              src="/images/avatars/ai-assistant-avatar.png"
-              alt="ShopSupport AI"
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                // Fallback to bot icon if image fails
-                (e.target as HTMLElement).style.display = 'none';
-              }}
-            />
-          ) : (
-            <div className="w-full h-full bg-gradient-to-tr from-purple-600 to-indigo-500 text-white flex items-center justify-center">
-              <Headphones className="w-5 h-5" />
-            </div>
-          )}
+    <div className="bot">
+      {isStaff ? (
+        <div className="staff-av">
+          <HeadsetIcon />
         </div>
+      ) : (
+        <img src="/images/ui/bot-avatar.png" alt="" />
       )}
-
-      <div className="max-w-[90%] md:max-w-[85%] space-y-1">
-        {!isCust && (
-          <div className="flex items-center gap-2 px-1 text-sm">
-            <span className="font-bold text-slate-900 text-base">
-              {isStaff ? 'Chuyên viên ShopSupport' : 'ShopSupport AI'}
-            </span>
-            {isAsst && (
-              <span className="bg-purple-700 text-white text-xs font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
-                <Sparkles className="w-2.5 h-2.5" />
-                <span>AI</span>
-              </span>
-            )}
-            {timeLabel && <span className="ml-auto text-sm text-slate-600">{timeLabel}</span>}
-          </div>
-        )}
-
-        <div
-          className={`px-5 py-3 rounded-3xl text-[15px] leading-relaxed ${
-            isCust
-              ? 'bg-[#EEE8FC] text-slate-900 rounded-br-lg'
-              : isStaff
-              ? 'bg-indigo-50 text-indigo-950 border border-indigo-200 rounded-bl-xs shadow-xs'
-              : 'bg-transparent text-slate-800 px-1 py-1'
-          }`}
-        >
-          {renderContent()}
-          {isCust && timeLabel && <div className="text-right text-sm text-purple-700/80 mt-0.5">{timeLabel}</div>}
+      <div className="col">
+        <div className="nm">
+          {isStaff ? 'Chuyên viên ShopSupport' : 'ShopSupport AI'}
+          {!isStaff && <span className="tag">AI</span>}
         </div>
-
+        {paragraphs.map((paragraph, i) => (
+          <p key={i}>{renderInline(paragraph, onSelectClause)}</p>
+        ))}
+        {orderCodes.map((code) => (
+          <OrderCardFor key={code} code={code} onQuickPrompt={onQuickPrompt} onViewPolicy={onViewPolicy} />
+        ))}
+        <div className="ask">
+          <span />
+          <span className="time">{time}</span>
+        </div>
       </div>
-
-      {isCust && (
-        <div className="w-14 h-14 rounded-2xl bg-[#EEE8FC] text-purple-700 flex items-center justify-center flex-shrink-0">
-          <User className="w-7 h-7" strokeWidth={1.5} />
-        </div>
-      )}
     </div>
   );
 };

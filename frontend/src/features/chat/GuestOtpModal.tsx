@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { X, KeyRound, Phone, Package, AlertCircle, Loader2, Sparkles } from 'lucide-react';
 
@@ -6,21 +6,29 @@ interface GuestOtpModalProps {
   isOpen: boolean;
   onClose: () => void;
   onVerified: () => void;
+  /** Order code worth suggesting (the one under discussion); the customer can overwrite it. */
+  defaultOrderCode?: string | null;
 }
 
 export const GuestOtpModal: React.FC<GuestOtpModalProps> = ({
   isOpen,
   onClose,
   onVerified,
+  defaultOrderCode,
 }) => {
   const [step, setStep] = useState<'request' | 'otp'>('request');
-  const [orderCode, setOrderCode] = useState('SL-8F3D9K');
-  const [phone, setPhone] = useState('0901234567');
+  const [orderCode, setOrderCode] = useState(defaultOrderCode ?? '');
+  const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [verificationId, setVerificationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+
+  // Suggest the order under discussion each time the dialog opens with an empty field.
+  useEffect(() => {
+    if (isOpen && !orderCode && defaultOrderCode) setOrderCode(defaultOrderCode);
+  }, [isOpen, defaultOrderCode, orderCode]);
 
   if (!isOpen) return null;
 
@@ -126,7 +134,7 @@ export const GuestOtpModal: React.FC<GuestOtpModalProps> = ({
                 <Package className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                 <input
                   type="text"
-                  placeholder="Ví dụ: SL-8F3D9K"
+                  placeholder="Ví dụ: SL-XXXXXX"
                   value={orderCode}
                   onChange={(e) => setOrderCode(e.target.value)}
                   className="w-full pl-9 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:bg-white focus:outline-none transition uppercase font-mono"
@@ -143,7 +151,7 @@ export const GuestOtpModal: React.FC<GuestOtpModalProps> = ({
                 <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                 <input
                   type="tel"
-                  placeholder="0901234567"
+                  placeholder="Số điện thoại dùng khi đặt hàng"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   className="w-full pl-9 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:bg-white focus:outline-none transition"
