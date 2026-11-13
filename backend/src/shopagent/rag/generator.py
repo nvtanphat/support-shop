@@ -171,6 +171,8 @@ def generate_policy_clauses(rules: dict[str, Any] | None = None) -> list[dict[st
             "effective_from": rules.get("effective_from"),
             "effective_to": rules.get("effective_to"),
             "text": rendered_text,
+            "source": "rules.yaml",
+            "status": "active",
         })
 
     return clauses

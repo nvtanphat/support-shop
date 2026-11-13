@@ -303,7 +303,10 @@ class PendingActionModel(Base):
     result: Mapped[dict[str, Any]] = mapped_column(JSON_TYPE, default=dict)
 
     __table_args__ = (
-        Index("idx_pending_action_uniq", "conversation_id", "payload_hash", unique=True, postgresql_where=(Column("status") == "proposed")),
+        Index(
+            "idx_pending_action_uniq", "conversation_id", "payload_hash", unique=True,
+            postgresql_where=(Column("status") == "proposed"), sqlite_where=(Column("status") == "proposed"),
+        ),
     )
 
 
@@ -453,3 +456,10 @@ class PolicyChunkModel(Base):
     text_unaccent: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[list[float]] = mapped_column(JSON_TYPE, default=list)  # Stored as JSONB or vector
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    # Provenance and lifecycle, so the corpus can grow beyond the generated clauses.
+    source: Mapped[str] = mapped_column(String(255), default="rules.yaml")  # rules.yaml or the document path
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    parent_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)  # clause this one was cut from
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)  # active | retired
+    content_hash: Mapped[str] = mapped_column(String(64), default="")  # what the indexer compares to skip unchanged chunks
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

@@ -12,7 +12,8 @@ from shopagent.domain.seeder import generate_seed_data
 from shopagent.domain.verifier import verify_dataset
 from shopagent.infra.db.session import async_engine, async_session_factory
 from shopagent.infra.db.tables import Base
-from shopagent.rag.indexer import index_policies
+from shopagent.rag.documents import PolicyDocumentError
+from shopagent.rag.indexer import build_corpus, index_policies, sync_policies
 from shopagent.rag.retriever import clear_retrieval_caches
 
 
@@ -76,16 +77,35 @@ def seed_cmd(seed: int, now: str, customers: int, products: int, orders: int) ->
 
 @cli.command("index-policies")
 def index_policies_cmd() -> None:
-    """(Re)build the policy index from config/policy/rules.yaml; required before policy lookups work."""
+    """Sync the policy index with config/policy/rules.yaml and config/policy/docs/*.md (only changed clauses are rewritten)."""
     async def _run() -> None:
         async with async_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         async with async_session_factory() as session:
-            indexed = await index_policies(session)
+            try:
+                report = await sync_policies(session)
+            except PolicyDocumentError as exc:
+                click.echo(str(exc), err=True)
+                sys.exit(1)
         clear_retrieval_caches()
-        click.echo(f"Đã lập chỉ mục {len(indexed)} điều khoản chính sách.")
+        click.echo(f"Đã lập chỉ mục: {report.summary()}.")
+        for label, keys in (("thêm", report.added), ("cập nhật", report.updated), ("ngừng dùng", report.retired)):
+            if keys:
+                click.echo(f"  {label}: {', '.join(keys)}")
+        click.echo("Đổi nội dung chính sách thì chạy lại `python -m evals.retrieval.calibrate` để kiểm ngưỡng từ chối.")
 
     asyncio.run(_run())
+
+
+@cli.command("validate-policies")
+def validate_policies_cmd() -> None:
+    """Check the whole policy corpus (generated clauses and documents) without touching the database."""
+    try:
+        clauses = build_corpus()
+    except PolicyDocumentError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+    click.echo(f"Hợp lệ: {len(clauses)} điều khoản.")
 
 
 @cli.command("verify-data")

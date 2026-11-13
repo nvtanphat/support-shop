@@ -28,7 +28,7 @@ from shopagent.infra.db.tables import (
     ReturnRequestModel,
     TicketModel,
 )
-from shopagent.rag.retriever import HybridRetriever
+from shopagent.rag.retriever import PolicyRetriever
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -424,8 +424,8 @@ async def test_postgres_checkpointer_connection_failure_is_raised_not_hidden():
 
 @pytest.mark.asyncio
 async def test_rag_as_of_temporal_filtering():
-    """Verify HybridRetriever with as_of timestamp filters policy chunks according to validity window."""
-    retriever = HybridRetriever(in_memory=True)
+    """Verify PolicyRetriever with as_of timestamp filters policy chunks according to validity window."""
+    retriever = PolicyRetriever(in_memory=True)
 
     # Query with future timestamp
     dt_future = datetime(2026, 11, 15, tzinfo=UTC)

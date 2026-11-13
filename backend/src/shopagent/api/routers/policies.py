@@ -34,7 +34,11 @@ def _naive_utc(moment: datetime) -> datetime:
 
 async def _in_force(session: AsyncSession) -> list[PolicyChunkModel]:
     now = _naive_utc(get_clock().now())
-    rows = (await session.execute(select(PolicyChunkModel).order_by(PolicyChunkModel.clause_id))).scalars().all()
+    rows = (
+        await session.execute(
+            select(PolicyChunkModel).where(PolicyChunkModel.status == "active").order_by(PolicyChunkModel.clause_id)
+        )
+    ).scalars().all()
     return [
         r
         for r in rows

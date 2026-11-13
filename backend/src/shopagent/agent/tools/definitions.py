@@ -26,10 +26,9 @@ from shopagent.agent.tools.schemas import (
     TrackShipmentInput,
 )
 from shopagent.core.clock import get_clock
+from shopagent.core.config import get_app_config
 from shopagent.core.errors import AppError, ForbiddenError, NotFoundError
 from shopagent.core.principal import Principal
-from shopagent.domain.policies.rules import PolicyRules
-from shopagent.domain.services.actions import ActionService
 from shopagent.domain.services.cancellations import CancellationService
 from shopagent.domain.services.orders import OrderService
 from shopagent.domain.services.returns import ReturnService
@@ -44,7 +43,7 @@ from shopagent.infra.db.tables import (
     TicketModel,
 )
 from shopagent.rag.reranker import RerankerUnavailableError
-from shopagent.rag.retriever import HybridRetriever, PolicyIndexUnavailableError
+from shopagent.rag.retriever import PolicyIndexUnavailableError, PolicyRetriever
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +63,25 @@ _GUEST_VERIFICATION_REQUIRED = {
     "hint": "Mời khách bấm vào nút 'Xác minh đơn hàng' trên màn hình chat.",
 }
 
+def _within_budget(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Best-ranked clauses whose text fits the per-call budget; the first is always kept.
+
+    The model's input window is small once the system prompt and tool schemas are counted, so a corpus of longer
+    clauses must not fill it with lower-ranked text. A clause is dropped whole, never cut, so what the model reads is
+    always a complete clause it may cite.
+    """
+    limit = int((get_app_config().get("retrieval") or {}).get("max_result_chars", 4000))
+    kept: list[dict[str, Any]] = []
+    used = 0
+    for match in matches:
+        length = len(str(match.get("text", "")))
+        if kept and used + length > limit:
+            break
+        kept.append(match)
+        used += length
+    return kept
+
+
 # -------------------------------------------------------------------------
 # Tool Factory Functions
 # -------------------------------------------------------------------------
@@ -78,11 +96,8 @@ def create_tools(
     order_service = OrderService(session)
     return_service = ReturnService(session)
     cancellation_service = CancellationService(session)
-    ActionService(session)
     ticket_service = TicketService(session)
-    PolicyRules()
-    get_clock()
-    retriever = HybridRetriever(session)
+    retriever = PolicyRetriever(session)
 
     # Tool 1: search_policy
     async def search_policy(query: str, as_of: str | None = None) -> dict[str, Any]:
@@ -127,6 +142,7 @@ def create_tools(
                 "results": [],
             }
 
+        matches = _within_budget(matches)
         if retrieved_clauses is not None:
             retrieved_clauses.extend(m["clause_id"] for m in matches)
         return {
@@ -221,18 +237,32 @@ def create_tools(
 
     # Tool 7: check_variant_stock
     async def check_variant_stock(sku: str) -> dict[str, Any]:
-        """Kiểm tra số lượng tồn kho của một phân loại hàng khi khách muốn đổi hàng."""
+        """Kiểm tra tồn kho của một phân loại và liệt kê các phân loại khác (size, màu) của cùng sản phẩm.
+
+        Gọi với SKU của sản phẩm khách đang có (lấy từ get_order) để biết SKU thật của size/màu khách muốn
+        đổi sang; không tự đoán SKU.
+        """
         stmt = select(ProductVariantModel).where(ProductVariantModel.sku == sku)
         res = await session.execute(stmt)
         var = res.scalar_one_or_none()
         if not var:
             return {"sku": sku, "in_stock": False, "stock": 0, "message": f"Không tìm thấy phân loại {sku}."}
+        siblings = (
+            await session.execute(
+                select(ProductVariantModel).where(ProductVariantModel.product_id == var.product_id).order_by(ProductVariantModel.sku)
+            )
+        ).scalars().all()
         return {
             "sku": sku,
             "in_stock": var.stock > 0,
             "stock": var.stock,
             "price": var.price,
             "attributes": var.attributes,
+            # Same product, other sizes/colours: the only SKUs an exchange may go to (same price required).
+            "variants": [
+                {"sku": v.sku, "attributes": v.attributes, "price": v.price, "stock": v.stock, "in_stock": v.stock > 0}
+                for v in siblings
+            ],
         }
 
     # Tool 8: get_case_status
@@ -414,7 +444,7 @@ def create_tools(
     t_check_stock = StructuredTool.from_function(
         coroutine=check_variant_stock,
         name="check_variant_stock",
-        description="Kiểm tra tồn kho phân loại sản phẩm khi đổi hàng.",
+        description="Khi khách muốn đổi size/màu: gọi với SKU sản phẩm khách đang có (từ get_order) để xem tồn kho và SKU của các phân loại khác cùng sản phẩm.",
         args_schema=CheckVariantStockInput,
     )
     t_get_case = StructuredTool.from_function(

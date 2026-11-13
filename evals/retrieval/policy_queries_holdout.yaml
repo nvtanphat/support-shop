@@ -38,13 +38,13 @@ queries:
   - {id: X03, kind: out_of_domain, split: test, q: "Giá vàng hôm nay bao nhiêu một chỉ?", expected: []}
   - {id: X04, kind: out_of_domain, split: test, q: "Giải phương trình bậc hai giúp mình", expected: []}
   - {id: X05, kind: out_of_domain, split: test, q: "Laptop nào chơi game tốt dưới 20 triệu?", expected: []}
-  - {id: X06, kind: out_of_domain, split: test, q: "Shop có cửa hàng ở Đà Nẵng không?", expected: []}
+  - {id: X06, kind: out_of_domain, near_topic: true, split: test, q: "Shop có cửa hàng ở Đà Nẵng không?", expected: []}
   - {id: X07, kind: out_of_domain, split: test, q: "Làm thế nào để giảm cân nhanh?", expected: []}
   - {id: X08, kind: out_of_domain, split: test, q: "Dịch giúp tôi đoạn văn này sang tiếng Anh", expected: []}
   - {id: X09, kind: out_of_domain, split: test, q: "Điện thoại của tôi bị treo máy phải làm sao?", expected: []}
   - {id: X10, kind: out_of_domain, split: test, q: "Cho tôi số điện thoại của giám đốc công ty", expected: []}
-  - {id: X11, kind: out_of_domain, split: test, q: "Mã giảm giá hôm nay là gì?", expected: []}
-  - {id: X12, kind: out_of_domain, split: test, q: "Shop có bán quần áo trẻ em cỡ nhỏ không?", expected: []}
+  - {id: X11, kind: out_of_domain, near_topic: true, split: test, q: "Mã giảm giá hôm nay là gì?", expected: []}
+  - {id: X12, kind: out_of_domain, near_topic: true, split: test, q: "Shop có bán quần áo trẻ em cỡ nhỏ không?", expected: []}
   - {id: X13, kind: out_of_domain, split: test, q: "Thuê nhà ở quận 1 giá bao nhiêu", expected: []}
   - {id: X14, kind: out_of_domain, split: test, q: "ban nhac nao dang noi nhat hien nay", expected: []}
   - {id: X15, kind: out_of_domain, split: test, q: "cach cai dat windows 11 tu usb", expected: []}
@@ -52,4 +52,4 @@ queries:
   - {id: X17, kind: out_of_domain, split: test, q: "Hãy viết email xin nghỉ phép giúp tôi", expected: []}
   - {id: X18, kind: out_of_domain, split: test, q: "Thủ đô của nước Pháp là gì?", expected: []}
   - {id: X19, kind: out_of_domain, split: test, q: "Bảo hiểm xe máy mua ở đâu rẻ nhất?", expected: []}
-  - {id: X20, kind: out_of_domain, split: test, q: "Shop nhận in logo lên áo theo yêu cầu riêng không?", expected: []}
+  - {id: X20, kind: out_of_domain, near_topic: true, split: test, q: "Shop nhận in logo lên áo theo yêu cầu riêng không?", expected: []}

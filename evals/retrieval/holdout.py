@@ -20,7 +20,7 @@ from typing import Any
 import yaml
 from shopagent.rag import retriever as retriever_module
 from shopagent.rag.reranker import CrossEncoderReranker
-from shopagent.rag.retriever import HybridRetriever
+from shopagent.rag.retriever import PolicyRetriever
 
 HERE = Path(__file__).parent
 MODEL = os.environ.get("RERANK_MODEL", "BAAI/bge-reranker-v2-m3-int8")
@@ -31,7 +31,7 @@ def load(name: str) -> list[dict[str, Any]]:
     return [q for q in spec["queries"] if "as_of" not in q]  # temporal cases need extra clauses
 
 
-async def score_all(retriever: HybridRetriever, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+async def score_all(retriever: PolicyRetriever, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for item in items:
         results = await retriever.retrieve(item["q"], top_k=4)
@@ -102,7 +102,7 @@ def report(rows: list[dict[str, Any]], threshold: float) -> dict[str, Any]:
 async def run(restore: bool) -> dict[str, Any]:
     if not restore:
         retriever_module._Snapshot.restore_diacritics = lambda self, query: query  # type: ignore[method-assign]
-    retriever = HybridRetriever(in_memory=True, reranker=CrossEncoderReranker(MODEL), min_rerank_score=None)
+    retriever = PolicyRetriever(in_memory=True, reranker=CrossEncoderReranker(MODEL), min_rerank_score=None)
     calibration = await score_all(retriever, load("policy_queries_independent.yaml"))
     holdout = await score_all(retriever, load("policy_queries_holdout.yaml"))
     threshold = calibrate(calibration)

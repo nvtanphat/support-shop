@@ -1,4 +1,8 @@
-"""Policy retriever: BM25 over normalised queries, optional cross-encoder reranking, cached index.
+"""Policy retriever in two stages: a candidate source picks the clauses worth a closer look, a reranker orders them.
+
+The first stage is a seam (CandidateSource). Today it is BM25 over the normalised query, which is enough while the
+corpus is small enough for the reranker to score all of it. A larger corpus replaces Bm25Candidates with a hybrid or
+vector source and nothing else here changes. The second stage is the optional cross-encoder.
 
 Ranking choices are justified by evals/retrieval (the independent query set). The index snapshot (parsed chunks)
 is cached per process and revalidated with a cheap fingerprint query, so a lookup no longer reloads
@@ -12,7 +16,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +25,7 @@ from shopagent.core.clock import get_clock
 from shopagent.infra.db.tables import PolicyChunkModel
 from shopagent.rag.chunker import build_chunks_from_clauses
 from shopagent.rag.diacritics import build_restorer
-from shopagent.rag.generator import generate_policy_clauses
+from shopagent.rag.indexer import build_corpus
 from shopagent.rag.lexical import Bm25Index, normalize_query
 from shopagent.rag.reranker import Reranker, RerankSettings, get_configured_reranker
 
@@ -88,7 +92,32 @@ def clear_retrieval_caches() -> None:
     _rerank_cache.clear()
 
 
-class HybridRetriever:
+class CandidateSource(Protocol):
+    """First stage: from the clauses in force, those worth a closer look, best first.
+
+    Returns an empty list when nothing in the corpus relates to the query, which the caller reports as
+    "no evidence" rather than presenting a loosely related clause.
+    """
+
+    def candidates(self, snapshot: _Snapshot, chunks: list[dict[str, Any]], query: str) -> list[dict[str, Any]]: ...
+
+
+class Bm25Candidates:
+    """Okapi BM25 over accent-stripped tokens; the index per set of clauses in force is cached on the snapshot."""
+
+    def candidates(self, snapshot: _Snapshot, chunks: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
+        ids = tuple(f"{c['clause_id']}@{c['version']}" for c in chunks)
+        index = snapshot.index_by_ids.get(ids)
+        if index is None:
+            index = snapshot.index_by_ids[ids] = Bm25Index([c["text"] for c in chunks])
+        scores = index.scores(query)
+        if max(scores) == 0.0:
+            return []  # no query term occurs in any clause
+        order = sorted(range(len(chunks)), key=lambda i: scores[i], reverse=True)
+        return [{**chunks[i], "score": scores[i]} for i in order]
+
+
+class PolicyRetriever:
     """Retrieves the top-k policy clauses that were in force at `as_of`.
 
     Production code passes a database session. `in_memory=True` is an explicit offline mode for
@@ -103,10 +132,12 @@ class HybridRetriever:
         reranker: Reranker | None = None,
         rerank_candidates: int = 10,
         min_rerank_score: float | None = None,
+        candidates: CandidateSource | None = None,
     ) -> None:
         if session is None and not in_memory:
-            raise ValueError("HybridRetriever needs a database session, or in_memory=True for offline benchmarks")
+            raise ValueError("PolicyRetriever needs a database session, or in_memory=True for offline benchmarks")
         self.session = session
+        self._candidate_source: CandidateSource = candidates or Bm25Candidates()
         self._explicit_reranker = reranker
         self._explicit_candidates = rerank_candidates
         self._explicit_min_score = min_rerank_score
@@ -122,7 +153,7 @@ class HybridRetriever:
         global _snapshot
         if self.session is None:
             if self._in_memory_snapshot is None:
-                chunks = build_chunks_from_clauses(generate_policy_clauses())
+                chunks = [c for c in build_chunks_from_clauses(build_corpus()) if c["status"] == "active"]
                 for chunk in chunks:
                     chunk["effective_from"] = _as_datetime(chunk.get("effective_from"))
                     chunk["effective_to"] = _as_datetime(chunk.get("effective_to"))
@@ -134,20 +165,21 @@ class HybridRetriever:
                 select(
                     func.count(PolicyChunkModel.id),
                     func.max(PolicyChunkModel.created_at),
+                    func.max(PolicyChunkModel.updated_at),
                     func.max(PolicyChunkModel.effective_from),
                     func.max(PolicyChunkModel.effective_to),
                     func.count(PolicyChunkModel.effective_to),
-                )
+                ).where(PolicyChunkModel.status == "active")
             )
         ).one()
         if count == 0:
             raise PolicyIndexUnavailableError("policy_chunks is empty: run the policy indexer")
-        # Re-indexing adds rows and expiring a clause moves effective_to; both change the fingerprint.
+        # Adding, rewriting or retiring a clause moves count or updated_at; expiring one moves effective_to.
         fingerprint = (count, *marks)
         if _snapshot is not None and _snapshot.fresh(fingerprint):
             return _snapshot
 
-        rows = (await self.session.execute(select(PolicyChunkModel))).scalars().all()
+        rows = (await self.session.execute(select(PolicyChunkModel).where(PolicyChunkModel.status == "active"))).scalars().all()
         chunks = [
             {
                 "clause_id": c.clause_id,
@@ -156,6 +188,7 @@ class HybridRetriever:
                 "effective_from": c.effective_from,
                 "effective_to": c.effective_to,
                 "text": c.text,
+                "title": c.title,
             }
             for c in rows
         ]
@@ -202,17 +235,11 @@ class HybridRetriever:
         if not chunks:
             return []
 
-        ids = tuple(f"{c['clause_id']}@{c['version']}" for c in chunks)
-        index = snapshot.index_by_ids.get(ids)
-        if index is None:
-            index = snapshot.index_by_ids[ids] = Bm25Index([c["text"] for c in chunks])
         normalized = normalize_query(query)
-        scores = index.scores(normalized)
-        if max(scores) == 0.0:
-            return []  # no query term occurs in any clause: nothing to present as evidence
+        ranked = self._candidate_source.candidates(snapshot, chunks, normalized)
+        if not ranked:
+            return []  # nothing in the corpus relates to the question: nothing to present as evidence
 
-        order = sorted(range(len(chunks)), key=lambda i: scores[i], reverse=True)
-        ranked = [{**chunks[i], "score": scores[i]} for i in order]
         settings = self._resolve_reranker()
         if settings is not None:
             pool = ranked[: max(top_k, settings.candidates)]

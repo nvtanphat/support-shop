@@ -117,7 +117,7 @@ def upgrade() -> None:
     sa.Column('result', sa.JSON().with_variant(postgresql.JSONB(astext_type=Text()), 'postgresql'), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_pending_action_uniq', 'pending_actions', ['conversation_id', 'payload_hash'], unique=True, postgresql_where=sa.text("status = 'proposed'"))
+    op.create_index('idx_pending_action_uniq', 'pending_actions', ['conversation_id', 'payload_hash'], unique=True, postgresql_where=sa.text("status = 'proposed'"), sqlite_where=sa.text("status = 'proposed'"))
     op.create_index(op.f('ix_pending_actions_conversation_id'), 'pending_actions', ['conversation_id'], unique=False)
     op.create_index(op.f('ix_pending_actions_customer_id'), 'pending_actions', ['customer_id'], unique=False)
     op.create_index(op.f('ix_pending_actions_status'), 'pending_actions', ['status'], unique=False)

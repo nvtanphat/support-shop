@@ -121,3 +121,7 @@ config/          app.yaml, models.yaml, policy, prompt hệ thống
 docs/            spec nghiệp vụ, runbook, threat model, ADR, báo cáo đánh giá, design/
 evals/           harness, 44 kịch bản, bộ truy vấn chính sách, báo cáo
 ```
+
+## Mở rộng kho chính sách
+
+Hai nguồn (điều khoản sinh từ `rules.yaml` và tài liệu Markdown), kiểm tra chung, lập chỉ mục tăng dần theo băm nội dung, chunk có `source`, `title`, `parent_id`, `status`. Retriever gồm nguồn ứng viên thay được (`CandidateSource`) và reranker. Cách viết, kiểm tra và hiệu chỉnh ngưỡng: [policy-authoring.md](policy-authoring.md).

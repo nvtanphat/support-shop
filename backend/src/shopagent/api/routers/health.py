@@ -56,7 +56,9 @@ async def readiness_check(session: AsyncSession = Depends(get_db_session)):
 
     # 3. Policy index: policy lookups are impossible (and say so) until the indexer has run
     try:
-        indexed = (await session.execute(select(func.count(PolicyChunkModel.id)))).scalar_one()
+        indexed = (
+            await session.execute(select(func.count(PolicyChunkModel.id)).where(PolicyChunkModel.status == "active"))
+        ).scalar_one()
         checks["policy_index"] = f"{indexed} clauses" if indexed else "empty: run `shopagent index-policies`"
         is_healthy = is_healthy and indexed > 0
     except Exception as e:

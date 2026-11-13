@@ -39,6 +39,9 @@ allowed_link_domains:
 # policy_queries_holdout.yaml (see docs/eval-report.md); recalibrate with `python -m evals.retrieval.holdout`
 # whenever the model or the clause texts change. Tests turn the reranker off (RETRIEVAL_RERANKER_ENABLED=false).
 retrieval:
+  # Upper bound on the clause text one search_policy call hands to the model (about 3 characters per token).
+  # Clauses are capped at ingestion (rag/documents.py), so this only drops the lowest-ranked ones, never cuts one.
+  max_result_chars: 4000
   reranker:
     enabled: true
     model: "BAAI/bge-reranker-v2-m3-int8"

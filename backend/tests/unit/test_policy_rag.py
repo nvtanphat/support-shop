@@ -10,7 +10,7 @@ import yaml
 from shopagent.core.config import get_rules_config
 from shopagent.rag.chunker import remove_vietnamese_accents
 from shopagent.rag.generator import _CLAUSE_TEMPLATES, generate_policy_clauses
-from shopagent.rag.retriever import HybridRetriever
+from shopagent.rag.retriever import PolicyRetriever
 
 
 def test_no_hardcoded_policy_numbers_in_templates():
@@ -69,7 +69,7 @@ async def test_policy_retrieval_benchmark_r1_and_r2():
     assert len(standard_queries) == 40
     assert len(unaccented_queries) == 40
 
-    retriever = HybridRetriever(in_memory=True)  # Uses in-memory generator cache
+    retriever = PolicyRetriever(in_memory=True)  # Uses in-memory generator cache
 
     # Benchmark Standard Queries (R1)
     std_hits = 0
@@ -118,7 +118,7 @@ async def test_policy_indexing_and_db_retrieval():
         assert len(saved) >= 8
 
         # Retrieve using DB session
-        db_retriever = HybridRetriever(session=session)
+        db_retriever = PolicyRetriever(session=session)
         results = await db_retriever.retrieve("mình muốn trả hàng đổi ý mất phí bao nhiêu", top_k=2)
         assert len(results) > 0
         clause_ids = [r["clause_id"] for r in results]
@@ -137,7 +137,7 @@ async def test_retriever_raises_on_db_failure():
     mock_session = MagicMock()
     mock_session.execute = AsyncMock(side_effect=OperationalError("DB connection failed", None, None))
 
-    retriever = HybridRetriever(session=mock_session)
+    retriever = PolicyRetriever(session=mock_session)
     with pytest.raises(OperationalError):
         await retriever.retrieve("đổi trả hàng lỗi", top_k=2)
 
@@ -145,7 +145,7 @@ async def test_retriever_raises_on_db_failure():
 @pytest.mark.asyncio
 async def test_retriever_returns_empty_when_no_relevant_evidence():
     """Verify retriever returns empty list when query has no relevant policy match."""
-    retriever = HybridRetriever(in_memory=True)
+    retriever = PolicyRetriever(in_memory=True)
     results = await retriever.retrieve("zzzxxyyyy qwerty asdfghjkl random string without any sense", top_k=2)
     assert len(results) == 0
 
@@ -153,7 +153,7 @@ async def test_retriever_returns_empty_when_no_relevant_evidence():
 @pytest.mark.asyncio
 async def test_retriever_provenance_and_version():
     """Verify retrieved results retain policy version and provenance metadata."""
-    retriever = HybridRetriever(in_memory=True)
+    retriever = PolicyRetriever(in_memory=True)
     results = await retriever.retrieve("chính sách hoàn tiền ví điện tử", top_k=1)
     assert len(results) > 0
     first = results[0]
@@ -189,7 +189,7 @@ async def _memory_session():  # type: ignore[no-untyped-def]
 
 def test_retriever_requires_explicit_offline_mode() -> None:
     with pytest.raises(ValueError):
-        HybridRetriever()
+        PolicyRetriever()
 
 
 @pytest.mark.asyncio
@@ -268,11 +268,11 @@ class PreferClause:
 
 @pytest.mark.asyncio
 async def test_reranker_reorders_candidates_and_keeps_provenance() -> None:
-    plain = HybridRetriever(in_memory=True)
+    plain = PolicyRetriever(in_memory=True)
     before = await plain.retrieve("đổi trả hàng", top_k=4)
     assert before[0]["clause_id"] != "POL-REFUND-02"
 
-    reranked = HybridRetriever(in_memory=True, reranker=PreferClause("Hạn mức duyệt"))
+    reranked = PolicyRetriever(in_memory=True, reranker=PreferClause("Hạn mức duyệt"))
     after = await reranked.retrieve("đổi trả hàng", top_k=4)
     assert after[0]["clause_id"] == "POL-REFUND-02"
     assert after[0]["version"] and "effective_from" in after[0]
@@ -290,7 +290,7 @@ async def test_enabled_but_missing_reranker_is_an_explicit_error(monkeypatch: py
     monkeypatch.setattr(reranker_module, "_cached", None)
     monkeypatch.setattr(reranker_module, "get_settings", lambda: type("S", (), {"RETRIEVAL_RERANKER_ENABLED": None})())
     with pytest.raises(reranker_module.RerankerUnavailableError):
-        await HybridRetriever(in_memory=True).retrieve("đổi trả hàng", top_k=2)
+        await PolicyRetriever(in_memory=True).retrieve("đổi trả hàng", top_k=2)
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +316,7 @@ async def test_index_snapshot_is_reused_and_invalidated_when_clauses_expire() ->
             if "policy_chunks.text" in statement:
                 full_loads.append(statement)
 
-        retriever = HybridRetriever(session=session)
+        retriever = PolicyRetriever(session=session)
         for _ in range(3):
             assert await retriever.retrieve("đổi ý trả hàng mất phí bao nhiêu")
         assert len(full_loads) == 1  # one load, two cache hits
@@ -341,7 +341,7 @@ async def test_rerank_results_are_cached_per_query() -> None:
             return [float(len(t)) for t in texts]
 
     retriever_module.clear_retrieval_caches()
-    retriever = HybridRetriever(in_memory=True, reranker=CountingReranker())
+    retriever = PolicyRetriever(in_memory=True, reranker=CountingReranker())
     first = await retriever.retrieve("đổi trả hàng", top_k=3)
     second = await retriever.retrieve("đổi trả hàng", top_k=3)
     assert first == second and CountingReranker.calls == 1
@@ -362,7 +362,7 @@ async def test_production_retriever_meets_the_measured_benchmark_floor() -> None
     """The production path (not only the research runner) keeps the benchmark gains."""
     spec = yaml.safe_load((Path(__file__).resolve().parents[3] / "evals" / "retrieval" / "policy_queries_independent.yaml").read_text(encoding="utf-8"))
     items = [i for i in spec["queries"] if i["split"] == "test" and i["expected"] and "as_of" not in i]
-    retriever = HybridRetriever(in_memory=True)
+    retriever = PolicyRetriever(in_memory=True)
     top1 = top4 = 0
     for item in items:
         got = [r["clause_id"] for r in await retriever.retrieve(item["q"], top_k=4)]
@@ -389,18 +389,18 @@ class FixedScores:
 
 @pytest.mark.asyncio
 async def test_question_below_the_score_threshold_returns_no_evidence() -> None:
-    weak = HybridRetriever(in_memory=True, reranker=FixedScores(-9.0), min_rerank_score=-4.76)
+    weak = PolicyRetriever(in_memory=True, reranker=FixedScores(-9.0), min_rerank_score=-4.76)
     assert await weak.retrieve("đổi trả hàng lỗi", top_k=4) == []
-    strong = HybridRetriever(in_memory=True, reranker=FixedScores(3.0), min_rerank_score=-4.76)
+    strong = PolicyRetriever(in_memory=True, reranker=FixedScores(3.0), min_rerank_score=-4.76)
     assert await strong.retrieve("đổi trả hàng lỗi", top_k=4)
-    unguarded = HybridRetriever(in_memory=True, reranker=FixedScores(-9.0), min_rerank_score=None)
+    unguarded = PolicyRetriever(in_memory=True, reranker=FixedScores(-9.0), min_rerank_score=None)
     assert await unguarded.retrieve("đổi trả hàng lỗi", top_k=4)  # no threshold configured: never rejects
 
 
 @pytest.mark.asyncio
 async def test_cross_encoder_reads_the_query_with_diacritics_restored() -> None:
     stub = FixedScores(1.0)
-    retriever = HybridRetriever(in_memory=True, reranker=stub)
+    retriever = PolicyRetriever(in_memory=True, reranker=stub)
     await retriever.retrieve("hang loi toi muon doi tra", top_k=2)
     assert "hàng" in stub.queries[0] and "tôi" in stub.queries[0] and "muốn" in stub.queries[0]
     await retriever.retrieve("Đơn đã giao rồi, mình hủy được không?", top_k=2)

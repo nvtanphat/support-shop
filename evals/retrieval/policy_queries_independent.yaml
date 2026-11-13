@@ -69,19 +69,19 @@ queries:
   - {id: O01, kind: out_of_domain, split: test, q: "Hôm nay thời tiết Sài Gòn thế nào?", expected: []}
   - {id: O02, kind: out_of_domain, split: test, q: "Giá bitcoin bây giờ là bao nhiêu?", expected: []}
   - {id: O03, kind: out_of_domain, split: dev, q: "Cách nấu phở bò ngon tại nhà", expected: []}
-  - {id: O04, kind: out_of_domain, split: test, q: "Shop có hỗ trợ trả góp thẻ tín dụng không?", expected: []}
+  - {id: O04, kind: out_of_domain, near_topic: true, split: test, q: "Shop có hỗ trợ trả góp thẻ tín dụng không?", expected: []}
   - {id: O05, kind: out_of_domain, split: test, q: "Cửa hàng đang tuyển nhân viên bán hàng không?", expected: []}
   - {id: O06, kind: out_of_domain, split: dev, q: "Iphone 16 giá bao nhiêu tiền", expected: []}
   - {id: O07, kind: out_of_domain, split: test, q: "Viết giúp tôi một bài thơ về mùa thu", expected: []}
   - {id: O08, kind: out_of_domain, split: test, q: "Ai là tổng thống nước Mỹ hiện nay", expected: []}
   - {id: O09, kind: out_of_domain, split: test, q: "Mật khẩu wifi tại cửa hàng là gì", expected: []}
-  - {id: O10, kind: out_of_domain, split: test, q: "Làm sao đăng ký làm đại lý bán hàng cho shop", expected: []}
-  - {id: O11, kind: out_of_domain, split: dev, q: "Shop có chương trình tặng quà sinh nhật không", expected: []}
-  - {id: O12, kind: out_of_domain, split: test, q: "Bảo hành điện thoại bao lâu", expected: []}
+  - {id: O10, kind: out_of_domain, near_topic: true, split: test, q: "Làm sao đăng ký làm đại lý bán hàng cho shop", expected: []}
+  - {id: O11, kind: out_of_domain, near_topic: true, split: dev, q: "Shop có chương trình tặng quà sinh nhật không", expected: []}
+  - {id: O12, kind: out_of_domain, near_topic: true, split: test, q: "Bảo hành điện thoại bao lâu", expected: []}
   - {id: O13, kind: out_of_domain, split: test, q: "tỷ giá đô la hôm nay", expected: []}
   - {id: O14, kind: out_of_domain, split: test, q: "dich giup toi cau hello sang tieng viet", expected: []}
   - {id: O15, kind: out_of_domain, split: test, q: "sua xe may o dau tot", expected: []}
-  - {id: O16, kind: out_of_domain, split: test, q: "Shop có nhận sửa đồ cũ của hãng khác không?", expected: []}
+  - {id: O16, kind: out_of_domain, near_topic: true, split: test, q: "Shop có nhận sửa đồ cũ của hãng khác không?", expected: []}
   # ---- temporal: an expired, conflicting version must not win; version is part of the answer
   - {id: V01, kind: temporal, split: test, q: "đổi ý muốn trả hàng thì được trong bao nhiêu ngày", as_of: "2026-06-01T10:00:00+07:00", expected: [POL-RETURN-02], expected_version: "2026-01-01"}
   - {id: V02, kind: temporal, split: test, q: "đổi ý muốn trả hàng thì được trong bao nhiêu ngày", as_of: "2026-11-12T10:00:00+07:00", expected: [POL-RETURN-02], expected_version: "2026-11-01"}
