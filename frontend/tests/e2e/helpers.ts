@@ -43,6 +43,6 @@ export async function mockConversation(page: Page, id: string, mode: 'ai' | 'wai
 export async function signInAsStaff(page: Page, role: 'agent' | 'supervisor' = 'agent') {
   await page.addInitScript((r) => {
     localStorage.setItem('token', `staff-token-${r}`);
-    localStorage.setItem('session_profile', JSON.stringify({ kind: 'staff', label: r }));
+    localStorage.setItem('session_profile', JSON.stringify({ kind: 'staff', label: r, role: r }));
   }, role);
 }

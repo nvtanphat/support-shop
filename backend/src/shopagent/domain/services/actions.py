@@ -59,7 +59,7 @@ class ActionService:
         if to_utc(action.expires_at) < to_utc(now):
             action.status = PendingActionStatus.EXPIRED.value
             await self.action_repo.save(action)
-            raise ConflictError("Đề xuất đã hết hạn xác nhận (quá 30 phút).", error_code="ACTION_EXPIRED")
+            raise ConflictError("Đề xuất đã hết hạn xác nhận. Quý khách vui lòng yêu cầu lại để tạo đề xuất mới.", error_code="ACTION_EXPIRED")
 
         if action.payload_hash != preview_hash:
             raise ValidationError(

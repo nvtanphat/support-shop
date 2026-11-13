@@ -87,3 +87,14 @@ describe('ActionCard', () => {
     expect(screen.queryByText('Xác nhận')).not.toBeInTheDocument();
   });
 });
+
+describe('readErrorMessage', () => {
+  it('reads every error shape the API produces and never returns an object', async () => {
+    const { readErrorMessage } = await import('../../src/lib/api');
+    expect(readErrorMessage({ detail: 'Không có quyền' })).toBe('Không có quyền');
+    expect(readErrorMessage({ detail: { error_code: 'X', message: 'Đề xuất đã hết hạn' } })).toBe('Đề xuất đã hết hạn');
+    expect(readErrorMessage({ error: { code: 'ACTION_EXPIRED', message: 'Hết hạn', request_id: 'r' } })).toBe('Hết hạn');
+    expect(readErrorMessage({ detail: [{ msg: 'Field required' }, { msg: 'Too short' }] })).toBe('Field required; Too short');
+    expect(readErrorMessage({})).toBeNull();
+  });
+});

@@ -16,7 +16,16 @@ import {
   Sliders,
 } from 'lucide-react';
 
+const ROLE_LABELS: Record<string, string> = {
+  agent: 'Chuyên viên Hỗ trợ (Agent)',
+  supervisor: 'Trưởng ca (Supervisor)',
+  admin: 'Quản trị viên (Admin)',
+};
+
 export const StaffPortal: React.FC = () => {
+  const role = api.getProfile()?.role ?? 'agent';
+  const canSeeMetrics = role === 'supervisor' || role === 'admin'; // the API refuses /staff/metrics to agents
+  const canUseSandbox = role === 'admin';
   const [tab, setTab] = useState<'approvals' | 'tickets' | 'metrics' | 'sandbox'>('approvals');
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -147,7 +156,7 @@ export const StaffPortal: React.FC = () => {
         </div>
         <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 text-indigo-900 px-3 py-1.5 rounded-lg text-xs font-semibold">
           <Headphones className="w-4 h-4 text-indigo-700" />
-          <span>Vai trò: Chuyên viên Hỗ trợ (Agent)</span>
+          <span>Vai trò: {ROLE_LABELS[role] ?? ROLE_LABELS.agent}</span>
         </div>
       </div>
 
@@ -187,6 +196,7 @@ export const StaffPortal: React.FC = () => {
           )}
         </button>
 
+        {canSeeMetrics && (
         <button
           onClick={() => setTab('metrics')}
           className={`pb-3 border-b-2 flex items-center gap-2 transition ${
@@ -198,7 +208,9 @@ export const StaffPortal: React.FC = () => {
           <Activity className="w-4 h-4" />
           <span>Vận hành & Đo lường</span>
         </button>
+        )}
 
+        {canUseSandbox && (
         <button
           onClick={() => setTab('sandbox')}
           className={`pb-3 border-b-2 flex items-center gap-2 transition ${
@@ -210,6 +222,7 @@ export const StaffPortal: React.FC = () => {
           <Sliders className="w-4 h-4" />
           <span>Bảng mô phỏng</span>
         </button>
+        )}
       </div>
 
       {error && (

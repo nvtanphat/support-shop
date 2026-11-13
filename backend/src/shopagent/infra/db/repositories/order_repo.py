@@ -48,7 +48,7 @@ class OrderRepository:
         stmt = (
             select(OrderModel)
             .options(
-                selectinload(OrderModel.items).selectinload(OrderItemModel.variant)
+                selectinload(OrderModel.items).selectinload(OrderItemModel.variant).selectinload(ProductVariantModel.product)
             )
             .where(OrderModel.customer_id == customer_id)
         )

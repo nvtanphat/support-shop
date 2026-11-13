@@ -6,7 +6,7 @@ import asyncio
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -122,7 +122,7 @@ def create_app() -> FastAPI:
     async def app_error_handler(request: Request, exc: AppError):
         req_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
         return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=exc.status_code,
             content={
                 "error": {
                     "code": exc.error_code,

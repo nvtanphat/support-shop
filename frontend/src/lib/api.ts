@@ -12,6 +12,16 @@ import {
 
 const API_BASE = '/api';
 
+/** The API answers with `{error:{message}}`, `{detail: string}`, `{detail:{message}}` or FastAPI's validation list. */
+export function readErrorMessage(body: any): string | null {
+  const detail = body?.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) return detail.map((d) => d?.msg).filter(Boolean).join('; ') || null;
+  if (typeof detail?.message === 'string') return detail.message;
+  if (typeof body?.error?.message === 'string') return body.error.message;
+  return null;
+}
+
 class ApiClient {
   private token: string | null = null;
   private guestToken: string | null = null;
@@ -44,7 +54,7 @@ class ApiClient {
   }
 
   /** Who is signed in, for the header. Only the email's local part is kept (no other profile data). */
-  getProfile(): { kind: 'customer' | 'staff'; label: string } | null {
+  getProfile(): { kind: 'customer' | 'staff'; label: string; role?: string } | null {
     if (!this.token) return null;
     try {
       const raw = localStorage.getItem('session_profile');
@@ -54,8 +64,8 @@ class ApiClient {
     }
   }
 
-  private setProfile(kind: 'customer' | 'staff', email: string) {
-    localStorage.setItem('session_profile', JSON.stringify({ kind, label: email.split('@')[0] || 'Tài khoản' }));
+  private setProfile(kind: 'customer' | 'staff', email: string, role?: string) {
+    localStorage.setItem('session_profile', JSON.stringify({ kind, label: email.split('@')[0] || 'Tài khoản', role }));
   }
 
   getGuestToken() {
@@ -83,7 +93,7 @@ class ApiClient {
       let errorDetail = 'Lỗi hệ thống';
       try {
         const errJson = await response.json();
-        errorDetail = errJson.detail || errJson.error?.message || response.statusText;
+        errorDetail = readErrorMessage(errJson) || response.statusText || errorDetail;
       } catch {
         // Fallback
       }
@@ -110,7 +120,7 @@ class ApiClient {
       body: JSON.stringify({ email, password }),
     });
     this.setToken(res.access_token);
-    this.setProfile('staff', email);
+    this.setProfile('staff', email, res.role);
     return res;
   }
 

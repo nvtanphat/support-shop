@@ -31,3 +31,22 @@ test('a refund over the limit waits for a supervisor; a decision is blocked unti
   await page.getByRole('button', { name: /Từ chối/ }).click();
   await expect.poll(() => decision?.decision).toBe('reject');
 });
+
+test('the portal shows the signed-in role and only the tabs that role may use', async ({ page }) => {
+  await mockConversation(page, 'conv-role');
+  await page.route('**/api/staff/approvals?*', (route) => json(route, { approvals: [] }));
+
+  await signInAsStaff(page, 'agent');
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Nhân viên' }).click();
+  await expect(page.getByText('Vai trò: Chuyên viên Hỗ trợ (Agent)')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Vận hành/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Bảng mô phỏng/ })).toHaveCount(0);
+
+  await signInAsStaff(page, 'supervisor');
+  await page.reload();
+  await page.getByRole('button', { name: 'Nhân viên' }).click();
+  await expect(page.getByText('Vai trò: Trưởng ca (Supervisor)')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Vận hành/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Bảng mô phỏng/ })).toHaveCount(0);
+});

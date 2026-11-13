@@ -133,6 +133,7 @@ async def test_customer_auth_and_orders(test_app_client: AsyncClient):
     orders = res_orders.json()["orders"]
     assert len(orders) == 1
     assert orders[0]["order_code"] == "SL-TEST01"
+    assert orders[0]["summary_items"] == ["1x Áo thun"]  # the product name, not the SKU
 
 
 @pytest.mark.asyncio
@@ -359,4 +360,14 @@ async def test_conversation_authorization_and_idor_protection(test_app_client: A
         f"/conversations/{conv_a_id}/events?token={cust_token}"
     )
     assert res_cust_sse_query.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_domain_errors_keep_their_own_http_status(test_app_client: AsyncClient):
+    """A forbidden or missing resource must not be reported as a generic 400."""
+    staff = await test_app_client.post("/staff/auth/login", json={"email": "staff1@shoplab.vn", "password": "StaffPass123!"})
+    headers = {"Authorization": f"Bearer {staff.json()['access_token']}"}
+    forbidden = await test_app_client.get("/me/orders", headers=headers)  # staff have no customer order list
+    assert forbidden.status_code == 403
+    assert forbidden.json()["error"]["code"] == "FORBIDDEN"
 

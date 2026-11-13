@@ -104,7 +104,15 @@ class OrderService:
                 "total": o.total,
                 "placed_at": o.placed_at.isoformat() if o.placed_at else None,
                 "item_count": len(o.items),
-                "summary_items": [f"{it.qty}x {it.variant.sku if it.variant else 'SP'}" for it in o.items[:2]],
+                "summary_items": [_item_label(it) for it in o.items[:2]],
             }
             for o in orders
         ]
+
+
+def _item_label(item: Any) -> str:
+    """`2x Tên sản phẩm` for the order list; the SKU only when the product record is missing."""
+    variant = item.variant
+    name = variant.product.name if variant and variant.product else (variant.sku if variant else "Sản phẩm")
+    return f"{item.qty}x {name}"
+

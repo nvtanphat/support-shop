@@ -189,8 +189,8 @@ async def test_action_expiration_and_tampered_hash_rejection(res_session_factory
                 headers=headers,
                 json={"preview_hash": "wrong_hash"},
             )
-            assert res_tampered.status_code == 400
-            assert "bản xem trước" in res_tampered.json()["detail"]["message"].lower()
+            assert res_tampered.status_code == 422
+            assert "bản xem trước" in res_tampered.json()["error"]["message"].lower()
 
             # Attempt 2: Confirm on expired action
             res_expired = await client.post(
@@ -198,8 +198,8 @@ async def test_action_expiration_and_tampered_hash_rejection(res_session_factory
                 headers=headers,
                 json={"preview_hash": "valid_hash_456"},
             )
-            assert res_expired.status_code == 400
-            assert "hết hạn" in res_expired.json()["detail"]["message"].lower()
+            assert res_expired.status_code == 409
+            assert "hết hạn" in res_expired.json()["error"]["message"].lower()
     finally:
         app.dependency_overrides.clear()
 
