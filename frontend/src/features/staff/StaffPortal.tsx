@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
-import { ApprovalRequest, Ticket } from '../../lib/types';
+import { ApprovalRequest, StaffMetrics, Ticket } from '../../lib/types';
 import {
   ShieldCheck,
   Inbox,
@@ -36,6 +36,17 @@ export const StaffPortal: React.FC = () => {
   // Sandbox state
   const [sandboxOrderCode, setSandboxOrderCode] = useState('');
   const [sandboxStatus, setSandboxStatus] = useState<string | null>(null);
+  const [metrics, setMetrics] = useState<StaffMetrics | null>(null);
+
+  const runSandbox = async (action: () => Promise<string>) => {
+    setError(null);
+    setSandboxStatus(null);
+    try {
+      setSandboxStatus(await action());
+    } catch (err: any) {
+      setError(err.message || 'Thao tác sandbox thất bại.');
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -47,6 +58,8 @@ export const StaffPortal: React.FC = () => {
       } else if (tab === 'tickets') {
         const res = await api.listTickets();
         setTickets(res.tickets || []);
+      } else if (tab === 'metrics') {
+        setMetrics(await api.staffMetrics());
       }
     } catch (err: any) {
       setError(err.message || 'Không thể tải dữ liệu nhân viên.');
@@ -349,29 +362,37 @@ export const StaffPortal: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 3: Metrics Dashboard */}
-      {tab === 'metrics' && (
+      {/* Tab 3: Metrics, computed by the server from the database */}
+      {tab === 'metrics' && metrics && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-              Tỉ lệ tự giải quyết AI
+          {(
+            [
+              ['Phê duyệt theo trạng thái', metrics.approvals_by_status],
+              ['Phiếu hỗ trợ theo trạng thái', metrics.tickets_by_status],
+              ['Hoàn tiền theo trạng thái', metrics.refunds_by_status],
+              ['Hàng đợi outbox theo trạng thái', metrics.outbox_by_status],
+            ] as [string, Record<string, number>][]
+          ).map(([title, counts]) => (
+            <div key={title} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">{title}</div>
+              {Object.keys(counts).length === 0 ? (
+                <div className="text-xs text-slate-400">Chưa có dữ liệu</div>
+              ) : (
+                Object.entries(counts).map(([status, count]) => (
+                  <div key={status} className="flex justify-between text-sm text-slate-700">
+                    <span>{status}</span>
+                    <span className="font-mono font-bold text-slate-900">{count}</span>
+                  </div>
+                ))
+              )}
             </div>
-            <div className="text-2xl font-bold text-emerald-600">88.5%</div>
-            <div className="text-xs text-slate-400 mt-2">Mục tiêu ≥ 80% (Theo kế hoạch)</div>
-          </div>
+          ))}
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-              Thời gian phản hồi P95
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Đánh giá của khách</div>
+            <div className="text-2xl font-bold text-slate-900">
+              {metrics.feedback.average_rating === null ? 'Chưa có' : `${metrics.feedback.average_rating} / 5`}
             </div>
-            <div className="text-2xl font-bold text-indigo-600">3.8s</div>
-            <div className="text-xs text-slate-400 mt-2">Mục tiêu ≤ 5.0s</div>
-          </div>
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-              Bất biến an toàn (S1-S6)
-            </div>
-            <div className="text-2xl font-bold text-emerald-700">0 vi phạm</div>
-            <div className="text-xs text-slate-400 mt-2">Chuẩn ISO/OWASP Zero Violation</div>
+            <div className="text-xs text-slate-400 mt-1">{metrics.feedback.count} lượt đánh giá</div>
           </div>
         </div>
       )}
@@ -389,11 +410,11 @@ export const StaffPortal: React.FC = () => {
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Mã vận đơn / Đơn hàng:
+                Mã vận đơn:
               </label>
               <input
                 type="text"
-                placeholder="Ví dụ: SL-900001"
+                placeholder="Mã vận đơn cần đẩy bước"
                 value={sandboxOrderCode}
                 onChange={(e) => setSandboxOrderCode(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
@@ -403,14 +424,25 @@ export const StaffPortal: React.FC = () => {
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setSandboxStatus('Đã chuyển trạng thái vận đơn sang: Giao thành công')}
+                disabled={!sandboxOrderCode.trim()}
+                onClick={() =>
+                  runSandbox(async () => {
+                    const res = await api.sandboxAdvanceShipment(sandboxOrderCode.trim());
+                    return `Vận đơn ${res.tracking_code} đã chuyển sang: ${res.status}`;
+                  })
+                }
                 className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg"
               >
-                Đẩy vận đơn → Giao thành công
+                Đẩy vận đơn một bước
               </button>
               <button
                 type="button"
-                onClick={() => setSandboxStatus('Đã tiêm lỗi: Cổng thanh toán từ chối lượt hoàn tiếp theo')}
+                onClick={() =>
+                  runSandbox(async () => {
+                    await api.sandboxFailNextPayment();
+                    return 'Đã tiêm lỗi: lượt hoàn tiền kế tiếp của cổng giả lập sẽ thất bại một lần';
+                  })
+                }
                 className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-medium rounded-lg"
               >
                 Tiêm lỗi thanh toán

@@ -6,6 +6,7 @@ import {
   PolicyDetail,
   PolicySummary,
   ApprovalRequest,
+  StaffMetrics,
   Ticket,
 } from './types';
 
@@ -286,6 +287,24 @@ class ApiClient {
   async returnToAi(conversationId: string) {
     return this.request<{ status: string }>(`/staff/conversations/${conversationId}/return-to-ai`, {
       method: 'POST',
+    });
+  }
+
+  async staffMetrics(): Promise<StaffMetrics> {
+    return this.request<StaffMetrics>('/staff/metrics');
+  }
+
+  async sandboxAdvanceShipment(trackingCode: string) {
+    return this.request<{ tracking_code: string; status: string }>(
+      `/sandbox/shipments/${encodeURIComponent(trackingCode)}/advance`,
+      { method: 'POST' }
+    );
+  }
+
+  async sandboxFailNextPayment() {
+    return this.request<{ status: string }>('/sandbox/payments/fail-next', {
+      method: 'POST',
+      body: JSON.stringify({}),
     });
   }
 }

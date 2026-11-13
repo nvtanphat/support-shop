@@ -136,3 +136,11 @@ export interface OrderListItem {
   placed_at: string | null;
   item_count: number;
 }
+
+export interface StaffMetrics {
+  approvals_by_status: Record<string, number>;
+  tickets_by_status: Record<string, number>;
+  refunds_by_status: Record<string, number>;
+  outbox_by_status: Record<string, number>;
+  feedback: { count: number; average_rating: number | null };
+}
