@@ -233,7 +233,8 @@ class ApiClient {
 
   // --- Actions ---
   async confirmAction(actionId: string, previewHash: string) {
-    return this.request<{ status: string; result: Record<string, any> }>(
+    // The backend answers with the result fields at the top level (`return_code`, `message`, ...).
+    return this.request<{ status: string; result?: Record<string, any>; [key: string]: any }>(
       `/actions/${actionId}/confirm`,
       {
         method: 'POST',

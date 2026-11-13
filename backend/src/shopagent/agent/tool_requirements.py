@@ -206,12 +206,18 @@ def unretrieved_citations(answer: str, retrieved_clauses: Iterable[str]) -> list
     return sorted({c for c in _CLAUSE_CITATION_RE.findall(answer) if c not in known})
 
 
-def citation_steering_message(clause_ids: list[str]) -> str:
-    """Instruction for a draft that cites clauses nobody looked up: look them up or drop the citation."""
-    return (
-        "YÊU CẦU NGHIỆP VỤ BẮT BUỘC: câu trả lời trước trích dẫn điều khoản chưa được tra cứu trong lượt này: "
-        + ", ".join(clause_ids)
-        + ". Hãy gọi search_policy với truy vấn bám sát câu hỏi để lấy điều khoản thật rồi mới trả lời. "
-        "Không trích dẫn điều khoản nào không có trong kết quả tra cứu."
+def draft_steering_message(unretrieved: list[str], claim_problems: list[str]) -> str:
+    """One instruction covering everything wrong with a draft that verify_output would block."""
+    lines = ["YÊU CẦU NGHIỆP VỤ BẮT BUỘC: câu trả lời trước có nội dung chưa có căn cứ nên sẽ bị chặn. Hãy viết lại:"]
+    if unretrieved:
+        lines.append(
+            "- Điều khoản chưa tra cứu trong lượt này: " + ", ".join(unretrieved)
+            + ". Gọi search_policy để lấy điều khoản thật, hoặc bỏ phần trích dẫn đó."
+        )
+    for problem in claim_problems:
+        lines.append(f"- {problem}")
+    lines.append(
+        "Chỉ nêu số tiền, mã đơn và trạng thái có trong kết quả công cụ hoặc do khách vừa nói; "
+        "không tự cộng, nhân hay suy ra con số mới (ví dụ tổng tiền của một dòng hàng)."
     )
-
+    return chr(10).join(lines)

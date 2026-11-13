@@ -174,6 +174,27 @@ async def test_draft_citing_an_unlooked_up_clause_is_steered_instead_of_blocked(
     assert "error" not in verified
 
 
+@pytest.mark.asyncio
+async def test_draft_with_a_number_no_tool_returned_is_steered_instead_of_blocked(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Seen live: the model multiplied 249.000 x 2 itself; the product 498.000 đ had no source and the reply was blocked."""
+    model = ScriptedModel(
+        [
+            AIMessage(content="Cặp áo của bạn có tổng tiền hàng là 498.000 đ."),
+            AIMessage(content="Mình chưa có số tổng của dòng hàng này; bạn cho mình biết mã đơn để mình tra cứu nhé."),
+        ]
+    )
+    use_model(monkeypatch, model)
+    state = make_state("Hàng bị lỗi thì sao")
+    out = await agent_node(state, run_config(session))
+
+    assert out["turn_status"] == "completed" and model.calls == 2
+    texts = [str(m.content) for m in out["messages"] if isinstance(m, AIMessage)]
+    assert not any("498.000" in t for t in texts)
+    assert "error" not in verify_output_node({**state, **out, "messages": [*state["messages"], *out["messages"]]})
+
+
 def test_unretrieved_citations_ignores_clauses_that_were_looked_up() -> None:
     from shopagent.agent.tool_requirements import unretrieved_citations
 

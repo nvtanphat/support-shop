@@ -21,7 +21,8 @@ test('customer cancels an order by pressing the confirm button, which sends the 
   );
   await page.route('**/api/actions/act-cancel-1/confirm', async (route) => {
     confirmBody = route.request().postDataJSON();
-    await json(route, { status: 'confirmed', result: { order_status: 'cancelled' } });
+    // The real backend answers with flat fields, not a nested `result`.
+    await json(route, { success: true, status: 'cancelled', order_code: 'SL-CAN001', message: 'Đơn hàng SL-CAN001 đã được hủy thành công.' });
   });
 
   await page.goto('/');
@@ -32,6 +33,7 @@ test('customer cancels an order by pressing the confirm button, which sends the 
   await expect(page.getByText('Hủy đơn hàng SL-CAN001')).toBeVisible();
   await page.getByRole('button', { name: 'Xác nhận' }).click();
   await expect(page.getByText('Đã xác nhận thành công!')).toBeVisible();
+  await expect(page.getByText('Đơn hàng SL-CAN001 đã được hủy thành công.')).toBeVisible();
   expect(Object.values(confirmBody)).toContain('hash-act-cancel-1');
 });
 

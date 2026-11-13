@@ -235,7 +235,7 @@ class ReturnService:
 
         # Check existing active proposal
         existing = await self.action_repo.get_active_proposal(conversation_id, payload_hash)
-        if existing and existing.expires_at > self.clock.now():
+        if existing and to_utc(existing.expires_at) > self.clock.now():
             return {
                 "action_id": str(existing.id),
                 "type": existing.type,

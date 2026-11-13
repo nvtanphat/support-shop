@@ -44,10 +44,12 @@ export const ActionCard: React.FC<ActionCardProps> = ({
     setError(null);
     try {
       const res = await api.confirmAction(action.id, action.payload_hash);
+      // Whatever the outcome (done, waiting for staff, waiting for evidence), the proposal itself is settled.
+      const { result: nested, ...flat } = res;
       const updated: PendingAction = {
         ...action,
-        status: res.status as any,
-        result: res.result,
+        status: 'confirmed',
+        result: nested ?? flat,
       };
       onActionUpdated(updated);
     } catch (err: any) {
@@ -121,6 +123,10 @@ export const ActionCard: React.FC<ActionCardProps> = ({
         </div>
       )}
 
+      {action.preview.refund_explanation && (
+        <p className="text-xs text-slate-600 mb-3">{action.preview.refund_explanation}</p>
+      )}
+
       {/* Evidence & Approval Notices */}
       {action.preview.requires_evidence && isProposed && (
         <div className="bg-purple-50 text-purple-800 text-xs p-2.5 rounded-xl mb-3 flex items-start gap-2 border border-purple-200">
@@ -173,6 +179,7 @@ export const ActionCard: React.FC<ActionCardProps> = ({
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             <span>Đã xác nhận thành công!</span>
           </div>
+          {action.result?.message && <div className="text-xs text-slate-600">{action.result.message}</div>}
           {action.result?.return_code && (
             <div className="text-xs text-slate-600">
               Mã yêu cầu trả hàng: <strong className="font-mono text-slate-900">{action.result.return_code}</strong>

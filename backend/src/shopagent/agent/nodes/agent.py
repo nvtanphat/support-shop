@@ -23,6 +23,7 @@ from langchain_core.runnables import RunnableConfig
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.agent.context_window import estimate_text_tokens, prune_messages_token_aware
+from shopagent.agent.grounding import check_claims
 from shopagent.agent.prompt import render_system_prompt
 from shopagent.agent.proposal_guard import find_proposal_conflict
 from shopagent.agent.slot_guard import (
@@ -34,9 +35,9 @@ from shopagent.agent.slot_guard import (
 from shopagent.agent.state import AgentState
 from shopagent.agent.tool_requirements import (
     ToolRequirement,
-    citation_steering_message,
     classify_result,
     derive_requirements,
+    draft_steering_message,
     steering_message,
     unmet_requirements,
     unretrieved_citations,
@@ -270,13 +271,20 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
 
         if not ai.tool_calls:
             unmet = unmet_requirements(requirements, recorded)
-            unretrieved = unretrieved_citations(extract_text_content(ai.content), retrieved_clauses)
+            draft = extract_text_content(ai.content)
+            unretrieved = unretrieved_citations(draft, retrieved_clauses)
+            draft_state: dict[str, Any] = {
+                "messages": [*history, *new_messages],
+                "tool_calls": recorded,
+                "dynamic_context": dynamic_context,
+            }
+            claim_problems = [f"{v.kind}: {v.claim} ({v.detail})" for v in check_claims(draft, draft_state)[0]]  # type: ignore[arg-type]
             is_last = iteration == budget.max_iterations - 1
-            if not unmet and unretrieved and steering_rounds < _MAX_STEERING_ROUNDS and not is_last:
-                # A draft that cites a clause it never looked up would be blocked by verify_output; ask once more instead.
+            if not unmet and (unretrieved or claim_problems) and steering_rounds < _MAX_STEERING_ROUNDS and not is_last:
+                # verify_output would replace this draft with a refusal; ask the model to fix it while it still can.
                 steering_rounds += 1
                 working.append(
-                    HumanMessage(content="[HỆ THỐNG - không phải lời khách]" + chr(10) + citation_steering_message(unretrieved))
+                    HumanMessage(content="[HỆ THỐNG - không phải lời khách]" + chr(10) + draft_steering_message(unretrieved, claim_problems))
                 )
                 continue
             if not unmet:

@@ -61,7 +61,7 @@ Số liệu đo ngày 12-13/11/2026. Báo cáo đầy đủ, giới hạn và m�
 | Null agent | 6/44, trượt cổng | bộ chấm không cho qua agent rỗng |
 | Hành động tài chính trái phép, tuyên bố sai, rò rỉ giữa khách | 0 / 0 / 0 | |
 | RAG trên tập holdout | Recall@1 0,93, Recall@4 0,98, từ chối ngoài phạm vi 1,00 | 28 câu hợp lệ, 20 câu ngoài phạm vi |
-| Backend | 175 test đạt, 4 test PostgreSQL bỏ qua khi không đặt `TEST_POSTGRES_URL` | CI chạy đủ với PostgreSQL |
+| Backend | 179 test đạt, 4 test PostgreSQL bỏ qua khi không đặt `TEST_POSTGRES_URL` | CI chạy đủ với PostgreSQL |
 | Frontend | Vitest 28/28, Playwright 13/13 (đủ 9 luồng của kế hoạch), build sạch | API được giả lập; chưa chạy với backend thật |
 
 Chưa kiểm chứng: ảnh Docker chưa build, chưa chạy lặp k ≥ 3, chưa thử tải đồng thời với Gemini thật.
@@ -118,7 +118,8 @@ uv run ruff check backend evals
 uv run mypy backend/src
 uv run pytest backend/tests -q                     # đặt TEST_POSTGRES_URL để chạy test PostgreSQL
 npm --prefix frontend test
-npm --prefix frontend run test:e2e
+npm --prefix frontend run test:e2e                 # API giả lập
+npm --prefix frontend exec playwright test -- --config playwright.live.config.ts   # giao diện + API + Gemini thật, tốn hạn mức
 
 uv run python -m evals.harness.runner --agent oracle --gate       # không gọi LLM
 uv run python -m evals.harness.runner --agent null                # phải trượt cổng chất lượng

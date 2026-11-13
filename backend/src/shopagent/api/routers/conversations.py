@@ -25,7 +25,8 @@ from shopagent.api.schemas.models import (
     MessageDto,
     SendMessageRequest,
 )
-from shopagent.core.clock import get_clock
+from shopagent.api.schemas.pending_actions import pending_action_dto
+from shopagent.core.clock import get_clock, to_utc
 from shopagent.core.principal import Principal
 from shopagent.domain.services.tickets import TicketService
 from shopagent.infra.db.tables import (
@@ -38,6 +39,13 @@ from shopagent.infra.db.tables import (
 )
 
 router = APIRouter(tags=["Conversations"])
+
+
+def _sse_event(ev: ConversationEventModel, conversation_id: uuid.UUID) -> dict[str, Any]:
+    payload = ev.payload
+    if ev.type == "action.proposed":
+        payload = pending_action_dto(payload, conversation_id=str(conversation_id)) or payload
+    return {"event": ev.type, "id": str(ev.seq), "data": json.dumps(payload, ensure_ascii=False)}
 
 _conv_locks: dict[uuid.UUID, asyncio.Lock] = {}
 
@@ -151,19 +159,22 @@ async def get_conversation(
     acts = res_act.scalars().all()
     now_time = get_clock().now()
     pending_list = [
-        {
-            "id": str(a.id),
-            "action_id": str(a.id),
-            "conversation_id": str(a.conversation_id),
-            "type": a.type,
-            "preview": a.preview,
-            "preview_hash": a.payload_hash,
-            "status": a.status,
-            "expires_at": a.expires_at.isoformat(),
-        }
+        pending_action_dto(
+            {
+                "id": str(a.id),
+                "type": a.type,
+                "preview": a.preview,
+                "payload_hash": a.payload_hash,
+                "presented_at": a.presented_at.isoformat() if a.presented_at else None,
+                "expires_at": a.expires_at.isoformat(),
+            },
+            conversation_id=str(a.conversation_id),
+            status=a.status,
+        )
         for a in acts
-        if a.expires_at > now_time
+        if to_utc(a.expires_at) > now_time
     ]
+    pending_dtos: list[dict[str, Any]] = [dto for dto in pending_list if dto is not None]
 
     return ConversationDto(
         id=str(conv.id),
@@ -184,7 +195,7 @@ async def get_conversation(
             )
             for m in msgs
         ],
-        pending_actions=pending_list,
+        pending_actions=pending_dtos,
     )
 
 
@@ -229,7 +240,7 @@ async def send_message(
                     "verified_output": pl.get("verified_output", ""),
                     "assistant_message": pl.get("verified_output", ""),
                     "citations": pl.get("citations", []),
-                    "pending_action": pl.get("pending_action"),
+                    "pending_action": pending_action_dto(pl.get("pending_action"), conversation_id=str(conversation_id)),
                     "tool_calls": [],
                 }
 
@@ -308,7 +319,7 @@ async def send_message(
                         "verified_output": pl.get("verified_output", ""),
                         "assistant_message": pl.get("verified_output", ""),
                         "citations": pl.get("citations", []),
-                        "pending_action": pl.get("pending_action"),
+                        "pending_action": pending_action_dto(pl.get("pending_action"), conversation_id=str(conversation_id)),
                         "tool_calls": [],
                     }
             raise
@@ -319,7 +330,7 @@ async def send_message(
             "verified_output": verified,
             "assistant_message": verified,
             "citations": list(output.get("retrieved_clauses") or []),
-            "pending_action": output.get("pending_action"),
+            "pending_action": pending_action_dto(output.get("pending_action"), conversation_id=str(conversation_id)),
             "tool_calls": output.get("tool_calls", []),
         }
 
@@ -357,11 +368,7 @@ async def conversation_events_stream(
         for ev in events:
             if ev.seq > last_seq:
                 last_seq = ev.seq
-            yield {
-                "event": ev.type,
-                "id": str(ev.seq),
-                "data": json.dumps(ev.payload, ensure_ascii=False),
-            }
+            yield _sse_event(ev, conversation_id)
 
         yield {"event": "ping", "data": "connected"}
 
@@ -381,11 +388,7 @@ async def conversation_events_stream(
             for ev in new_events:
                 if ev.seq > last_seq:
                     last_seq = ev.seq
-                yield {
-                    "event": ev.type,
-                    "id": str(ev.seq),
-                    "data": json.dumps(ev.payload, ensure_ascii=False),
-                }
+                yield _sse_event(ev, conversation_id)
 
     return EventSourceResponse(_event_generator())
 

@@ -6,7 +6,7 @@ import hashlib
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,7 +49,7 @@ async def confirm_action(
 @router.post("/actions/{action_id}/cancel")
 async def cancel_action(
     action_id: uuid.UUID,
-    req: CancelActionRequest,
+    req: CancelActionRequest = Body(default_factory=CancelActionRequest),
     principal: Principal = Depends(require_authenticated),
     session: AsyncSession = Depends(get_db_session),
 ):
@@ -62,7 +62,7 @@ async def cancel_action(
             reason=req.reason,
         )
         await session.commit()
-        return result
+        return {"status": result.status, "action_id": str(result.id)}
     except AppError:
         await session.rollback()
         raise  # the app-wide handler answers with the error's own status and code

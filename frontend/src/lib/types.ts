@@ -21,7 +21,7 @@ export interface Message {
 export interface PendingAction {
   id: string;
   conversation_id: string;
-  type: 'cancel_order' | 'return';
+  type: 'cancel_order' | 'return_request' | 'return';
   payload: Record<string, any>;
   payload_hash: string;
   preview: {
@@ -30,6 +30,8 @@ export interface PendingAction {
     order_code: string;
     breakdown?: Record<string, any>;
     estimated_refund_vnd?: number;
+    refund_explanation?: string | null;
+    message?: string;
     requires_evidence?: boolean;
     requires_approval?: boolean;
     evidence_types?: string[];
