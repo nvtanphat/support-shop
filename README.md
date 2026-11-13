@@ -52,17 +52,18 @@ flowchart LR
 
 ## 3. Kết quả Đánh giá Nghiệm thu (Quality Gates)
 
-Số liệu đã đo trong lần audit 12/11/2026 (chi tiết, giới hạn và mục `NOT VERIFIED` ở [`docs/eval-report.md`](docs/eval-report.md)):
+Số liệu đã đo trong lần audit 12-13/11/2026 (chi tiết, giới hạn và mục `NOT VERIFIED` ở [`docs/eval-report.md`](docs/eval-report.md)):
 
 | Nhóm kiểm thử | Công cụ / Tiêu chí | Kết quả thực tế | Trạng thái |
 |---|---|:---:|:---:|
-| **An toàn & Tài chính** | Vi phạm IDOR, hoàn tiền sai, rò rỉ PII, phát biểu sai S5 | **0 vi phạm** | **ĐẠT** |
-| **Mô hình chuẩn (Oracle)** | 40 kịch bản (có kiểm tra tool, tham số, thứ tự, hỏi thiếu thông tin) | **40/40** | **ĐẠT** |
-| **Mô hình thật (LangGraph)** | Gemini 3.5 Flash Lite | run1 35/38; run2 dừng ở 23/40 (23/23 PASS, Gemini trả 504) | **NOT VERIFIED** |
-| **Tính độc lập (Null Agent)** | Chỉ từ chối mặc định, không thực thi giao dịch | **6/40 (15.0%)** | **ĐẠT** |
+| **An toàn & Tài chính** | Hành động tài chính trái phép, tuyên bố hoàn tất sai, rò rỉ giữa khách (Gemini thật, 44 kịch bản) | **0 / 0 / 0** | **ĐẠT** |
+| **Mô hình chuẩn (Oracle)** | 44 kịch bản (có kiểm tra tool, tham số, thứ tự, hỏi thiếu thông tin) | **44/44** | **ĐẠT** |
+| **Mô hình thật (LangGraph)** | Gemini 3.5 Flash Lite, 44 kịch bản, k=1, bật reranker | **40/44 (90,9%)**; 4 lỗi còn lại đều do 429 giới hạn tốc độ, chạy lại 4/4 đạt | **ĐẠT** (cổng 90%, mẫu nhỏ, chưa lặp k≥3) |
+| **Tính độc lập (Null Agent)** | Chỉ từ chối mặc định, không thực thi giao dịch; phải trượt cổng chất lượng | **6/44, trượt cổng** | **ĐẠT** |
 | **Code Quality & Lint** | Ruff Linter & Formatter | **0 lỗi / 0 cảnh báo** | **ĐẠT** |
-| **Type Safety** | Mypy | **0 lỗi (109 source files)** | **ĐẠT** |
-| **Backend Unit & Integration** | Pytest (unit, integration, API, resilience) | **107/107 PASS** | **ĐẠT** |
+| **Type Safety** | Mypy | **0 lỗi (113 source files)** | **ĐẠT** |
+| **Backend Unit & Integration** | Pytest với PostgreSQL thật (gồm checkpoint async) | **156/156 PASS** | **ĐẠT** |
+| **RAG (benchmark độc lập, 50 câu test)** | Recall@1 / Recall@4 / từ chối câu ngoài phạm vi | 0,92 / 0,97 / **0,31** (ngưỡng từ chối 0,95) | **KHÔNG ĐẠT** |
 | **Frontend Unit Tests** | Vitest Component Tests | **5/5 PASS** | **ĐẠT** |
 | **Frontend E2E Journeys** | Playwright Chromium Headless | chưa chạy trong lần audit này | **NOT VERIFIED** |
 | **Frontend Build** | TypeScript + Vite Production Build | **0 lỗi** | **ĐẠT** |
