@@ -1,0 +1,65 @@
+id: F-MT-01
+group: S_slots
+tags:
+- final
+- multi_turn
+- return
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F60001
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: máy sấy tóc
+      sku: FN-MS-01
+      qty: 1
+      unit_price: 460000
+    delivered_at: -4d
+user:
+  goal: Hỏi chính sách trước, rồi trả máy sấy hỏng
+  script:
+  - say: Hàng bị lỗi thì shop cho trả trong bao lâu?
+  - say: Vậy trả giúp mình cái máy sấy tóc đơn SL-F60001, sấy được một lúc là tắt
+      ngúm
+  - when_asked: confirm_reason
+    say: Đúng rồi
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Xác nhận
+staff:
+- when_event: approval.created
+  gate: A_return
+  decision: approve
+  role: agent
+expect:
+  db:
+    return_requests:
+    - order: SL-F60001
+      reason_code: defective
+      status: awaiting_return
+    approval_requests:
+    - gate: A_return
+      status: approved
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-01
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - search_policy
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-F60001
+      reason_code: defective

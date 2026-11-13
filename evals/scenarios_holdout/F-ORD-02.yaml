@@ -1,0 +1,38 @@
+id: F-ORD-02
+group: B_order_lookup
+tags:
+- final
+- lookup
+- amount
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F40002
+    status: confirmed
+    payment_method: ewallet
+    items:
+    - key: gối
+      sku: FN-GOI-01
+      qty: 2
+      unit_price: 300000
+    discount_total: 50000
+    shipping_fee: 25000
+user:
+  goal: Hỏi tổng tiền đơn có giảm giá và phí ship
+  script:
+  - say: Đơn SL-F40002 tổng cộng mình phải trả bao nhiêu vậy?
+staff: []
+expect:
+  db: {}
+  required_facts:
+  - kind: amount_vnd
+    value: 575000
+  forbidden: []
+  required_tools:
+  - get_order
+  required_tool_args:
+    get_order:
+      order_code: SL-F40002

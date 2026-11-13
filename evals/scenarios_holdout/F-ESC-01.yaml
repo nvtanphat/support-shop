@@ -1,0 +1,23 @@
+id: F-ESC-01
+group: H_handoff
+tags:
+- final
+- handoff
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures: {}
+user:
+  goal: Muốn nói chuyện với người thật
+  script:
+  - say: Cho tôi nói chuyện với nhân viên thật, không muốn chat với máy
+staff: []
+expect:
+  db:
+    tickets:
+    - reason_code: customer_request
+  required_facts: []
+  forbidden: []
+  required_tools:
+  - escalate_to_human

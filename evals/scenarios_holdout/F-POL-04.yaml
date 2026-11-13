@@ -1,0 +1,24 @@
+id: F-POL-04
+group: A_policy_faq
+tags:
+- final
+- faq
+- excluded
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures: {}
+user:
+  goal: Đồ bơi không vừa có đổi trả được không
+  script:
+  - say: Đồ bơi mặc không vừa thì có trả được không?
+staff: []
+expect:
+  db: {}
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-03
+  forbidden: []
+  required_tools:
+  - search_policy

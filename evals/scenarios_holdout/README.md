@@ -9,4 +9,7 @@ Quy tắc:
 3. Một kịch bản đã từng được dùng để sửa agent thì chuyển sang `evals/scenarios/` và viết kịch bản thay thế ở đây.
 4. Kết quả mong đợi viết từ đặc tả nghiệp vụ (`docs/business-spec.md`), không từ output của agent.
 
-Tạo ngày 2026-11-13, 16 kịch bản; chưa chạy với Gemini lần nào.
+## Lịch sử
+
+- 2026-11-13: tập đầu tiên (16 kịch bản `H-*`). Sau khi chạy với Gemini, lỗi của tập này đã được phân tích để sửa agent, nên cả 16 kịch bản được chuyển sang `evals/scenarios/` (gắn tag `former_holdout`) theo quy tắc 3.
+- 2026-11-13: tập thay thế, 35 kịch bản `F-*`, viết từ đặc tả trước khi sửa agent và chưa chạy với Gemini. Chỉ chạy oracle (không gọi LLM) để kiểm tra kịch bản nạp được và số tiền mong đợi khớp miền nghiệp vụ. Sinh bởi một script một lần; không sửa nội dung sau khi đã chạy với agent thật.

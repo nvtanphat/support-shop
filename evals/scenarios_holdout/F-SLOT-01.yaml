@@ -1,0 +1,43 @@
+id: F-SLOT-01
+group: S_slots
+tags:
+- final
+- slots
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F20011
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: áo sơ mi
+      sku: FN-SM-01
+      qty: 1
+      unit_price: 300000
+    delivered_at: -3d
+  - code: SL-F20012
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: áo polo
+      sku: FN-PL-01
+      qty: 1
+      unit_price: 260000
+    delivered_at: -4d
+user:
+  goal: Muốn trả hàng lỗi, có hai đơn, chưa nói đơn nào
+  script:
+  - say: Áo mình nhận bị lỗi đường may, mình muốn trả
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: asks_for
+    value: order_code
+  forbidden:
+  - kind: tool
+    pattern: propose_return

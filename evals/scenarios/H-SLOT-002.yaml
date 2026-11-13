@@ -1,7 +1,7 @@
 id: H-SLOT-002
 group: S_slots
 tags:
-- holdout
+- former_holdout
 - slots
 clock: '2026-11-11T10:00:00+07:00'
 principal:

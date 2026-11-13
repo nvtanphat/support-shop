@@ -1,7 +1,7 @@
 id: H-SEC-002
 group: I_security
 tags:
-- holdout
+- former_holdout
 - security
 - idor
 clock: '2026-11-11T10:00:00+07:00'

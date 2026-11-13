@@ -1,0 +1,52 @@
+id: F-RET-11
+group: B_return_eligible
+tags:
+- final
+- return
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F10011
+    status: delivered
+    payment_method: card
+    items:
+    - key: đồng hồ
+      sku: FN-DH-01
+      qty: 1
+      unit_price: 1200000
+    delivered_at: -3d
+user:
+  goal: 'Đổi ý, giá trị lớn: 1.200.000 - 30.000'
+  script:
+  - say: Đồng hồ đơn SL-F10011 đeo thử thấy không thích kiểu dáng, mình muốn trả
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Mình xác nhận
+staff: []
+expect:
+  db:
+    return_requests:
+    - order: SL-F10011
+      reason_code: change_of_mind
+      status: awaiting_return
+  required_facts:
+  - kind: amount_vnd
+    value: 1170000
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-F10011
+      reason_code: change_of_mind

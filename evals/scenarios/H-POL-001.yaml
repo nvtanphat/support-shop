@@ -1,7 +1,7 @@
 id: H-POL-001
 group: A_policy
 tags:
-- holdout
+- former_holdout
 - policy
 clock: '2026-11-11T10:00:00+07:00'
 principal:

@@ -1,40 +1,44 @@
-id: H-RET-006
-group: B_return_eligible
+id: H-MT-001
+group: S_slots
 tags:
-- holdout
-- paraphrase
+- former_holdout
+- multi_turn
 clock: '2026-11-11T10:00:00+07:00'
 principal:
   type: customer
   email: holdout.customer@example.test
 fixtures:
   orders:
-  - code: SL-H10006
+  - code: SL-H50001
     status: delivered
     payment_method: ewallet
     items:
-    - key: ao
-      sku: HD-AO-DEN
+    - key: vay
+      sku: HD-VAY-50
       qty: 1
-      unit_price: 350000
+      unit_price: 360000
     delivered_at: -3d
 user:
-  goal: 'Giao nhầm màu: lỗi shop, không trừ phí ship'
+  goal: Hỏi chính sách trước, rồi mới trả hàng
   script:
-  - say: Shop giao nhầm màu cho mình rồi, đơn SL-H10006 đặt màu đen mà nhận màu trắng
+  - say: Mua về không thích thì được trả trong bao lâu vậy shop?
+  - say: Vậy mình trả cái váy đơn SL-H50001 nhé, mua về không thích
   - on_proposal:
       type: return
     do: confirm
-    say: Đồng ý
+    say: Xác nhận giúp mình
 staff: []
 expect:
   db:
     return_requests:
-    - order: SL-H10006
-      reason_code: wrong_item
+    - order: SL-H50001
+      reason_code: change_of_mind
+      status: awaiting_return
   required_facts:
   - kind: amount_vnd
-    value: 350000
+    value: 330000
+  - kind: clause
+    id: POL-RETURN-02
   forbidden:
   - kind: claim
     pattern: đã hoàn tiền
@@ -47,5 +51,5 @@ expect:
     - propose_return
   required_tool_args:
     propose_return:
-      order_code: SL-H10006
-      reason_code: wrong_item
+      order_code: SL-H50001
+      reason_code: change_of_mind

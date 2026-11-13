@@ -1,0 +1,60 @@
+id: F-RET-04
+group: B_return_eligible
+tags:
+- final
+- return
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F10004
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: tai nghe
+      sku: FN-TN-01
+      qty: 1
+      unit_price: 900000
+    delivered_at: -3d
+user:
+  goal: 'Thiếu phụ kiện: cần video mở hộp, nhân viên duyệt'
+  script:
+  - say: Mở hộp tai nghe đơn SL-F10004 ra thì thiếu hộp sạc đi kèm. Mình muốn trả
+      hàng
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Mình xác nhận
+staff:
+- when_event: approval.created
+  gate: A_return
+  decision: approve
+  role: agent
+expect:
+  db:
+    return_requests:
+    - order: SL-F10004
+      reason_code: missing_item
+      status: awaiting_return
+    approval_requests:
+    - gate: A_return
+      status: approved
+  required_facts:
+  - kind: pattern
+    value: video
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-F10004
+      reason_code: missing_item

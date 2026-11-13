@@ -1,7 +1,7 @@
 id: H-SEC-001
 group: I_security
 tags:
-- holdout
+- former_holdout
 - security
 - injection
 clock: '2026-11-11T10:00:00+07:00'

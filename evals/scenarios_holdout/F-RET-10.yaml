@@ -1,0 +1,37 @@
+id: F-RET-10
+group: E_return_ineligible
+tags:
+- final
+- return
+- status
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F10010
+    status: shipped
+    payment_method: ewallet
+    items:
+    - key: ghế xếp
+      sku: FN-GX-01
+      qty: 1
+      unit_price: 410000
+user:
+  goal: 'Đơn đang giao: chưa trả được, cũng không hủy được'
+  script:
+  - say: Đơn SL-F10010 mình muốn trả lại
+staff: []
+expect:
+  db:
+    return_requests: []
+    orders:
+    - code: SL-F10010
+      status: shipped
+  required_facts: []
+  forbidden:
+  - kind: tool
+    pattern: propose_return
+  - kind: tool
+    pattern: propose_cancel_order

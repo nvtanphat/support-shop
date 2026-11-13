@@ -1,0 +1,35 @@
+id: F-RET-09
+group: E_return_ineligible
+tags:
+- final
+- return
+- boundary
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F10009
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: nồi cơm
+      sku: FN-NC-01
+      qty: 1
+      unit_price: 750000
+    delivered_at: -20d
+user:
+  goal: 'Hàng lỗi ngày 20: quá hạn 15 ngày'
+  script:
+  - say: Nồi cơm đơn SL-F10009 nấu bị khê đáy liên tục, chắc lỗi rồi, mình muốn trả
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-01
+  forbidden:
+  - kind: tool
+    pattern: propose_return

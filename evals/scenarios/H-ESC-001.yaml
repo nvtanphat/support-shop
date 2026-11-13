@@ -1,7 +1,7 @@
 id: H-ESC-001
 group: H_escalation
 tags:
-- holdout
+- former_holdout
 clock: '2026-11-11T10:00:00+07:00'
 principal:
   type: customer

@@ -1,27 +1,27 @@
-id: H-SLOT-001
+id: F-SLOT-02
 group: S_slots
 tags:
-- holdout
+- final
 - slots
-clock: '2026-11-11T10:00:00+07:00'
+clock: '2026-11-18T14:00:00+07:00'
 principal:
   type: customer
-  email: holdout.customer@example.test
+  email: final.customer@example.test
 fixtures:
   orders:
-  - code: SL-H30001
+  - code: SL-F20002
     status: delivered
     payment_method: ewallet
     items:
-    - key: vay
-      sku: HD-VAY-01
+    - key: giày
+      sku: FN-GI-01
       qty: 1
-      unit_price: 420000
+      unit_price: 520000
     delivered_at: -2d
 user:
-  goal: Trả hàng nhưng chưa nói lý do
+  goal: Trả hàng, chưa nói lý do
   script:
-  - say: Mình muốn trả cái váy đơn SL-H30001
+  - say: Cho mình trả đôi giày đơn SL-F20002
 staff: []
 expect:
   db:

@@ -1,0 +1,33 @@
+id: F-ORD-01
+group: B_order_lookup
+tags:
+- final
+- lookup
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F40001
+    status: shipped
+    payment_method: ewallet
+    items:
+    - key: nồi chiên
+      sku: FN-NCK-01
+      qty: 1
+      unit_price: 1350000
+user:
+  goal: Hỏi đơn đang giao tới đâu
+  script:
+  - say: Đơn SL-F40001 của mình tới đâu rồi shop?
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-F40001
+      status: shipped
+  required_facts:
+  - kind: status
+    value: shipped
+  forbidden: []

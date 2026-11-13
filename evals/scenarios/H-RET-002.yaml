@@ -1,7 +1,7 @@
 id: H-RET-002
 group: E_return_ineligible
 tags:
-- holdout
+- former_holdout
 - boundary
 clock: '2026-11-11T10:00:00+07:00'
 principal:

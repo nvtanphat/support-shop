@@ -1,0 +1,73 @@
+id: F-SLOT-04
+group: S_slots
+tags:
+- final
+- slots
+- multi_turn
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F20041
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: mũ
+      sku: FN-MU-01
+      qty: 1
+      unit_price: 150000
+    delivered_at: -2d
+  - code: SL-F20042
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: áo khoác
+      sku: FN-AK-02
+      qty: 1
+      unit_price: 380000
+    delivered_at: -3d
+user:
+  goal: Thông tin trả hàng được cung cấp dần qua các lượt
+  script:
+  - say: Mình muốn trả hàng
+  - when_asked: order_code
+    say: Đơn SL-F20042 nhé
+  - when_asked: reason
+    say: Áo bị rách ở vai
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Xác nhận
+staff:
+- when_event: approval.created
+  gate: A_return
+  decision: approve
+  role: agent
+expect:
+  db:
+    return_requests:
+    - order: SL-F20042
+      reason_code: defective
+      status: awaiting_return
+    approval_requests:
+    - gate: A_return
+      status: approved
+  required_facts:
+  - kind: asks_for
+    value: order_code
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-F20042
+      reason_code: defective

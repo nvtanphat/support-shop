@@ -1,44 +1,47 @@
-id: H-MT-001
-group: S_slots
+id: F-RET-12
+group: B_return_eligible
 tags:
-- holdout
-- multi_turn
-clock: '2026-11-11T10:00:00+07:00'
+- final
+- return
+- discount
+clock: '2026-11-18T14:00:00+07:00'
 principal:
   type: customer
-  email: holdout.customer@example.test
+  email: final.customer@example.test
 fixtures:
   orders:
-  - code: SL-H50001
+  - code: SL-F10012
     status: delivered
     payment_method: ewallet
     items:
-    - key: vay
-      sku: HD-VAY-50
+    - key: áo len
+      sku: FN-AL-01
       qty: 1
-      unit_price: 360000
-    delivered_at: -3d
+      unit_price: 600000
+    - key: khăn choàng
+      sku: FN-KC-01
+      qty: 1
+      unit_price: 400000
+    delivered_at: -2d
+    discount_total: 100000
 user:
-  goal: Hỏi chính sách trước, rồi mới trả hàng
+  goal: 'Trả một món của đơn có giảm giá: phân bổ giảm giá rồi trừ phí'
   script:
-  - say: Mua về không thích thì được trả trong bao lâu vậy shop?
-  - say: Vậy mình trả cái váy đơn SL-H50001 nhé, mua về không thích
+  - say: Đơn SL-F10012 mình muốn trả cái khăn choàng vì đổi ý, không thích màu nữa
   - on_proposal:
       type: return
     do: confirm
-    say: Xác nhận giúp mình
+    say: Xác nhận
 staff: []
 expect:
   db:
     return_requests:
-    - order: SL-H50001
+    - order: SL-F10012
       reason_code: change_of_mind
       status: awaiting_return
   required_facts:
   - kind: amount_vnd
     value: 330000
-  - kind: clause
-    id: POL-RETURN-02
   forbidden:
   - kind: claim
     pattern: đã hoàn tiền
@@ -51,5 +54,5 @@ expect:
     - propose_return
   required_tool_args:
     propose_return:
-      order_code: SL-H50001
+      order_code: SL-F10012
       reason_code: change_of_mind

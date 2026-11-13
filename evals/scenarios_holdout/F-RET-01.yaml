@@ -1,0 +1,53 @@
+id: F-RET-01
+group: B_return_eligible
+tags:
+- final
+- return
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F10001
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: áo khoác
+      sku: FN-AK-01
+      qty: 1
+      unit_price: 280000
+    delivered_at: -4d
+user:
+  goal: 'Đổi ý trong 7 ngày: hoàn 280.000 - 30.000'
+  script:
+  - say: Áo khoác đơn SL-F10001 mình mặc thử thấy không hợp dáng, cho mình trả lại
+      nhé
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Mình xác nhận
+staff: []
+expect:
+  db:
+    return_requests:
+    - order: SL-F10001
+      reason_code: change_of_mind
+      status: awaiting_return
+  required_facts:
+  - kind: amount_vnd
+    value: 250000
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-F10001
+      reason_code: change_of_mind

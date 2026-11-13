@@ -1,0 +1,58 @@
+id: F-RET-02
+group: B_return_eligible
+tags:
+- final
+- return
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F10002
+    status: delivered
+    payment_method: card
+    items:
+    - key: bình giữ nhiệt
+      sku: FN-BGN-01
+      qty: 1
+      unit_price: 450000
+    delivered_at: -5d
+user:
+  goal: Hư hại khi vận chuyển, nhân viên duyệt
+  script:
+  - say: Bình giữ nhiệt đơn SL-F10002 giao tới thì hộp móp, thân bình bị lõm một mảng.
+      Mình muốn trả
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Mình xác nhận
+staff:
+- when_event: approval.created
+  gate: A_return
+  decision: approve
+  role: agent
+expect:
+  db:
+    return_requests:
+    - order: SL-F10002
+      reason_code: damaged_in_transit
+      status: awaiting_return
+    approval_requests:
+    - gate: A_return
+      status: approved
+  required_facts: []
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-F10002
+      reason_code: damaged_in_transit
