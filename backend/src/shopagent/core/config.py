@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     RETRIEVAL_RERANKER_ENABLED: bool | None = None
     # Same for `retrieval.embedding.enabled` (the dense half of hybrid candidate retrieval)
     RETRIEVAL_EMBEDDING_ENABLED: bool | None = None
+    # Where the retrieval models are cached. Unset: `.cache/fastembed` inside the project, so a project on D:\ does
+    # not fill the system drive through the operating system's temp directory (fastembed's own default).
+    FASTEMBED_CACHE_PATH: str | None = None
 
     # LLM
     GEMINI_API_KEY: str = ""
@@ -145,6 +148,11 @@ def get_models_config() -> dict[str, Any]:
     if _models_config is None:
         _models_config = load_yaml(CONFIG_DIR / "models.yaml")
     return _models_config
+
+
+def model_cache_dir() -> str:
+    """Directory for downloaded retrieval models: FASTEMBED_CACHE_PATH, else `.cache/fastembed` in the project."""
+    return get_settings().FASTEMBED_CACHE_PATH or str(PROJECT_ROOT / ".cache" / "fastembed")
 
 
 def get_rules_config() -> dict[str, Any]:

@@ -1,4 +1,4 @@
-"""Dense embeddings for policy retrieval: BGE-M3 through fastembed (ONNX, CPU).
+"""Dense embeddings for policy retrieval: BGE-M3 (int8 by default) through fastembed (ONNX, CPU).
 
 The dense score is the second signal of the hybrid candidate stage (rag/retriever.py), next to BM25. It
 understands paraphrase and slang ("xài thử thấy không hợp" ~ "đổi ý") that share no words with the clause.
@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from shopagent.core.config import get_app_config, get_settings
+from shopagent.core.config import get_app_config, get_settings, model_cache_dir
 from shopagent.rag import bge_m3
 
 QUERY_CACHE_SIZE = 512
@@ -37,10 +37,10 @@ class FastEmbedEmbedder:
     def __init__(self, model_name: str) -> None:
         from fastembed import TextEmbedding
 
-        if model_name == bge_m3.MODEL:
-            bge_m3.register()
+        if bge_m3.is_bge_m3(model_name):
+            bge_m3.register(model_name)
         self.name = model_name
-        self._model = TextEmbedding(model_name=model_name)
+        self._model = TextEmbedding(model_name=model_name, cache_dir=model_cache_dir())
         self._lock = threading.Lock()  # one ONNX session; calls come from worker threads
         self._queries: OrderedDict[str, list[float]] = OrderedDict()
 
@@ -76,7 +76,7 @@ def _settings() -> EmbeddingSettings | None:
     override = get_settings().RETRIEVAL_EMBEDDING_ENABLED
     if not (cfg.get("enabled") if override is None else override):
         return None
-    return EmbeddingSettings(model=str(cfg.get("model", bge_m3.MODEL)))
+    return EmbeddingSettings(model=str(cfg.get("model", bge_m3.DEFAULT)))
 
 
 def get_configured_embedder() -> Embedder | None:

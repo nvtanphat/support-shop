@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from shopagent.core.config import get_app_config, get_settings
+from shopagent.core.config import get_app_config, get_settings, model_cache_dir
 
 
 class Reranker(Protocol):
@@ -32,7 +32,7 @@ class CrossEncoderReranker:
         try:
             from fastembed.rerank.cross_encoder import TextCrossEncoder  # type: ignore[import-not-found]
 
-            self._model = TextCrossEncoder(model_name=model_name)
+            self._model = TextCrossEncoder(model_name=model_name, cache_dir=model_cache_dir())
         except Exception as exc:  # ImportError, download or ONNX load failure
             raise RerankerUnavailableError(
                 f"reranker '{model_name}' unavailable ({exc}); install the 'rerank' extra or disable "

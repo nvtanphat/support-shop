@@ -65,3 +65,6 @@ backups/
 
 # Local planning notes, not part of the repository
 SHOP_SUPPORT_AGENT_IMPLEMENTATION_PLAN_2026.md
+
+# Downloaded retrieval models (config FASTEMBED_CACHE_PATH)
+.cache/

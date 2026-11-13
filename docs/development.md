@@ -3,10 +3,10 @@
 ## Cấu hình đáng chú ý
 
 - `RETRIEVAL_RERANKER_ENABLED=false` tắt reranker (mặc định bật trong `config/app.yaml`; mô hình khoảng 1 GB RAM)
-- `RETRIEVAL_EMBEDDING_ENABLED=false` tắt nửa embedding của bước lấy ứng viên (mặc định bật; BGE-M3 cần khoảng 2,3 GB ổ đĩa và 2-3 GB RAM, lần đầu tải mất vài phút). Tắt thì retrieval chỉ còn BM25 + reranker. Đổi model trong `retrieval.embedding.model` rồi chạy `index-policies` để embed lại.
+- `RETRIEVAL_EMBEDDING_ENABLED=false` tắt nửa embedding của bước lấy ứng viên (mặc định bật; BGE-M3 bản int8 cần khoảng 0,6 GB ổ đĩa và 1,1 GB RAM, lần đầu tải mất vài phút; bản đầy đủ `BAAI/bge-m3` cần 2,3 GB ổ đĩa và 1,8 GB RAM). Tắt thì retrieval chỉ còn BM25 + reranker. Đổi model trong `retrieval.embedding.model` rồi chạy `index-policies` để embed lại.
 - `GEMINI_API_KEY` nhận nhiều khóa cách nhau bằng dấu phẩy; khóa bị giới hạn tốc độ được nghỉ tạm và hệ thống chuyển sang khóa khác.
 - Hạn mức vòng lặp agent, thời gian chờ và số lần thử lại LLM ở [config/models.yaml](../config/models.yaml).
-- Bộ nhớ đệm nặng (mô hình reranker) đặt qua `FASTEMBED_CACHE_PATH` và `HF_HOME`.
+- Mô hình retrieval (reranker, BGE-M3) tải về `.cache/fastembed` trong thư mục dự án, cùng ổ với mã nguồn; đổi nơi lưu bằng `FASTEMBED_CACHE_PATH`.
 
 ## Kiểm thử và đánh giá
 
