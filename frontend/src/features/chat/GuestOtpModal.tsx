@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { X, KeyRound, Phone, Package, AlertCircle, Loader2, Sparkles } from 'lucide-react';
+import { useEscapeKey } from '../../lib/useEscapeKey';
 
 interface GuestOtpModalProps {
   isOpen: boolean;
@@ -16,6 +17,7 @@ export const GuestOtpModal: React.FC<GuestOtpModalProps> = ({
   onVerified,
   defaultOrderCode,
 }) => {
+  useEscapeKey(onClose);
   const [step, setStep] = useState<'request' | 'otp'>('request');
   const [orderCode, setOrderCode] = useState(defaultOrderCode ?? '');
   const [phone, setPhone] = useState('');

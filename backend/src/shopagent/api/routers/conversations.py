@@ -270,6 +270,7 @@ async def send_message(
             conv.last_message_seq += 1
             seq = conv.last_message_seq
             msg = MessageModel(
+                id=uuid.uuid4(),
                 conversation_id=conversation_id,
                 seq=seq,
                 role="customer",

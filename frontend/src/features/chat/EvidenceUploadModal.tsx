@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { api } from '../../lib/api';
 import { X, UploadCloud, FileCheck, AlertCircle, Loader2 } from 'lucide-react';
+import { useEscapeKey } from '../../lib/useEscapeKey';
 
 interface EvidenceUploadModalProps {
   returnCode: string | null;
@@ -16,6 +17,7 @@ export const EvidenceUploadModal: React.FC<EvidenceUploadModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  useEscapeKey(onClose);
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);

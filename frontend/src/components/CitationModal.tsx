@@ -3,6 +3,7 @@ import { X, BookOpen, Calendar } from 'lucide-react';
 import { api } from '../lib/api';
 import type { PolicyDetail } from '../lib/types';
 import { formatDate } from '../lib/orderView';
+import { useEscapeKey } from '../lib/useEscapeKey';
 
 interface CitationModalProps {
   clauseId: string | null;
@@ -13,6 +14,7 @@ type Load = { status: 'loading' } | { status: 'ready'; policy: PolicyDetail } | 
 
 /** The clause the assistant cited, read from the policy index (never a placeholder text). */
 export const CitationModal: React.FC<CitationModalProps> = ({ clauseId, onClose }) => {
+  useEscapeKey(onClose);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
 
   useEffect(() => {

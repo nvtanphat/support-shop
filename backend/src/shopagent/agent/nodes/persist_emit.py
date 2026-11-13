@@ -41,6 +41,9 @@ async def persist_emit_node(state: AgentState, config: RunnableConfig) -> dict[s
                 select(ConversationModel)
                 .where(ConversationModel.id == c_uuid)
                 .with_for_update()
+                # The row was loaded before the (slow) LLM turn; a handoff or staff message may have used
+                # sequence numbers since. Reload it so seq allocation starts from the committed counters.
+                .execution_options(populate_existing=True)
             )
             res_conv = await session.execute(stmt_conv)
             conv = res_conv.scalar_one_or_none()
@@ -113,6 +116,7 @@ async def persist_emit_node(state: AgentState, config: RunnableConfig) -> dict[s
                     user_content = str(latest_human_msg.content).strip()
                     conv.last_message_seq += 1
                     u_msg = MessageModel(
+                        id=uuid.uuid4(),
                         conversation_id=c_uuid,
                         seq=conv.last_message_seq,
                         role="customer",
@@ -125,6 +129,7 @@ async def persist_emit_node(state: AgentState, config: RunnableConfig) -> dict[s
                     clean_verified = verified_output.strip()
                     conv.last_message_seq += 1
                     a_msg = MessageModel(
+                        id=uuid.uuid4(),  # set now: the event payload below carries it
                         conversation_id=c_uuid,
                         seq=conv.last_message_seq,
                         role="assistant",

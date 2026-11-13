@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, BookOpen, ChevronRight } from 'lucide-react';
 import type { PolicySummary } from '../lib/types';
+import { useEscapeKey } from '../lib/useEscapeKey';
 
 interface PolicyListModalProps {
   open: boolean;
@@ -13,6 +14,7 @@ interface PolicyListModalProps {
 
 /** Every clause currently in force, opened from the "Chính sách" tab. */
 export const PolicyListModal: React.FC<PolicyListModalProps> = ({ open, policies, loading, error, onSelect, onClose }) => {
+  useEscapeKey(onClose, open);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={onClose}>

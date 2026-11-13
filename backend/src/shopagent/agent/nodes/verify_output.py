@@ -9,6 +9,7 @@ from typing import Any
 from langchain_core.messages import AIMessage
 
 from shopagent.agent.grounding import check_claims
+from shopagent.agent.presentation import strip_internal_codes
 from shopagent.agent.state import AgentState
 from shopagent.core.text import extract_text_content
 
@@ -145,4 +146,4 @@ def verify_output_node(state: AgentState) -> dict[str, Any]:
             "error": f"Verification failed: {'; '.join(violations)}",
         }
 
-    return {"verified_output": content, "claim_evidence": supported_claims}
+    return {"verified_output": strip_internal_codes(content), "claim_evidence": supported_claims}

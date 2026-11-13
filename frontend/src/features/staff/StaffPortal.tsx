@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
+import { useEscapeKey } from '../../lib/useEscapeKey';
 import { ApprovalRequest, Message, StaffMetrics, StaffReturn, Ticket } from '../../lib/types';
 import {
   ShieldCheck,
@@ -60,6 +61,7 @@ export const StaffPortal: React.FC = () => {
     }
   };
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
+  useEscapeKey(() => setSelectedApproval(null), selectedApproval !== null);
 
   // The conversation of the selected ticket, refreshed every few seconds so the customer's new messages appear.
   useEffect(() => {

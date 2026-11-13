@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { LogIn } from 'lucide-react';
 import { EnvironmentBanner } from '../components/EnvironmentBanner';
 import { ChatView, ChatCommand } from '../features/chat/ChatView';
 import { StaffPortal } from '../features/staff/StaffPortal';
 import { api, SESSION_EXPIRED_EVENT } from '../lib/api';
+import { useEscapeKey } from '../lib/useEscapeKey';
 import {
   CartIcon,
   ChatIcon,
@@ -18,6 +19,24 @@ import {
 
 type Tab = 'assistant' | 'staff';
 
+const CONVERSATION_KEY = 'conversation_id';
+
+function readSavedConversation(): string | null {
+  try {
+    return localStorage.getItem(CONVERSATION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveConversation(id: string): void {
+  try {
+    localStorage.setItem(CONVERSATION_KEY, id);
+  } catch {
+    // storage unavailable (private mode): the conversation simply is not resumed after a reload
+  }
+}
+
 export const App: React.FC = () => {
   const [tab, setTab] = useState<Tab>('assistant');
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -29,14 +48,40 @@ export const App: React.FC = () => {
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
 
-  const initConversation = useCallback(async () => {
+  const initInFlight = useRef<Promise<void> | null>(null);
+
+  /** Resume the conversation of this browser session; start a new one when asked or when it is gone. */
+  const initConversation = useCallback(async (fresh = false) => {
+    // React runs mount effects twice in development; one start per moment is enough.
+    if (initInFlight.current && !fresh) return initInFlight.current;
+    const run = startConversation(fresh);
+    initInFlight.current = run;
+    try {
+      await run;
+    } finally {
+      if (initInFlight.current === run) initInFlight.current = null;
+    }
+  }, []);
+
+  const startConversation = async (fresh: boolean) => {
+    const saved = fresh ? null : readSavedConversation();
+    if (saved) {
+      try {
+        await api.getConversation(saved);
+        setConversationId(saved);
+        return;
+      } catch {
+        // deleted, or it belongs to another identity: fall through to a new one
+      }
+    }
     try {
       const res = await api.createConversation();
+      saveConversation(res.conversation_id);
       setConversationId(res.conversation_id);
     } catch (err) {
       console.error('Error creating conversation:', err);
     }
-  }, []);
+  };
 
   useEffect(() => {
     initConversation();
@@ -49,7 +94,7 @@ export const App: React.FC = () => {
       setTab('assistant');
       setAuthError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
       setShowLogin(true);
-      initConversation();
+      initConversation(true);
     };
     window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
@@ -70,7 +115,7 @@ export const App: React.FC = () => {
       setShowLogin(false);
       setPassword('');
       setTab(staffLogin ? 'staff' : 'assistant');
-      if (!staffLogin) initConversation();
+      if (!staffLogin) initConversation(true);
     } catch (err: unknown) {
       setAuthError(err instanceof Error ? err.message : 'Đăng nhập thất bại.');
     }
@@ -85,9 +130,11 @@ export const App: React.FC = () => {
       api.logout();
       setProfile(null);
       setTab('assistant');
-      initConversation();
+      initConversation(true);
     }
   };
+
+  useEscapeKey(() => setShowLogin(false), showLogin);
 
   const isStaff = profile?.kind === 'staff';
 

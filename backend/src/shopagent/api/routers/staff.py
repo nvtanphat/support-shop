@@ -179,6 +179,7 @@ async def staff_send_message(
     seq = conv.last_message_seq
 
     msg = MessageModel(
+        id=uuid.uuid4(),
         conversation_id=conversation_id,
         seq=seq,
         role="staff",

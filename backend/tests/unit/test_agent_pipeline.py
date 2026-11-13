@@ -590,3 +590,43 @@ async def test_blocked_reply_leaves_its_reason_in_the_audit_log() -> None:
         assert len(rows) == 1
         assert rows[0].subject_id == str(conv_id) and "UNVERIFIED_NUMBER" in rows[0].after_state["reason"]
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_persist_uses_sequence_numbers_taken_during_the_llm_turn() -> None:
+    """Seen live: a handoff during a slow AI turn took event seq 1; the turn then wrote seq 1 again and returned 500."""
+    from shopagent.infra.db.tables import ConversationEventModel, ConversationModel
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    conv_id = uuid.uuid4()
+    async with factory() as setup:
+        setup.add(ConversationModel(id=conv_id))
+        await setup.commit()
+
+    async with factory() as turn_session:
+        stale = await turn_session.get(ConversationModel, conv_id)  # loaded at the start of the turn
+        assert stale is not None and stale.last_event_seq == 0
+        async with factory() as other:  # meanwhile the customer presses "Liên hệ"
+            conv = await other.get(ConversationModel, conv_id)
+            assert conv is not None
+            conv.last_event_seq = 1
+            other.add(ConversationEventModel(conversation_id=conv_id, seq=1, type="conversation.mode_changed", payload={"mode": "waiting_human"}))
+            await other.commit()
+
+        state: AgentState = {
+            "conversation_id": str(conv_id),
+            "turn_id": "turn-race",
+            "messages": [HumanMessage(content="Đổi trả", id="m-race")],
+            "verified_output": "Dạ em hỗ trợ ngay.",
+        }
+        await persist_emit_node(state, config={"configurable": {"session": turn_session}})
+        await turn_session.commit()
+
+        seqs = (await turn_session.execute(select(ConversationEventModel.seq).where(ConversationEventModel.conversation_id == conv_id))).scalars().all()
+        assert sorted(seqs) == [1, 2]
+        payload = (await turn_session.execute(select(ConversationEventModel.payload).where(ConversationEventModel.seq == 2))).scalar_one()
+        assert payload["id"] not in ("None", None)  # the message id is known before the event is written
+    await engine.dispose()
