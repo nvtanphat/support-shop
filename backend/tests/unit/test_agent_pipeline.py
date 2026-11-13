@@ -548,3 +548,13 @@ async def test_other_customers_order_is_indistinguishable_from_a_missing_one() -
         unknown = await guest_tools["lookup_order_guest"].ainvoke({"order_code": "SL-NOPE99"})
         assert unverified == unknown and unknown["error_code"] == "GUEST_VERIFICATION_REQUIRED"
     await engine.dispose()
+
+
+def test_system_prompt_keeps_internal_codes_out_of_customer_replies() -> None:
+    """A live chat listed raw item UUIDs and reason enums and re-asked a reason the customer had given."""
+    from shopagent.agent.prompt import render_system_prompt
+
+    prompt = render_system_prompt({"messages": [], "principal": Principal.authenticated_customer(customer_id=uuid.uuid4()), "dynamic_context": {}})
+    assert "CÁCH TRÌNH BÀY VỚI KHÁCH" in prompt
+    assert "UUID" in prompt and "không mã lý do" in prompt
+    assert "không hỏi lại" in prompt
