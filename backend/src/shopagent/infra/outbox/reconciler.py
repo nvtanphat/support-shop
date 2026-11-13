@@ -12,7 +12,7 @@ from shopagent.core.clock import get_clock
 from shopagent.domain.models.enums import RefundStatus
 from shopagent.infra.db.tables import RefundModel
 from shopagent.infra.payments.port import PaymentGatewayPort
-from shopagent.infra.payments.simulated import SimulatedPaymentGateway
+from shopagent.infra.payments.simulated import get_simulated_gateway
 
 logger = logging.getLogger("shopagent.outbox.reconciler")
 
@@ -25,7 +25,7 @@ class PaymentReconciler:
         interval_seconds: float = 300.0,
     ) -> None:
         self.session_factory = session_factory
-        self.gateway = gateway or SimulatedPaymentGateway()
+        self.gateway = gateway or get_simulated_gateway()
         self.interval_seconds = interval_seconds
         self.clock = get_clock()
         self._running = False

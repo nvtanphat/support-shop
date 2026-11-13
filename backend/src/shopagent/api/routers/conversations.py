@@ -21,6 +21,7 @@ from shopagent.api.deps import get_current_principal, get_db_session
 from shopagent.api.schemas.models import (
     ConversationDto,
     CreateConversationRequest,
+    FeedbackRequest,
     MessageDto,
     SendMessageRequest,
 )
@@ -28,6 +29,7 @@ from shopagent.core.clock import get_clock
 from shopagent.core.principal import Principal
 from shopagent.domain.services.tickets import TicketService
 from shopagent.infra.db.tables import (
+    AuditLogModel,
     ConversationEventModel,
     ConversationModel,
     IdempotencyKeyModel,
@@ -421,3 +423,32 @@ async def handoff_to_human(
         "ticket_code": ticket.code,
         "message": "Cuộc trò chuyện đã được chuyển tới nhân viên chăm sóc khách hàng.",
     }
+
+
+@router.post("/conversations/{conversation_id}/feedback", status_code=status.HTTP_201_CREATED)
+async def submit_feedback(
+    conversation_id: uuid.UUID,
+    req: FeedbackRequest,
+    x_guest_token: str | None = Header(default=None, alias="X-Guest-Token"),
+    guest_token: str | None = Query(default=None),
+    principal: Principal = Depends(get_current_principal),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Record a satisfaction rating for a conversation in the audit log; every submission is kept."""
+    conv = (await session.execute(select(ConversationModel).where(ConversationModel.id == conversation_id))).scalar_one_or_none()
+    if not conv:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy cuộc trò chuyện.")
+    verify_conversation_access(conv, principal, x_guest_token or guest_token)
+
+    session.add(
+        AuditLogModel(
+            actor_type="customer" if principal.is_authenticated_customer else "guest",
+            actor_id=str(principal.customer_id or conv.guest_token or "guest"),
+            action="conversation.feedback",
+            subject_type="conversation",
+            subject_id=str(conversation_id),
+            after_state={"rating": req.rating, "comment": req.comment},
+        )
+    )
+    await session.commit()
+    return {"status": "recorded", "rating": req.rating}

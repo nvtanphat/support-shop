@@ -61,6 +61,12 @@ docker compose run --rm api python -m shopagent.cli verify-data
 
 ---
 
+### 2.3 Script vận hành (`ops/`)
+
+`ops/backup.sh`, `ops/restore.sh <dump>`, `ops/deploy.sh <tag>`, `ops/rollback.sh` bọc các lệnh Docker Compose ở trên. Mới kiểm tra cú pháp bằng `bash -n`, chưa chạy trên máy chủ thật; diễn tập sao lưu, khôi phục và quay lui trước khi dựa vào chúng. Rollback không hoàn tác migration.
+
+---
+
 ## 3. Quy trình Cập nhật Chính sách Cửa hàng (Policy Update Workflow)
 
 Khi cửa hàng cập nhật quy định đổi trả/hủy đơn:
@@ -84,16 +90,7 @@ Khi cửa hàng cập nhật quy định đổi trả/hủy đơn:
 
 ## 4. Xử lý Sự cố Khẩn cấp (Troubleshooting & Emergency)
 
-### 4.1 Kill-switch Chi phí LLM kích hoạt (Vượt quá 2.00 USD/ngày)
-**Triệu chứng:** Hệ thống chuyển sang chế độ từ chối nhận lệnh AI và yêu cầu chuyển người cho mọi hội thoại.
-**Khắc phục:**
-1. Kiểm tra nguyên nhân chi phí tăng vọt qua Arize Phoenix Dashboard: `http://localhost:6006`.
-2. Sau khi xác nhận sự cố đã được ngăn chặn, reset hạn mức ngày bằng lệnh:
-   ```bash
-   python -m shopagent.cli reset-cost-killswitch
-   ```
-
-### 4.2 Tiến trình Worker bị treo hoặc bản ghi Outbox kẹt
+### 4.1 Tiến trình Worker bị treo hoặc bản ghi Outbox kẹt
 **Triệu chứng:** Thẻ hành động hiển thị "Đang xử lý hoàn tiền..." quá 5 phút.
 **Khắc phục:**
 1. Kiểm tra hàng chờ `outbox_events`:

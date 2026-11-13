@@ -18,6 +18,7 @@ from shopagent.api.routers import (
     guest,
     health,
     policies,
+    sandbox,
     staff,
 )
 from shopagent.core.config import get_settings
@@ -140,6 +141,8 @@ def create_app() -> FastAPI:
     app.include_router(customer.router)
     app.include_router(policies.router)
     app.include_router(staff.router)
+    if settings.INTEGRATION_MODE == "simulated":
+        app.include_router(sandbox.router)
 
     return app
 

@@ -1,0 +1,32 @@
+name: Agent evaluation (real model)
+
+# Manual only: this calls Gemini and spends quota. Needs the GEMINI_API_KEY repository secret.
+on:
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: Independent runs per scenario (k)
+        default: "1"
+
+jobs:
+  gemini:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,rerank]"
+      - name: Run LangGraph agent against Gemini
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python -m evals.harness.runner --agent langgraph -k "${{ inputs.repeats }}" --out evals/results/gemini
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gemini-run
+          path: evals/results/gemini

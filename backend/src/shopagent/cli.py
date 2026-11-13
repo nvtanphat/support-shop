@@ -107,6 +107,32 @@ def verify_data_cmd() -> None:
     asyncio.run(_run())
 
 
+@cli.command("data-dictionary")
+def data_dictionary_cmd() -> None:
+    """Print the table and column reference (Markdown) generated from the SQLAlchemy models."""
+    click.echo("# Từ điển dữ liệu")
+    click.echo()
+    click.echo("Sinh tự động bởi `python -m shopagent.cli data-dictionary` từ các model SQLAlchemy.")
+    for table in Base.metadata.sorted_tables:
+        click.echo()
+        click.echo(f"## {table.name}")
+        click.echo()
+        click.echo("| Cột | Kiểu | Ràng buộc |")
+        click.echo("|---|---|---|")
+        for column in table.columns:
+            flags = [
+                label
+                for label, on in (
+                    ("khóa chính", column.primary_key),
+                    ("không null", not column.nullable and not column.primary_key),
+                    ("duy nhất", bool(column.unique)),
+                    ("khóa ngoại " + ", ".join(fk.target_fullname for fk in column.foreign_keys), bool(column.foreign_keys)),
+                )
+                if on
+            ]
+            click.echo(f"| {column.name} | {column.type} | {', '.join(flags)} |")
+
+
 @cli.group("eval")
 def eval_group() -> None:
     """Evaluation harness commands."""

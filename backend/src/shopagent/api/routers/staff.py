@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.api.deps import get_db_session, require_staff_role
@@ -14,8 +14,11 @@ from shopagent.core.principal import Principal
 from shopagent.domain.services.approvals import ApprovalService
 from shopagent.infra.db.tables import (
     ApprovalRequestModel,
+    AuditLogModel,
     ConversationModel,
     MessageModel,
+    OutboxEventModel,
+    RefundModel,
     TicketModel,
 )
 
@@ -177,3 +180,62 @@ async def return_conversation_to_ai(
     conv.mode = "ai"
     await session.commit()
     return {"status": "returned_to_ai", "mode": "ai"}
+
+
+@router.get("/audit")
+async def list_audit(
+    subject_type: str | None = Query(default=None),
+    subject_id: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    principal: Principal = Depends(require_staff_role(["supervisor", "admin"])),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Most recent audit entries, newest first. Supervisors and admins only."""
+    stmt = select(AuditLogModel).order_by(AuditLogModel.at.desc()).limit(limit)
+    if subject_type:
+        stmt = stmt.where(AuditLogModel.subject_type == subject_type)
+    if subject_id:
+        stmt = stmt.where(AuditLogModel.subject_id == subject_id)
+    entries = (await session.execute(stmt)).scalars().all()
+    return {
+        "entries": [
+            {
+                "id": str(e.id),
+                "actor_type": e.actor_type,
+                "actor_id": e.actor_id,
+                "action": e.action,
+                "subject_type": e.subject_type,
+                "subject_id": e.subject_id,
+                "before": e.before_state,
+                "after": e.after_state,
+                "at": e.at.isoformat(),
+            }
+            for e in entries
+        ]
+    }
+
+
+async def _count_by(session: AsyncSession, model: type, column) -> dict[str, int]:  # type: ignore[no-untyped-def]
+    rows = await session.execute(select(column, func.count()).select_from(model).group_by(column))
+    return {str(key): count for key, count in rows.all()}
+
+
+@router.get("/metrics")
+async def operations_metrics(
+    principal: Principal = Depends(require_staff_role(["supervisor", "admin"])),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Queue sizes and counters computed from the database; nothing is cached or estimated."""
+    ratings: list[int] = []
+    feedback_rows = await session.execute(select(AuditLogModel).where(AuditLogModel.action == "conversation.feedback"))
+    for row in feedback_rows.scalars():
+        rating = (row.after_state or {}).get("rating")
+        if isinstance(rating, int):
+            ratings.append(rating)
+    return {
+        "approvals_by_status": await _count_by(session, ApprovalRequestModel, ApprovalRequestModel.status),
+        "tickets_by_status": await _count_by(session, TicketModel, TicketModel.status),
+        "refunds_by_status": await _count_by(session, RefundModel, RefundModel.status),
+        "outbox_by_status": await _count_by(session, OutboxEventModel, OutboxEventModel.status),
+        "feedback": {"count": len(ratings), "average_rating": round(sum(ratings) / len(ratings), 2) if ratings else None},
+    }

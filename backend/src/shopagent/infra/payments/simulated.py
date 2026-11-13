@@ -76,3 +76,14 @@ class SimulatedPaymentGateway(PaymentGatewayPort):
             raw_response={},
             error_message="Giao dịch không tồn tại",
         )
+
+
+_shared_gateway: SimulatedPaymentGateway | None = None
+
+
+def get_simulated_gateway() -> SimulatedPaymentGateway:
+    """One gateway per process so the sandbox API can inject a failure the worker then observes."""
+    global _shared_gateway
+    if _shared_gateway is None:
+        _shared_gateway = SimulatedPaymentGateway()
+    return _shared_gateway

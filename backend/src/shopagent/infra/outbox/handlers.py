@@ -14,7 +14,7 @@ from shopagent.domain.models.enums import RefundStatus
 from shopagent.domain.services.refunds import RefundService
 from shopagent.infra.db.repositories.refund_repo import RefundRepository
 from shopagent.infra.db.tables import OutboxEventModel
-from shopagent.infra.payments.simulated import SimulatedPaymentGateway
+from shopagent.infra.payments.simulated import get_simulated_gateway
 
 logger = logging.getLogger("shopagent.outbox.handlers")
 
@@ -34,7 +34,7 @@ async def handle_refund_created(session: AsyncSession, event: OutboxEventModel) 
     # If created (not pending_approval), disburse automatically
     if refund.status == RefundStatus.CREATED.value:
         refund_service = RefundService(session)
-        gateway = SimulatedPaymentGateway()
+        gateway = get_simulated_gateway()
         await refund_service.process_disbursement(refund_id, gateway, actor_id="outbox_worker")
 
 
@@ -50,7 +50,7 @@ async def handle_approval_decided(session: AsyncSession, event: OutboxEventModel
         refund = await refund_repo.get_by_id(refund_id)
         if refund and refund.status == RefundStatus.APPROVED.value:
             refund_service = RefundService(session)
-            gateway = SimulatedPaymentGateway()
+            gateway = get_simulated_gateway()
             await refund_service.process_disbursement(refund_id, gateway, actor_id="outbox_worker")
 
 

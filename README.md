@@ -128,8 +128,8 @@ uv run --extra rerank python -m evals.retrieval.holdout           # đo retrieva
 
 Mỗi lần chạy lưu quỹ đạo thô và bảng cổng chất lượng vào `evals/results/<run>/`. Ngưỡng cổng ở [evals/quality_gates.yaml](evals/quality_gates.yaml). Harness ghi vào cơ sở dữ liệu riêng (`EVAL_DATABASE_URL`), không bao giờ vào cơ sở dữ liệu ứng dụng.
 
-Tài liệu liên quan: [vận hành](docs/runbook.md), [mô hình đe dọa](docs/threat-model.md), [đặc tả nghiệp vụ](docs/business-spec.md), [quy tắc làm việc](AGENTS.md).
+Tài liệu liên quan: [kiến trúc](docs/architecture.md), [chế độ tích hợp](docs/integration-modes.md), [từ điển dữ liệu](docs/data-dictionary.md), [vận hành](docs/runbook.md), [mô hình đe dọa](docs/threat-model.md), [đặc tả nghiệp vụ](docs/business-spec.md), [quy tắc làm việc](AGENTS.md).
 
 ## Giấy phép
 
-MIT.
+MIT, xem [LICENSE](LICENSE).

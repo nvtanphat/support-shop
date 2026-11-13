@@ -59,3 +59,6 @@ evidence_uploads/
 Thumbs.db
 .idea/
 .vscode/
+.deployed_tag
+.previous_tag
+backups/

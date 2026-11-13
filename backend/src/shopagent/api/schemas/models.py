@@ -94,3 +94,16 @@ class ApprovalDecisionRequest(BaseModel):
 
 class StaffHandoffMessageRequest(BaseModel):
     content: str = Field(min_length=1, description="Tin nhắn của nhân viên gửi tới khách.")
+
+
+class FeedbackRequest(BaseModel):
+    rating: int = Field(ge=1, le=5, description="Điểm hài lòng từ 1 đến 5.")
+    comment: str = Field(default="", max_length=1000, description="Nhận xét tự do, không bắt buộc.")
+
+
+class SandboxClockRequest(BaseModel):
+    now: str | None = Field(default=None, description="Thời điểm ISO cần cố định; bỏ trống để trả về giờ thật.")
+
+
+class SandboxFailNextRequest(BaseModel):
+    message: str = Field(default="Simulated payment failure", max_length=200)
