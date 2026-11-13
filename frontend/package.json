@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "shots": "playwright test -c playwright.shots.config.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",
