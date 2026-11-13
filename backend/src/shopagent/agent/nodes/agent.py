@@ -132,26 +132,53 @@ def _retry_wait_s(exc: Exception, default_s: float) -> float:
 
 
 async def _invoke_llm(
-    primary: Any, fallback_tools: list[Any], call_input: list[BaseMessage], retry_delays_s: tuple[float, ...]
+    primary: Any,
+    fallback_tools: list[Any],
+    call_input: list[BaseMessage],
+    retry_delays_s: tuple[float, ...],
+    deadline: float | None = None,
 ) -> AIMessage | None:
     """Call the primary model, retrying transient failures with backoff, then the fallback model.
 
-    None means no model could answer; the caller ends the turn as degraded.
+    Every call and every wait is bounded by `deadline` (a time.monotonic() value), so retries and the
+    fallback cannot carry the turn far past its timeout. None means no model could answer in time; the
+    caller ends the turn as degraded.
     """
+
+    def remaining() -> float | None:
+        return None if deadline is None else deadline - time.monotonic()
+
+    async def bounded(coro: Any) -> Any:
+        left = remaining()
+        if left is None:
+            return await coro
+        return await asyncio.wait_for(coro, timeout=max(left, 0.001))
+
     for attempt in range(len(retry_delays_s) + 1):
+        left = remaining()
+        if left is not None and left <= 0:
+            logger.error("llm_turn_deadline_reached attempt=%d", attempt + 1)
+            return None
         try:
-            return _normalize_ai_message(await primary.ainvoke(call_input))
+            return _normalize_ai_message(await bounded(primary.ainvoke(call_input)))
         except Exception as exc:
-            transient = _is_transient(exc)
-            logger.warning("llm_call_failed attempt=%d transient=%s error=%s", attempt + 1, transient, exc)
+            transient = isinstance(exc, TimeoutError) or _is_transient(exc)
+            logger.warning("llm_call_failed attempt=%d transient=%s error=%r", attempt + 1, transient, exc)
             if not transient or attempt == len(retry_delays_s):
                 break
-            await asyncio.sleep(_retry_wait_s(exc, retry_delays_s[attempt]))
+            wait = _retry_wait_s(exc, retry_delays_s[attempt])
+            left = remaining()
+            if left is not None and wait >= left:
+                break  # no time for another attempt; try the fallback with what is left
+            await asyncio.sleep(wait)
+    left = remaining()
+    if left is not None and left <= 0:
+        return None
     try:
         fallback = _bind_tools(get_chat_model("agent_fallback"), fallback_tools)
-        return _normalize_ai_message(await fallback.ainvoke(call_input))
+        return _normalize_ai_message(await bounded(fallback.ainvoke(call_input)))
     except Exception as exc:
-        logger.error("llm_fallback_failed error=%s", exc)
+        logger.error("llm_fallback_failed error=%r", exc)
         return None
 
 
@@ -263,7 +290,9 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
             logger.error("turn_timeout elapsed_s=%.1f", time.monotonic() - started)
             break
 
-        ai = await _invoke_llm(llm_with_tools, tools, [sys_msg, *working], budget.llm_retry_delays_s)
+        ai = await _invoke_llm(
+            llm_with_tools, tools, [sys_msg, *working], budget.llm_retry_delays_s, deadline=started + budget.turn_timeout_s
+        )
         if ai is None:
             turn_status = "degraded"
             break

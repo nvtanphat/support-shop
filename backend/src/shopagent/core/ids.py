@@ -32,10 +32,6 @@ def generate_ticket_code() -> str:
     return generate_crockford_code("TK")
 
 
-def generate_action_code() -> str:
-    return generate_crockford_code("PA")
-
-
 def generate_uuid() -> uuid.UUID:
     """Generate UUID.
 

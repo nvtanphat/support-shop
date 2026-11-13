@@ -25,27 +25,11 @@ class AppError(Exception):
         self.hint = hint
         self.details = details or {}
 
-    def to_dict(self) -> dict[str, Any]:
-        result: dict[str, Any] = {
-            "error_code": self.error_code,
-            "message": self.message,
-            "retryable": self.retryable,
-        }
-        if self.hint:
-            result["hint"] = self.hint
-        if self.details:
-            result["details"] = self.details
-        return result
 
 
 class NotFoundError(AppError):
     def __init__(self, message: str, error_code: str = "NOT_FOUND", hint: str | None = None) -> None:
         super().__init__(message, error_code=error_code, status_code=404, hint=hint)
-
-
-class AuthenticationError(AppError):
-    def __init__(self, message: str = "Chưa xác thực danh tính", error_code: str = "UNAUTHENTICATED") -> None:
-        super().__init__(message, error_code=error_code, status_code=401)
 
 
 class ForbiddenError(AppError):
@@ -61,13 +45,3 @@ class ConflictError(AppError):
 class ValidationError(AppError):
     def __init__(self, message: str, error_code: str = "VALIDATION_ERROR", hint: str | None = None, details: dict[str, Any] | None = None) -> None:
         super().__init__(message, error_code=error_code, status_code=422, hint=hint, details=details)
-
-
-class RateLimitError(AppError):
-    def __init__(self, message: str = "Đã vượt quá giới hạn tần suất yêu cầu", error_code: str = "RATE_LIMIT_EXCEEDED") -> None:
-        super().__init__(message, error_code=error_code, status_code=429, retryable=True, hint="Vui lòng thử lại sau ít phút")
-
-
-class PolicyViolationError(AppError):
-    def __init__(self, message: str, error_code: str = "POLICY_VIOLATION", hint: str | None = None, details: dict[str, Any] | None = None) -> None:
-        super().__init__(message, error_code=error_code, status_code=400, hint=hint, details=details)

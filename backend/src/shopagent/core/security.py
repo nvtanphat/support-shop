@@ -70,7 +70,6 @@ def compute_preview_hash(preview_payload: dict[str, Any]) -> str:
 PHONE_PATTERN = re.compile(r"(\+?84|0)(3|5|7|8|9)[0-9]{8}\b")
 CARD_PATTERN = re.compile(r"\b(?:\d[ -]*?){13,19}\b")
 CCCD_PATTERN = re.compile(r"\b\d{12}\b")
-EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
 
 
 def mask_phone(phone: str) -> str:
@@ -91,18 +90,15 @@ def mask_email(email: str) -> str:
     return f"{masked_user}@{domain}"
 
 
-def mask_pii_text(text: str) -> str:
-    """Screen and redact sensitive data like phone numbers, card numbers, CCCD in user text."""
-    # Redact card numbers
+def mask_sensitive_numbers(text: str) -> str:
+    """Redact payment card and citizen ID numbers, which must never reach the model or the stored history."""
     text = CARD_PATTERN.sub("[SỐ_THẺ_ĐÃ_CHE]", text)
-    # Redact CCCD (12 digits)
-    text = CCCD_PATTERN.sub("[CCCD_ĐÃ_CHE]", text)
-    # Redact Vietnamese phone numbers
-    def _replace_phone(m: re.Match[str]) -> str:
-        return mask_phone(m.group(0))
+    return CCCD_PATTERN.sub("[CCCD_ĐÃ_CHE]", text)
 
-    text = PHONE_PATTERN.sub(_replace_phone, text)
-    return text
+
+def mask_pii_text(text: str) -> str:
+    """Also mask Vietnamese phone numbers (to their last three digits), on top of cards and citizen IDs."""
+    return PHONE_PATTERN.sub(lambda m: mask_phone(m.group(0)), mask_sensitive_numbers(text))
 
 
 def sanitize_markdown_links(text: str, allowed_domains: list[str]) -> str:

@@ -100,6 +100,11 @@ class CancellationService:
                 "preview_hash": existing.payload_hash,
                 "expires_at": existing.expires_at.isoformat(),
             }
+        if existing is not None:
+            # Expired but never confirmed or cancelled: retire it, or the new card would collide with it
+            # on the unique (conversation, payload hash) index of live proposals.
+            existing.status = PendingActionStatus.EXPIRED.value
+            await self.session.flush()
 
         preview = {
             "title": f"Xác nhận hủy đơn hàng {order.code}",

@@ -6,6 +6,7 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.core.clock import get_clock, to_utc
@@ -47,6 +48,7 @@ from shopagent.infra.db.tables import (
     ApprovalRequestModel,
     OrderModel,
     PendingActionModel,
+    ProductVariantModel,
     ReturnItemModel,
     ReturnRequestModel,
 )
@@ -164,6 +166,42 @@ class ReturnService:
             "ship_back_deadline": result.ship_back_deadline.isoformat() if result.ship_back_deadline else None,
         }
 
+    async def _validate_exchange(
+        self, selected_items: list[tuple[OrderItem, int]], exchange_sku: str | None, rules: PolicyRules
+    ) -> None:
+        """An exchange goes to a real variant of the same product, at the same price, that is in stock.
+
+        The agent picks the SKU, so the domain must not trust it: without this check a model could propose
+        swapping a T-shirt for a phone and the card would be created.
+        """
+        if not exchange_sku:
+            raise ValidationError("Đổi hàng cần chọn phân loại mới (exchange_sku).", error_code="EXCHANGE_SKU_REQUIRED")
+        target = (
+            await self.session.execute(select(ProductVariantModel).where(ProductVariantModel.sku == exchange_sku.strip()))
+        ).scalar_one_or_none()
+        if target is None:
+            raise NotFoundError(f"Không tìm thấy phân loại '{exchange_sku}'.", error_code="EXCHANGE_SKU_NOT_FOUND")
+        wanted = 0
+        for item, qty in selected_items:
+            original = await self.session.get(ProductVariantModel, item.variant_id)
+            if original is None:
+                raise NotFoundError(f"Không tìm thấy phân loại gốc của {item.sku}.", error_code="ITEM_NOT_FOUND")
+            if target.id == original.id:
+                raise ValidationError("Phân loại mới trùng với phân loại đang có.", error_code="EXCHANGE_SAME_VARIANT")
+            if rules.exchange_policy.same_product_only and target.product_id != original.product_id:
+                raise ValidationError(
+                    "Chỉ đổi sang phân loại khác (size, màu) của cùng sản phẩm.", error_code="EXCHANGE_DIFFERENT_PRODUCT",
+                    hint="Xem điều khoản [POL-EXCHANGE-01].",
+                )
+            if rules.exchange_policy.same_price_only and target.price != original.price:
+                raise ValidationError(
+                    "Phân loại mới phải cùng giá với phân loại ban đầu.", error_code="EXCHANGE_PRICE_MISMATCH",
+                    hint="Xem điều khoản [POL-EXCHANGE-01].",
+                )
+            wanted += qty
+        if target.stock < wanted:
+            raise ConflictError(f"Phân loại '{exchange_sku}' không đủ hàng để đổi.", error_code="EXCHANGE_OUT_OF_STOCK")
+
     async def propose_return(
         self,
         principal: Principal,
@@ -217,6 +255,8 @@ class ReturnService:
                 error_code=eligibility.decision_code,
                 hint=f"Xem điều khoản trích dẫn [{eligibility.clause_id}].",
             )
+        if res_type == ReturnResolution.EXCHANGE:
+            await self._validate_exchange(selected_items, exchange_sku, rules)
 
         payload = {
             "order_id": str(order_model.id),
@@ -243,6 +283,11 @@ class ReturnService:
                 "preview_hash": existing.payload_hash,
                 "expires_at": existing.expires_at.isoformat(),
             }
+        if existing is not None:
+            # Expired but never confirmed or cancelled: retire it, or the new card would collide with it
+            # on the unique (conversation, payload hash) index of live proposals.
+            existing.status = PendingActionStatus.EXPIRED.value
+            await self.session.flush()
 
         preview = {
             "title": f"Xác nhận yêu cầu {'đổi hàng' if res_type == ReturnResolution.EXCHANGE else 'trả hàng hoàn tiền'} {order_model.code}",
@@ -330,6 +375,13 @@ class ReturnService:
             action.status = PendingActionStatus.FAILED.value
             await self.action_repo.save(action)
             raise ConflictError(f"Điều kiện đổi trả không còn thỏa mãn: {eligibility.message}", error_code=eligibility.decision_code)
+        if res_type == ReturnResolution.EXCHANGE:
+            try:  # stock may have run out since the card was shown
+                await self._validate_exchange(selected_items, payload.get("exchange_sku"), rules)
+            except (ConflictError, ValidationError, NotFoundError):
+                action.status = PendingActionStatus.FAILED.value
+                await self.action_repo.save(action)
+                raise
 
         # Create ReturnRequest
         return_code = generate_return_code()

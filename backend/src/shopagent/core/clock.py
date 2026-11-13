@@ -26,10 +26,6 @@ class Clock:
             return self._fixed_now.astimezone(ZoneInfo("UTC"))
         return datetime.now(ZoneInfo("UTC"))
 
-    def now_local(self) -> datetime:
-        """Return current datetime in store timezone."""
-        return self.now().astimezone(STORE_TIMEZONE)
-
     def set_fixed_now(self, dt: datetime | None) -> None:
         """Update or reset fixed datetime."""
         self._fixed_now = dt

@@ -16,9 +16,14 @@ from typing import Any
 
 ORDER_CODE_RE = re.compile(r"\bSL-[A-Za-z0-9]+\b", re.IGNORECASE)
 
+# A request for a person, not any sentence that mentions one: "mình không gặp người giao hàng" or
+# "chuyên viên đã gọi cho mình" must not force an escalation, because creating a ticket hands the
+# conversation to staff and the assistant stops answering.
 _HUMAN_REQUEST_RE = re.compile(
-    r"gặp\s+(?:nhân\s+viên|tư\s+vấn\s+viên|người\s+thật|người)|nói\s+chuyện\s+với\s+(?:người|nhân\s+viên)"
-    r"|chuyển\s+máy|tổng\s+đài\s+viên|chuyên\s+viên|trừ\s+tiền\s+(?:2|hai)\s+lần",
+    r"gặp\s+(?:nhân\s+viên|tư\s+vấn\s+viên|người\s+thật|người\s+hỗ\s+trợ|người\s+tư\s+vấn|người\s+phụ\s+trách|quản\s+lý)"
+    r"|nói\s+chuyện\s+(?:trực\s+tiếp\s+)?với\s+(?:nhân\s+viên|người\s+thật|người\s+hỗ\s+trợ|tư\s+vấn\s+viên)"
+    r"|(?:gặp|cần|xin|cho\s+(?:tôi|mình|em)|kết\s+nối|chuyển)\s+(?:\w+\s+){0,3}?(?:chuyên\s+viên|tổng\s+đài\s+viên)"
+    r"|chuyển\s+máy|trừ\s+tiền\s+(?:2|hai)\s+lần",
     re.IGNORECASE,
 )
 

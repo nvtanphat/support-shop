@@ -358,7 +358,11 @@ def test_invalid_reason_and_missing_exchange_sku_are_rejected() -> None:
     assert find_ungrounded_slot("propose_return", exchange, g)["slot"] == "exchange_sku"
     checked = '{"eligible": true, "checked": {"order_code": "SL-100002", "item_ids": ["11111111-aaaa"], "reason_code": "change_of_mind", "resolution": "exchange"}}'
     g_checked = grounding(["đơn SL-100002 cái áo mình đổi ý"], [ORDER_RESULT, checked])
-    assert find_ungrounded_slot("propose_return", {**exchange, "exchange_sku": "TS-M"}, g_checked) is None
+    # A SKU no tool returned is a guess, even when the eligibility check passed.
+    assert find_ungrounded_slot("propose_return", {**exchange, "exchange_sku": "TS-M"}, g_checked)["slot"] == "exchange_sku"
+    stock = '{"sku": "TS-S", "variants": [{"sku": "TS-S"}, {"sku": "TS-M"}]}'
+    g_stock = grounding(["đơn SL-100002 cái áo mình đổi ý"], [ORDER_RESULT, checked, stock])
+    assert find_ungrounded_slot("propose_return", {**exchange, "exchange_sku": "TS-M"}, g_stock) is None
 
 
 @pytest.mark.asyncio

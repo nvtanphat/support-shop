@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from collections.abc import Iterable
 from typing import Any
 
@@ -32,15 +33,21 @@ _ORDER_TOOLS = frozenset(
 )
 _RETURN_TOOLS = frozenset({"check_return_eligibility", "propose_return"})
 _REASONS = frozenset(r.value for r in ReturnReason)
-# Words by which a customer states each reason (accent-stripped). The model may only pick a
-# reason the customer actually expressed; anything else is asked, never inferred.
+# Words by which a customer states each reason. The model may only pick a reason the customer
+# actually expressed; anything else is asked, never inferred. Words are written with diacritics and
+# matched with them when the customer types with diacritics: stripped of accents, "hồng" (pink) reads as
+# "hỏng" (broken), "bếp" (kitchen) as "bẹp" (dented), "vô" as "vỡ" and "trả lời" as "lỗi". Only a message
+# typed without any diacritics is matched against the accent-stripped forms.
+_REASON_WORDS_VI: dict[str, tuple[str, ...]] = {
+    "defective": ("lỗi", "rách", "hỏng", "bung", "sợi chỉ", "sổ chỉ", "toè", "tòe", "phai màu", "kém chất lượng"),
+    "damaged_in_transit": ("móp", "vỡ", "bẹp", "hư hại", "vận chuyển", "ship làm"),
+    "wrong_item": ("giao sai", "sai hàng", "sai màu", "sai size", "nhầm", "không phải"),
+    "missing_item": ("thiếu", "mất phụ kiện", "không đủ"),
+    "not_as_described": ("không giống", "khác mô tả", "khác hình", "khác ảnh"),
+    "change_of_mind": ("đổi ý", "không thích", "không vừa", "không hợp", "chật", "rộng", "không ưng", "không muốn"),
+}
 _REASON_WORDS: dict[str, tuple[str, ...]] = {
-    "defective": ("loi", "rach", "hong", "bung", "soi chi", "toe", "phai mau", "kem chat luong"),
-    "damaged_in_transit": ("mop", "vo", "bep", "hu hai", "van chuyen", "ship lam"),
-    "wrong_item": ("giao sai", "sai hang", "sai mau", "sai size", "nham", "khong phai"),
-    "missing_item": ("thieu", "mat phu kien", "khong du"),
-    "not_as_described": ("khong giong", "khac mo ta", "khac hinh", "khac anh"),
-    "change_of_mind": ("doi y", "khong thich", "khong vua", "khong hop", "chat", "rong", "khong ung", "khong muon"),
+    reason: tuple(dict.fromkeys(remove_vietnamese_accents(w) for w in words)) for reason, words in _REASON_WORDS_VI.items()
 }
 _RESOLUTIONS = frozenset(r.value for r in ReturnResolution)
 
@@ -52,11 +59,13 @@ class GroundingContext:
         self._order_codes: set[str] = {c.upper() for c in recent_order_codes}
         self._tool_text: list[str] = []
         self._human_text: list[str] = []
+        self._human_raw: list[str] = []  # lower-cased, NFC, diacritics kept
         self._item_names: dict[str, tuple[str, int]] = {}
         for msg in messages:
             if isinstance(msg, HumanMessage):
                 text = extract_text_content(msg.content)
                 self._human_text.append(remove_vietnamese_accents(text))
+                self._human_raw.append(unicodedata.normalize("NFC", text.lower()))
                 self._order_codes.update(m.group(0).upper() for m in ORDER_CODE_RE.finditer(text))
             elif isinstance(msg, ToolMessage):
                 text = extract_text_content(msg.content)
@@ -93,8 +102,17 @@ class GroundingContext:
                 return bool(payload.get("eligible"))
         return None
 
-    def customer_said(self, words: Iterable[str]) -> bool:
-        return any(_has_word(text, w) for text in self._human_text for w in words)
+    def customer_stated_reason(self, reason: str) -> bool:
+        """The customer used a word for this reason, read with diacritics whenever they typed them."""
+        accented = _REASON_WORDS_VI[reason]
+        plain = _REASON_WORDS[reason]
+        for raw, stripped in zip(self._human_raw, self._human_text, strict=True):
+            if raw != stripped:  # typed with diacritics
+                if any(_has_word(raw, w) for w in accented):
+                    return True
+            elif any(_has_word(stripped, w) for w in plain):
+                return True
+        return False
 
     def item_is_identified(self, item_id: str) -> bool:
         """A line of a multi-item order must be named by the customer; a single line is implicit."""
@@ -155,15 +173,21 @@ def find_ungrounded_slot(
             "và hỏi khách muốn trả sản phẩm nào; không tự chọn.",
         )
     reason = args.get("reason_code")
-    if reason not in _REASONS or not grounding.customer_said(_REASON_WORDS[reason]):
+    if reason not in _REASONS or not grounding.customer_stated_reason(str(reason)):
         return _missing(
             "reason_code",
             f"Khách chưa nêu lý do đổi trả. Hãy hỏi khách lý do rồi mới chọn mã trong {sorted(_REASONS)}.",
         )
     if args.get("resolution", "refund") not in _RESOLUTIONS:
         return _missing("resolution", "Hãy hỏi khách muốn hoàn tiền (refund) hay đổi hàng (exchange).")
-    if tool == "propose_return" and args.get("resolution") == "exchange" and not args.get("exchange_sku"):
-        return _missing("exchange_sku", "Khách đổi hàng: hãy hỏi mẫu/size mới rồi kiểm tra tồn kho bằng check_variant_stock.")
+    if tool == "propose_return" and args.get("resolution") == "exchange":
+        sku = str(args.get("exchange_sku") or "").strip()
+        if not sku or not grounding.knows_item(f'"{sku}"'):
+            return _missing(
+                "exchange_sku",
+                "Khách đổi hàng: hỏi size/màu muốn đổi sang, gọi check_variant_stock với SKU sản phẩm đang có để lấy "
+                "SKU thật của phân loại đó; chỉ dùng SKU có trong kết quả công cụ, không tự đoán.",
+            )
     if tool == "propose_return":
         verdict = grounding.eligibility_for(str(code), ids, str(reason))
         if verdict is None:

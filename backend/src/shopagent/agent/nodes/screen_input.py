@@ -8,10 +8,11 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage
 
 from shopagent.agent.state import AgentState
+from shopagent.core.security import mask_sensitive_numbers
 
 INJECTION_PATTERNS = [
     r"ignore\s+(all\s+)?(previous|prior)\s+instructions",
-    r"bỏ\s+qua\s+(mọi|tất\s+cả\s+)?(chỉ\s+dẫn|hướng\s+dẫn|yêu\s+cầu)",
+    r"bỏ\s+qua\s+(?:(?:mọi|tất\s+cả)\s+)?(?:chỉ\s+dẫn|hướng\s+dẫn|yêu\s+cầu)",
     r"in\s+ra\s+(toàn\s+bộ\s+)?(system\s+prompt|prompt\s+gốc)",
     r"system\s+prompt",
     r"reveal\s+(your\s+)?instructions",
@@ -35,7 +36,15 @@ def screen_input_node(state: AgentState) -> dict[str, Any]:
     if not isinstance(last_msg, HumanMessage):
         return {"screen_passed": True}
 
-    content = str(last_msg.content).lower()
+    # A card or citizen ID number typed into the chat is replaced (same message id) before the model sees it
+    # and before the turn is persisted or checkpointed: it must not be stored, nor sent to the LLM provider.
+    replaced: list[HumanMessage] = []
+    if isinstance(last_msg.content, str):
+        masked = mask_sensitive_numbers(last_msg.content)
+        if masked != last_msg.content:
+            replaced = [HumanMessage(content=masked, id=last_msg.id)]
+
+    content = str(replaced[0].content if replaced else last_msg.content).lower()
 
     for pat in INJECTION_PATTERNS:
         if re.search(pat, content, re.IGNORECASE):
@@ -45,7 +54,7 @@ def screen_input_node(state: AgentState) -> dict[str, Any]:
             return {
                 "screen_passed": False,
                 "verified_output": deflection.content,
-                "messages": [deflection],
+                "messages": [*replaced, deflection],
             }
 
-    return {"screen_passed": True}
+    return {"screen_passed": True, "messages": replaced} if replaced else {"screen_passed": True}

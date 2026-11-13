@@ -75,14 +75,6 @@ class Principal:
         }
 
     @property
-    def is_supervisor_or_admin(self) -> bool:
-        return self.role in {PrincipalRole.STAFF_SUPERVISOR, PrincipalRole.STAFF_ADMIN}
-
-    @property
-    def is_admin(self) -> bool:
-        return self.role == PrincipalRole.STAFF_ADMIN
-
-    @property
     def is_system(self) -> bool:
         return self.role == PrincipalRole.SYSTEM
 
