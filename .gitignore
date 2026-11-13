@@ -62,3 +62,6 @@ Thumbs.db
 .deployed_tag
 .previous_tag
 backups/
+
+# Local planning notes, not part of the repository
+SHOP_SUPPORT_AGENT_IMPLEMENTATION_PLAN_2026.md
