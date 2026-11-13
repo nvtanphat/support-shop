@@ -58,6 +58,8 @@ class Settings(BaseSettings):
 
     # Retrieval: overrides config/app.yaml `retrieval.reranker.enabled` when set (true/false)
     RETRIEVAL_RERANKER_ENABLED: bool | None = None
+    # Same for `retrieval.embedding.enabled` (the dense half of hybrid candidate retrieval)
+    RETRIEVAL_EMBEDDING_ENABLED: bool | None = None
 
     # LLM
     GEMINI_API_KEY: str = ""

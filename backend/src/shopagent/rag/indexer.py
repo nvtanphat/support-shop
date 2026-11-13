@@ -8,7 +8,9 @@ config/policy/docs/. sync_policies() validates the whole corpus first, then for 
 - in the table, hash equal    -> left alone
 - in the table, not in corpus -> retired (status="retired", never deleted, so history stays auditable)
 
-Only changed chunks are embedded, so growing the corpus does not make every re-index slower.
+Only chunks that are new, changed, or embedded by a different model are embedded, so growing the corpus does
+not make every re-index slower. With no embedder configured the dense half of retrieval is off: new chunks get
+no vector and existing vectors are left as they are for when it is switched back on.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ from shopagent.core.config import get_rules_config
 from shopagent.infra.db.tables import PolicyChunkModel, PolicyDocumentModel
 from shopagent.rag.chunker import build_chunks_from_clauses
 from shopagent.rag.documents import load_documents, validate_clauses
-from shopagent.rag.embeddings import get_embedding_provider
+from shopagent.rag.embeddings import get_configured_embedder
 from shopagent.rag.generator import generate_policy_clauses
 
 _DEFAULT_FROM = "2026-11-01T00:00:00+07:00"
@@ -96,20 +98,26 @@ async def sync_policies(
         _key(row.clause_id, row.version): row for row in (await session.execute(select(PolicyChunkModel))).scalars().all()
     }
     report = IndexReport()
-    embedder = get_embedding_provider()
+    embedder = get_configured_embedder()
+    model_name = embedder.name if embedder is not None else ""
+
+    def stale_vector(key: str) -> bool:
+        row, c = existing.get(key), wanted[key]
+        return embedder is not None and (row is None or row.content_hash != c["content_hash"] or row.embedding_model != model_name)
 
     to_write = [
         key for key, c in wanted.items()
-        if key not in existing or existing[key].content_hash != c["content_hash"] or existing[key].status != c["status"]
+        if key not in existing or existing[key].content_hash != c["content_hash"] or existing[key].status != c["status"] or stale_vector(key)
     ]
-    vectors = dict(zip(to_write, embedder.embed_documents([wanted[k]["text"] for k in to_write]), strict=True))
+    to_embed = [key for key in to_write if stale_vector(key)]
+    vectors = dict(zip(to_embed, embedder.embed_documents([wanted[k]["text"] for k in to_embed]), strict=True)) if embedder else {}
     now = get_clock().now()
 
     for key, c in wanted.items():
         row = existing.get(key)
         start = _when(c.get("effective_from"), _DEFAULT_FROM)
         assert start is not None
-        if row is not None and key not in vectors:
+        if row is not None and key not in to_write:
             report.unchanged.append(key)
         else:
             fields = {
@@ -119,7 +127,6 @@ async def sync_policies(
                 "effective_to": _when(c.get("effective_to")),
                 "text": c["text"],
                 "text_unaccent": c["text_unaccent"],
-                "embedding": vectors[key],
                 "source": c["source"],
                 "title": c.get("title"),
                 "parent_id": c.get("parent_id"),
@@ -127,6 +134,10 @@ async def sync_policies(
                 "content_hash": c["content_hash"],
                 "updated_at": now,
             }
+            if key in vectors:
+                fields["embedding"], fields["embedding_model"] = vectors[key], model_name
+            elif row is None:
+                fields["embedding"], fields["embedding_model"] = [], ""
             if row is None:
                 doc = await _document_for(session, str(c["version"]), start)
                 session.add(

@@ -39,6 +39,12 @@ allowed_link_domains:
 # policy_queries_holdout.yaml (see docs/eval-report.md); recalibrate with `python -m evals.retrieval.holdout`
 # whenever the model or the clause texts change. Tests turn the reranker off (RETRIEVAL_RERANKER_ENABLED=false).
 retrieval:
+  # Dense half of the hybrid candidate stage (BM25 + embedding, fused by rank); needs `uv sync --extra rerank`
+  # and about 2.3 GB of disk and 2-3 GB of RAM. Without it the stage is BM25 only. Chunks are re-embedded by
+  # `index-policies` whenever this model name changes.
+  embedding:
+    enabled: true
+    model: "BAAI/bge-m3"
   # Upper bound on the clause text one search_policy call hands to the model (about 3 characters per token).
   # Clauses are capped at ingestion (rag/documents.py), so this only drops the lowest-ranked ones, never cuts one.
   max_result_chars: 4000

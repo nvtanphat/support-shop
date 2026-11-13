@@ -46,7 +46,7 @@ flowchart TB
     api["api: xác thực, router, SSE"] --> agent["agent: đồ thị LangGraph, tool, guard"]
     api --> domain
     agent --> domain["domain: policy engine, state machine, service"]
-    agent --> rag["rag: chỉ mục, BM25, reranker"]
+    agent --> rag["rag: chỉ mục, BM25 + BGE-M3, reranker"]
     infra["infra: DB, outbox, LLM factory, cổng tích hợp"] --> domain
     core["core: Principal, cấu hình, đồng hồ tiêm được"] -.-> api
     core -.-> agent
@@ -87,7 +87,7 @@ Số thứ tự tin nhắn và sự kiện SSE cấp phát nguyên tử bằng k
 
 ## Tìm kiếm chính sách (chi tiết)
 
-BM25 trên điều khoản chính sách, chuẩn hóa câu hỏi (viết tắt, số tiền), khôi phục dấu tiếng Việt, rồi tùy chọn xếp hạng lại bằng cross-encoder `BAAI/bge-reranker-v2-m3-int8`. Câu hỏi có điểm dưới ngưỡng `retrieval.reranker.min_score` trong [config/app.yaml](../config/app.yaml) bị từ chối thay vì trả điều khoản gần đúng.
+Hai bước. Bước lấy ứng viên là hybrid: BM25 trên điều khoản (câu hỏi đã chuẩn hóa viết tắt, số tiền) gộp theo hạng (RRF) với độ tương đồng của vector `BAAI/bge-m3` (câu hỏi đã khôi phục dấu). BM25 vẫn là cổng: không từ nào khớp thì trả "không có bằng chứng", vì mô hình vector luôn tìm ra một điều khoản gần nhất kể cả với câu hỏi về thời tiết. Bước hai là cross-encoder `BAAI/bge-reranker-v2-m3-int8` xếp hạng lại. Tắt embedding (`RETRIEVAL_EMBEDDING_ENABLED=false`) thì bước một chỉ còn BM25. Câu hỏi có điểm dưới ngưỡng `retrieval.reranker.min_score` trong [config/app.yaml](../config/app.yaml) bị từ chối thay vì trả điều khoản gần đúng.
 
 ## 11 công cụ nghiệp vụ
 
@@ -114,7 +114,7 @@ backend/src/shopagent/
   core/     Principal, cấu hình, đồng hồ tiêm được
   domain/   nghiệp vụ, policy engine, tính tiền hoàn
   infra/    bảng DB, migration, LLM factory, outbox
-  rag/      chunking, index, BM25, khôi phục dấu, reranker
+  rag/      chunking, index, BM25, embedding BGE-M3, khôi phục dấu, reranker
 backend/tests/   unit, api, integration
 frontend/src/    app, features/chat, features/staff, components, lib, styles
 config/          app.yaml, models.yaml, policy, prompt hệ thống

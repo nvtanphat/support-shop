@@ -43,6 +43,8 @@ Sau khi đổi nội dung: `uv run --extra rerank python -m evals.retrieval.cali
 
 ## Khi kho lớn lên
 
-Retriever có hai bước: nguồn ứng viên (`CandidateSource`, hiện là BM25) rồi reranker. Hiện kho có 10 điều khoản và reranker chấm hết, nên bước đầu không ảnh hưởng kết quả. Kho lớn hơn nhiều (khoảng 50 điều khoản trở lên, hoặc Recall của BM25 bắt đầu tụt) thì thay `Bm25Candidates` bằng nguồn hybrid (BM25 + BGE-M3) hoặc pgvector; không phải sửa phần còn lại. Cột `embedding`, `parent_id`, `title` đã sẵn trong bảng cho việc đó. Đo trước khi đổi: lần đo trên kho 10 điều khoản cho thấy BGE-M3 đơn lẻ có Recall@4 thấp hơn BM25 (0,905 so với 0,973 trên tập độc lập).
+Retriever có hai bước: nguồn ứng viên (`CandidateSource`, mặc định `HybridCandidates`: BM25 gộp theo hạng với BGE-M3) rồi reranker. Hiện kho có 10 điều khoản và reranker chấm hết, nên bước đầu chưa thể đổi thứ tự cuối; nó bắt đầu có tác dụng khi kho vượt số ứng viên của reranker (`retrieval.reranker.candidates`, hiện 10). Vector của từng điều khoản nằm trong cột `embedding` cùng tên model (`embedding_model`); `index-policies` chỉ embed điều khoản mới, đổi nội dung hoặc đổi model. Điều khoản nào chưa được embed bằng model đang cấu hình thì retrieval cảnh báo và lùi về BM25, không so vector khác model.
+
+Khi kho đủ lớn để tính tương đồng trong Python chậm (hàng chục nghìn điều khoản), thay `HybridCandidates` bằng nguồn dùng pgvector; chỉ đổi một chỗ. Đo trước khi đổi: BGE-M3 đơn lẻ có Recall@4 thấp hơn BM25 trên kho 10 điều khoản (0,905 so với 0,973 trên tập độc lập), nó chỉ có ích khi gộp.
 
 Số điều khoản tối đa một lần tra cứu trả về cho mô hình bị chặn theo tổng ký tự (`retrieval.max_result_chars` trong `config/app.yaml`); điều khoản xếp hạng thấp nhất bị bỏ nguyên, không bao giờ bị cắt giữa chừng.

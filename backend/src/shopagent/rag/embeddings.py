@@ -1,67 +1,105 @@
-"""Embedding providers for policy semantic retrieval."""
+"""Dense embeddings for policy retrieval: BGE-M3 through fastembed (ONNX, CPU).
+
+The dense score is the second signal of the hybrid candidate stage (rag/retriever.py), next to BM25. It
+understands paraphrase and slang ("xài thử thấy không hợp" ~ "đổi ý") that share no words with the clause.
+Typing without diacritics hurts it badly on its own (Recall@4 drops to 50-80%), which is why the retriever
+restores diacritics before embedding the query and keeps BM25 in the fusion.
+
+The model is configured in config/app.yaml (retrieval.embedding) and can be switched off with
+RETRIEVAL_EMBEDDING_ENABLED=false; the retriever then runs BM25 only. Needs the `rerank` extra (fastembed).
+"""
 
 from __future__ import annotations
 
 import math
+import threading
+from collections import OrderedDict
 from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Protocol
 
-from shopagent.rag.chunker import remove_vietnamese_accents, tokenize_unaccent
+from shopagent.core.config import get_app_config, get_settings
+from shopagent.rag import bge_m3
+
+QUERY_CACHE_SIZE = 512
+
+class Embedder(Protocol):
+    name: str
+
+    def embed_query(self, text: str) -> list[float]: ...
+
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
 
 
-class BaseEmbeddingProvider:
-    """Base interface for policy embeddings."""
+class FastEmbedEmbedder:
+    """Sentence embeddings from a fastembed model; query vectors are cached because chat repeats itself."""
+
+    def __init__(self, model_name: str) -> None:
+        from fastembed import TextEmbedding
+
+        if model_name == bge_m3.MODEL:
+            bge_m3.register()
+        self.name = model_name
+        self._model = TextEmbedding(model_name=model_name)
+        self._lock = threading.Lock()  # one ONNX session; calls come from worker threads
+        self._queries: OrderedDict[str, list[float]] = OrderedDict()
+
+    def _embed(self, texts: Sequence[str]) -> list[list[float]]:
+        with self._lock:
+            return [[float(x) for x in vector] for vector in self._model.embed(list(texts))]
 
     def embed_query(self, text: str) -> list[float]:
-        raise NotImplementedError
+        cached = self._queries.get(text)
+        if cached is not None:
+            self._queries.move_to_end(text)
+            return cached
+        vector = self._embed([text])[0]
+        self._queries[text] = vector
+        while len(self._queries) > QUERY_CACHE_SIZE:
+            self._queries.popitem(last=False)
+        return vector
 
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        raise NotImplementedError
+        return self._embed(texts) if texts else []
 
 
-class FastLexicalEmbedding(BaseEmbeddingProvider):
-    """Deterministic, fast character and word n-gram frequency embedding.
-    Runs 100% offline, zero network latency, robust to Vietnamese typos and abbreviations.
+@dataclass(frozen=True)
+class EmbeddingSettings:
+    model: str
+
+
+_cached: tuple[str, FastEmbedEmbedder] | None = None
+
+
+def _settings() -> EmbeddingSettings | None:
+    cfg = (get_app_config().get("retrieval") or {}).get("embedding") or {}
+    override = get_settings().RETRIEVAL_EMBEDDING_ENABLED
+    if not (cfg.get("enabled") if override is None else override):
+        return None
+    return EmbeddingSettings(model=str(cfg.get("model", bge_m3.MODEL)))
+
+
+def get_configured_embedder() -> Embedder | None:
+    """The embedder enabled in config, else None (BM25-only retrieval). A model that cannot load raises."""
+    global _cached
+    settings = _settings()
+    if settings is None:
+        return None
+    if _cached is None or _cached[0] != settings.model:
+        _cached = (settings.model, FastEmbedEmbedder(settings.model))
+    return _cached[1]
+
+
+def warm_up_embedder() -> bool:
+    """Load the configured embedder now (startup) instead of on the first customer question.
+
+    Returns whether one is enabled. A model that cannot load raises here, so a broken deployment fails at
+    startup rather than silently serving weaker retrieval.
     """
-
-    def __init__(self, dim: int = 128) -> None:
-        self.dim = dim
-
-    def _hash_feature(self, feat: str) -> int:
-        h = 2166136261
-        for ch in feat:
-            h = (h ^ ord(ch)) * 16777619
-        return (h & 0x7FFFFFFF) % self.dim
-
-    def _vectorize(self, text: str) -> list[float]:
-        norm = remove_vietnamese_accents(text)
-        tokens = tokenize_unaccent(norm)
-        vec = [0.0] * self.dim
-
-        # 1. Word tokens
-        for t in tokens:
-            idx = self._hash_feature(t)
-            vec[idx] += 1.0
-
-        # 2. Character 3-grams
-        cleaned = "".join(tokens)
-        for i in range(max(0, len(cleaned) - 2)):
-            tri = cleaned[i : i + 3]
-            idx = self._hash_feature(tri)
-            vec[idx] += 0.5
-
-        # L2 normalize
-        norm_val = math.sqrt(sum(v * v for v in vec))
-        if norm_val > 0:
-            vec = [v / norm_val for v in vec]
-        return vec
-
-    def embed_query(self, text: str) -> list[float]:
-        return self._vectorize(text)
-
-    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        return [self._vectorize(t) for t in texts]
+    return get_configured_embedder() is not None
 
 
-def get_embedding_provider() -> BaseEmbeddingProvider:
-    """Instantiate configured embedding provider."""
-    return FastLexicalEmbedding()
+def cosine(a: Sequence[float], b: Sequence[float]) -> float:
+    na = math.sqrt(sum(x * x for x in a)) or 1.0
+    nb = math.sqrt(sum(x * x for x in b)) or 1.0
+    return sum(x * y for x, y in zip(a, b, strict=False)) / (na * nb)

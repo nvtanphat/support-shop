@@ -462,4 +462,5 @@ class PolicyChunkModel(Base):
     parent_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)  # clause this one was cut from
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)  # active | retired
     content_hash: Mapped[str] = mapped_column(String(64), default="")  # what the indexer compares to skip unchanged chunks
+    embedding_model: Mapped[str] = mapped_column(String(128), default="")  # model that produced `embedding`; "" when none
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

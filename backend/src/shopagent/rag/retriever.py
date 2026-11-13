@@ -1,8 +1,9 @@
 """Policy retriever in two stages: a candidate source picks the clauses worth a closer look, a reranker orders them.
 
-The first stage is a seam (CandidateSource). Today it is BM25 over the normalised query, which is enough while the
-corpus is small enough for the reranker to score all of it. A larger corpus replaces Bm25Candidates with a hybrid or
-vector source and nothing else here changes. The second stage is the optional cross-encoder.
+The first stage is a seam (CandidateSource). By default it is hybrid: BM25 over the normalised query fused by rank
+with dense BGE-M3 similarity (HybridCandidates), falling back to BM25 alone when no embedder is configured. While the
+corpus is small enough for the reranker to score all of it this stage cannot change the final order; it starts to
+matter once the corpus outgrows the reranker's candidate pool. The second stage is the optional cross-encoder.
 
 Ranking choices are justified by evals/retrieval (the independent query set). The index snapshot (parsed chunks)
 is cached per process and revalidated with a cheap fingerprint query, so a lookup no longer reloads
@@ -12,6 +13,7 @@ and re-tokenises every clause; reranker results are cached per (query, candidate
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections import OrderedDict
 from collections.abc import Callable
@@ -25,9 +27,14 @@ from shopagent.core.clock import get_clock
 from shopagent.infra.db.tables import PolicyChunkModel
 from shopagent.rag.chunker import build_chunks_from_clauses
 from shopagent.rag.diacritics import build_restorer
+from shopagent.rag.embeddings import Embedder, get_configured_embedder
 from shopagent.rag.indexer import build_corpus
 from shopagent.rag.lexical import Bm25Index, normalize_query
 from shopagent.rag.reranker import Reranker, RerankSettings, get_configured_reranker
+
+logger = logging.getLogger(__name__)
+
+RRF_K = 60  # reciprocal-rank-fusion constant; 60 is the value from the original paper and is not tuned here
 
 # The snapshot is also revalidated by fingerprint on every call; the TTL bounds staleness if the
 # fingerprint query ever misses a change.
@@ -70,6 +77,7 @@ class _Snapshot:
         self.chunks = chunks
         self.loaded_at = time.monotonic()
         self.index_by_ids: dict[tuple[str, ...], Bm25Index] = {}
+        self.matrix_by_ids: dict[tuple[str, ...], Any] = {}
         self._restorer: Callable[[str], str] | None = None
 
     def restore_diacritics(self, query: str) -> str:
@@ -117,6 +125,64 @@ class Bm25Candidates:
         return [{**chunks[i], "score": scores[i]} for i in order]
 
 
+class _Auto:
+    """Marker: resolve the embedder from config at call time."""
+
+
+_AUTO = _Auto()
+
+
+class HybridCandidates:
+    """BM25 and dense similarity, fused by reciprocal rank; the first stage of the default retriever.
+
+    BM25 stays the gatekeeper: when no query term occurs in any clause the answer is "nothing relevant", exactly as
+    for BM25 alone, because a dense model always finds a nearest clause even for a question about the weather. The
+    reranker's score threshold is what rejects questions that merely resemble the policy.
+
+    Dense search is skipped, with a warning, when the stored vectors come from a different model than the query
+    embedder (the index needs `index-policies`); retrieval then continues on BM25 rather than comparing vectors that
+    do not belong together.
+    """
+
+    def __init__(self, embedder: Embedder | None | _Auto = _AUTO) -> None:
+        self._embedder = embedder
+        self._lexical = Bm25Candidates()
+        self._warned = False
+
+    def _resolve(self) -> Embedder | None:
+        return get_configured_embedder() if isinstance(self._embedder, _Auto) else self._embedder
+
+    def candidates(self, snapshot: _Snapshot, chunks: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
+        lexical = self._lexical.candidates(snapshot, chunks, query)
+        embedder = self._resolve()
+        if not lexical or embedder is None:
+            return lexical
+        if any(c.get("embedding_model") != embedder.name or not c.get("embedding") for c in chunks):
+            if not self._warned:
+                logger.warning("policy chunks were not embedded with %s: run `index-policies`; using BM25 only", embedder.name)
+                self._warned = True
+            return lexical
+
+        import numpy as np
+
+        ids = tuple(f"{c['clause_id']}@{c['version']}" for c in chunks)
+        matrix = snapshot.matrix_by_ids.get(ids)
+        if matrix is None:
+            raw = np.asarray([c["embedding"] for c in chunks], dtype=np.float32)
+            matrix = snapshot.matrix_by_ids[ids] = raw / np.maximum(np.linalg.norm(raw, axis=1, keepdims=True), 1e-9)
+        vector = np.asarray(embedder.embed_query(snapshot.restore_diacritics(query)), dtype=np.float32)
+        similarity = matrix @ (vector / max(float(np.linalg.norm(vector)), 1e-9))
+
+        dense_rank = {ids[i]: rank for rank, i in enumerate(np.argsort(-similarity))}
+        by_id = {f"{c['clause_id']}@{c['version']}": c for c in chunks}
+        fused = []
+        for lexical_rank, candidate in enumerate(lexical):
+            key = f"{candidate['clause_id']}@{candidate['version']}"
+            score = 1.0 / (RRF_K + lexical_rank + 1) + 1.0 / (RRF_K + dense_rank[key] + 1)
+            fused.append({**by_id[key], "score": score})
+        return sorted(fused, key=lambda c: c["score"], reverse=True)
+
+
 class PolicyRetriever:
     """Retrieves the top-k policy clauses that were in force at `as_of`.
 
@@ -137,7 +203,7 @@ class PolicyRetriever:
         if session is None and not in_memory:
             raise ValueError("PolicyRetriever needs a database session, or in_memory=True for offline benchmarks")
         self.session = session
-        self._candidate_source: CandidateSource = candidates or Bm25Candidates()
+        self._candidate_source: CandidateSource = candidates or HybridCandidates()
         self._explicit_reranker = reranker
         self._explicit_candidates = rerank_candidates
         self._explicit_min_score = min_rerank_score
@@ -154,6 +220,10 @@ class PolicyRetriever:
         if self.session is None:
             if self._in_memory_snapshot is None:
                 chunks = [c for c in build_chunks_from_clauses(build_corpus()) if c["status"] == "active"]
+                embedder = get_configured_embedder()
+                if embedder is not None:
+                    for chunk, vector in zip(chunks, embedder.embed_documents([c["text"] for c in chunks]), strict=True):
+                        chunk["embedding"], chunk["embedding_model"] = vector, embedder.name
                 for chunk in chunks:
                     chunk["effective_from"] = _as_datetime(chunk.get("effective_from"))
                     chunk["effective_to"] = _as_datetime(chunk.get("effective_to"))
@@ -189,6 +259,8 @@ class PolicyRetriever:
                 "effective_to": c.effective_to,
                 "text": c.text,
                 "title": c.title,
+                "embedding": c.embedding,
+                "embedding_model": c.embedding_model,
             }
             for c in rows
         ]
@@ -236,7 +308,8 @@ class PolicyRetriever:
             return []
 
         normalized = normalize_query(query)
-        ranked = self._candidate_source.candidates(snapshot, chunks, normalized)
+        # Embedding the query is CPU work (about 150 ms); keep it off the event loop like the reranker.
+        ranked = await asyncio.to_thread(self._candidate_source.candidates, snapshot, chunks, normalized)
         if not ranked:
             return []  # nothing in the corpus relates to the question: nothing to present as evidence
 

@@ -23,6 +23,7 @@ from shopagent.api.routers import (
 )
 from shopagent.core.config import get_settings
 from shopagent.core.errors import AppError
+from shopagent.rag.embeddings import warm_up_embedder
 from shopagent.rag.reranker import warm_up
 
 
@@ -74,6 +75,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.critical("Không nạp được reranker chính sách: %s", e)
         raise RuntimeError(f"Policy reranker failed to load on startup: {e}") from e
+
+    # Dense half of hybrid retrieval: same reasoning as the reranker.
+    try:
+        if await asyncio.to_thread(warm_up_embedder):
+            logger.info("Mô hình embedding chính sách đã nạp sẵn.")
+    except Exception as e:
+        logger.critical("Không nạp được mô hình embedding chính sách: %s", e)
+        raise RuntimeError(f"Policy embedding model failed to load on startup: {e}") from e
 
     # Checkpointer: opened inside the running loop (async Postgres pool) and wired into the graph.
     try:

@@ -22,7 +22,6 @@ from typing import Any
 
 import yaml
 from shopagent.rag.chunker import build_chunks_from_clauses, tokenize_unaccent
-from shopagent.rag.embeddings import get_embedding_provider
 from shopagent.rag.generator import generate_policy_clauses
 from shopagent.rag.lexical import Bm25Index, normalize_query
 
@@ -42,10 +41,41 @@ def _parse_time(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
 
 
+class HashedNgramEmbedding:
+    """The retired production embedding (hashed word and character 3-gram counts), kept only so the benchmark can
+    still report the "current" baseline it was measured against. It is not a language model."""
+
+    def __init__(self, dim: int = 128) -> None:
+        self.dim = dim
+
+    def _bucket(self, feature: str) -> int:
+        h = 2166136261
+        for ch in feature:
+            h = (h ^ ord(ch)) * 16777619
+        return (h & 0x7FFFFFFF) % self.dim
+
+    def embed_query(self, text: str) -> list[float]:
+        tokens = tokenize_unaccent(text)
+        vec = [0.0] * self.dim
+        for token in tokens:
+            vec[self._bucket(token)] += 1.0
+        joined = "".join(tokens)
+        for i in range(max(0, len(joined) - 2)):
+            vec[self._bucket(joined[i : i + 3])] += 0.5
+        norm = math.sqrt(sum(v * v for v in vec))
+        return [v / norm for v in vec] if norm > 0 else vec
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed_query(t) for t in texts]
+
+
+_LEGACY_EMBEDDER = HashedNgramEmbedding()
+
+
 def build_chunks(extra: list[dict[str, Any]]) -> list[dict[str, Any]]:
     clauses = generate_policy_clauses() + extra
     chunks = build_chunks_from_clauses(clauses)
-    embedder = get_embedding_provider()
+    embedder = _LEGACY_EMBEDDER
     for chunk, emb in zip(chunks, embedder.embed_documents([c["text"] for c in chunks]), strict=True):
         chunk["embedding"] = emb
         chunk["from"] = _parse_time(chunk.get("effective_from"))
@@ -90,7 +120,7 @@ def _ranking(chunks: list[dict[str, Any]], order: list[int], confidence: float) 
 def strategy_current(chunks: list[dict[str, Any]], query: str) -> Ranking:
     """The production algorithm: token-overlap count + hashed n-gram cosine, fused with RRF."""
     q_tokens = set(tokenize_unaccent(query))
-    q_emb = get_embedding_provider().embed_query(query)
+    q_emb = _LEGACY_EMBEDDER.embed_query(query)
     overlap = [float(len(q_tokens & set(c["tokens"]))) for c in chunks]
     cosine = [max(0.0, sum(a * b for a, b in zip(q_emb, c["embedding"], strict=False))) for c in chunks]
     top = max(overlap) if overlap else 0.0
@@ -121,7 +151,7 @@ def strategy_children(chunks: list[dict[str, Any]], query: str, normalize: bool)
 
 def strategy_bm25_hybrid(chunks: list[dict[str, Any]], query: str, index: Bm25Index) -> Ranking:
     scores = index.scores(query)
-    q_emb = get_embedding_provider().embed_query(query)
+    q_emb = _LEGACY_EMBEDDER.embed_query(query)
     cosine = [max(0.0, sum(a * b for a, b in zip(q_emb, c["embedding"], strict=False))) for c in chunks]
     return _ranking(chunks, _rank(_rrf(scores, cosine)), max(scores) / index.max_possible(query))
 

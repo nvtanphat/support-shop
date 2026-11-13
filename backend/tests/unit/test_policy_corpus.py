@@ -20,6 +20,8 @@ from shopagent.rag.retriever import PolicyRetriever, clear_retrieval_caches
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from backend.tests.fakes import FakeEmbedder  # noqa: E402
+
 RULES = {"version": "2026-11-01", "effective_from": "2026-11-01T00:00:00+07:00"}
 
 
@@ -99,46 +101,39 @@ async def session():  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture
-def embedded(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Texts the indexer asked to embed, so 'only changed chunks are embedded' is observable."""
-    texts: list[str] = []
-    real = indexer_module.get_embedding_provider()
-
-    class Spy:
-        def embed_documents(self, batch):  # type: ignore[no-untyped-def]
-            texts.extend(batch)
-            return real.embed_documents(batch)
-
-    monkeypatch.setattr(indexer_module, "get_embedding_provider", lambda: Spy())
-    return texts
+def embedder(monkeypatch: pytest.MonkeyPatch) -> FakeEmbedder:
+    """The embedder the indexer uses, so 'only changed chunks are embedded' is observable."""
+    fake = FakeEmbedder()
+    monkeypatch.setattr(indexer_module, "get_configured_embedder", lambda: fake)
+    return fake
 
 
-async def test_a_second_index_run_changes_nothing_and_embeds_nothing(session: AsyncSession, embedded: list[str], tmp_path: Path) -> None:
+async def test_a_second_index_run_changes_nothing_and_embeds_nothing(session: AsyncSession, embedder: FakeEmbedder, tmp_path: Path) -> None:
     first = await sync_policies(session, docs_dir=tmp_path)
     assert len(first.added) == 10 and not first.unchanged
-    embedded.clear()
+    embedder.documents.clear()
     second = await sync_policies(session, docs_dir=tmp_path)
     assert not second.added and not second.updated and len(second.unchanged) == 10
-    assert embedded == []
+    assert embedder.documents == []
 
 
-async def test_adding_a_document_adds_only_that_clause(session: AsyncSession, embedded: list[str], tmp_path: Path) -> None:
+async def test_adding_a_document_adds_only_that_clause(session: AsyncSession, embedder: FakeEmbedder, tmp_path: Path) -> None:
     await sync_policies(session, docs_dir=tmp_path)
-    embedded.clear()
+    embedder.documents.clear()
     write_doc(tmp_path, "w.md", "POL-WARRANTY-01", "Tai nghe được bảo hành mười hai tháng kể từ ngày mua.")
     report = await sync_policies(session, docs_dir=tmp_path)
     assert report.added == ["POL-WARRANTY-01@2026-11-01"] and len(report.unchanged) == 10 and not report.updated
-    assert len(embedded) == 1
+    assert len(embedder.documents) == 1
     assert len(report.active) == 11
 
 
-async def test_editing_a_document_rewrites_and_reembeds_only_that_clause(session: AsyncSession, embedded: list[str], tmp_path: Path) -> None:
+async def test_editing_a_document_rewrites_and_reembeds_only_that_clause(session: AsyncSession, embedder: FakeEmbedder, tmp_path: Path) -> None:
     write_doc(tmp_path, "w.md", "POL-WARRANTY-01", "Bảo hành mười hai tháng.")
     await sync_policies(session, docs_dir=tmp_path)
-    embedded.clear()
+    embedder.documents.clear()
     write_doc(tmp_path, "w.md", "POL-WARRANTY-01", "Bảo hành hai mươi bốn tháng.")
     report = await sync_policies(session, docs_dir=tmp_path)
-    assert report.updated == ["POL-WARRANTY-01@2026-11-01"] and not report.added and len(embedded) == 1
+    assert report.updated == ["POL-WARRANTY-01@2026-11-01"] and not report.added and len(embedder.documents) == 1
     row = (await session.execute(select(PolicyChunkModel).where(PolicyChunkModel.clause_id == "POL-WARRANTY-01"))).scalar_one()
     assert "hai mươi bốn" in row.text and row.source == "policy/docs/w.md"
 

@@ -12,6 +12,7 @@ os.environ.setdefault("LLM_FALLBACK_PROVIDER", "fake")
 os.environ.setdefault("INTEGRATION_MODE", "simulated")
 # Unit and integration tests never download or run the cross-encoder model.
 os.environ.setdefault("RETRIEVAL_RERANKER_ENABLED", "false")
+os.environ.setdefault("RETRIEVAL_EMBEDDING_ENABLED", "false")
 
 # psycopg's async driver (LangGraph AsyncPostgresSaver) cannot run on the Windows ProactorEventLoop.
 if sys.platform == "win32":
