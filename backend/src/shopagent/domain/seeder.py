@@ -1,24 +1,27 @@
 """Deterministic seed data generator for shop-support-agent.
 
-Generates 300 customers, credentials, staff users, 120 products with 400 variants,
-1,500 orders covering all states, and 150 historical return requests.
+Generates 300 customers, credentials, staff users, 120 products with their variants,
+1,500 orders covering all states with payments and shipments, ~150 historical return requests
+(with items, evidence and refunds), then the curated demo cases from ``demo_seed``.
 Deterministic by seed and relative to specified reference timestamp (--now).
 """
 
 from __future__ import annotations
 
+import hashlib
 import random
 import uuid
 from datetime import datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.core.ids import (
     generate_uuid,
 )
 from shopagent.core.security import hash_password
+from shopagent.domain.demo_seed import seed_demo_scenarios
 from shopagent.domain.models.enums import (
-    OrderStatus,
     PaymentMethod,
     PaymentStatus,
     ProductCategory,
@@ -31,11 +34,17 @@ from shopagent.domain.policies.refund_calc import calculate_allocated_discounts
 from shopagent.infra.db.tables import (
     CustomerCredentialsModel,
     CustomerModel,
+    EvidenceFileModel,
     OrderItemModel,
     OrderModel,
+    PaymentModel,
     ProductModel,
     ProductVariantModel,
+    RefundModel,
+    ReturnItemModel,
     ReturnRequestModel,
+    ShipmentEventModel,
+    ShipmentModel,
     StaffUserModel,
 )
 
@@ -50,18 +59,24 @@ CATEGORIES = [
 ]
 
 ORDER_STATUS_LIST = [
-    OrderStatus.PENDING_PAYMENT.value,
-    OrderStatus.PAID.value,
-    OrderStatus.PACKING.value,
-    OrderStatus.SHIPPED.value,
-    OrderStatus.DELIVERED.value,
-    OrderStatus.DELIVERED.value,  # Weight delivered heavier for returns
-    OrderStatus.DELIVERED.value,
-    OrderStatus.CANCELLED.value,
-    OrderStatus.RETURN_REQUESTED.value,
-    OrderStatus.RETURNED.value,
-    OrderStatus.PARTIALLY_RETURNED.value,
+    "pending_payment",
+    "confirmed",
+    "packing",
+    "shipped",
+    "out_for_delivery",
+    "delivered",
+    "delivered",
+    "delivered",
+    "completed",
+    "cancelled",
 ]
+
+PRODUCT_NAMES = {
+    "fashion": ["Áo sơ mi linen", "Quần jeans ống suông", "Váy midi hoa nhí", "Áo hoodie nỉ", "Giày sneaker trắng", "Áo polo pique", "Quần short kaki"],
+    "electronics_accessories": ["Tai nghe không dây", "Sạc nhanh 65W", "Ốp lưng chống sốc", "Chuột không dây", "Cáp USB-C bện dù", "Loa Bluetooth mini"],
+    "cosmetics": ["Kem chống nắng SPF50", "Sữa rửa mặt dịu nhẹ", "Serum vitamin C", "Son dưỡng có màu", "Mặt nạ cấp ẩm"],
+    "home_living": ["Bình giữ nhiệt 500ml", "Bộ ga giường cotton", "Hộp đựng thực phẩm", "Đèn ngủ để bàn", "Khăn tắm bông"],
+}
 
 PAYMENT_METHODS = [
     PaymentMethod.CARD.value,
@@ -146,7 +161,7 @@ async def generate_seed_data(
         cat, flags = CATEGORIES[p_idx % len(CATEGORIES)]
         prod = ProductModel(
             id=uuid.UUID(int=10000 + p_idx),
-            name=f"Sản phẩm {cat.capitalize()} #{p_idx}",
+            name=f"{rng.choice(PRODUCT_NAMES.get(cat, ['Sản phẩm']))} #{p_idx}",
             category=cat,
             return_flags=flags,
             created_at=now - timedelta(days=120),
@@ -178,16 +193,16 @@ async def generate_seed_data(
         method = rng.choice(PAYMENT_METHODS)
 
         # Timestamps relative to now
-        if status in (OrderStatus.PENDING_PAYMENT.value, OrderStatus.PAID.value):
+        if status in ("pending_payment", "confirmed"):
             placed_days_ago = rng.uniform(0.1, 1.5)
             delivered_at = None
-        elif status == OrderStatus.PACKING.value:
+        elif status == "packing":
             placed_days_ago = rng.uniform(0.5, 2.0)
             delivered_at = None
-        elif status == OrderStatus.SHIPPED.value:
+        elif status in ("shipped", "out_for_delivery"):
             placed_days_ago = rng.uniform(1.0, 3.5)
             delivered_at = None
-        elif status == OrderStatus.CANCELLED.value:
+        elif status == "cancelled":
             placed_days_ago = rng.uniform(1.0, 20.0)
             delivered_at = None
         else:  # Delivered or return states
@@ -224,10 +239,10 @@ async def generate_seed_data(
         allocated = calculate_allocated_discounts(items_dict, discount_total)
 
         # Payment status
-        if status == OrderStatus.PENDING_PAYMENT.value:
+        if status == "pending_payment":
             p_status = PaymentStatus.UNPAID.value
             paid_amount = 0
-        elif status == OrderStatus.CANCELLED.value:
+        elif status == "cancelled":
             p_status = PaymentStatus.REFUNDED.value if method != PaymentMethod.COD.value else PaymentStatus.UNPAID.value
             paid_amount = 0
         else:
@@ -271,40 +286,112 @@ async def generate_seed_data(
             )
             session.add(it)
 
+        if p_status in (PaymentStatus.PAID.value, PaymentStatus.REFUNDED.value) and method != PaymentMethod.COD.value:
+            session.add(
+                PaymentModel(
+                    id=generate_uuid(), order_id=order.id, gateway=method, gateway_txn_id=f"SEED-TXN-{o_idx:06d}",
+                    amount=total, status="succeeded", mode="simulated", created_at=placed_at,
+                )
+            )
+
+        ship_events: list[tuple[str, str, datetime]] = []
+        if status in ("shipped", "out_for_delivery") or delivered_at is not None:
+            start = placed_at + timedelta(days=1)
+            ship_events.append(("shipped", "Kho ShopLab, Quận 7, TP.HCM", start))
+            ship_events.append(("in_transit", "Trung tâm khai thác", start + timedelta(days=1)))
+            if status == "out_for_delivery":
+                ship_events.append(("out_for_delivery", "Bưu cục địa phương", now - timedelta(hours=3)))
+            if delivered_at is not None:
+                ship_events.append(("delivered", "Giao thành công cho người nhận", delivered_at))
+        if ship_events:
+            ship = ShipmentModel(
+                id=generate_uuid(), order_id=order.id, carrier="ShopLab Logistics", tracking_code=f"SLB{o_idx:06d}VN",
+                status=ship_events[-1][0], direction="outbound", created_at=ship_events[0][2],
+            )
+            session.add(ship)
+            for st, loc, at in ship_events:
+                session.add(ShipmentEventModel(id=generate_uuid(), shipment_id=ship.id, status=st, location=loc, occurred_at=at))
+
         if delivered_at is not None:
             returnable_orders.append(order)
 
     await session.flush()
 
-    # 5. Historical Return Requests (~150 returns)
+    # 5. Historical return requests (~150): items, evidence, and a refund where one was accepted.
+    # Demo customers 1-3 are skipped so their curated history stays exactly as designed.
+    demo_ids = {uuid.UUID(int=1000 + n) for n in (1, 2, 3)}
+    pool = [o for o in returnable_orders if o.customer_id not in demo_ids]
+    order_items = (await session.execute(select(OrderItemModel))).scalars().all()
+    items_by_order: dict[uuid.UUID, list[OrderItemModel]] = {}
+    for it in order_items:
+        items_by_order.setdefault(it.order_id, []).append(it)
+
     return_count = 0
+    used: set[uuid.UUID] = set()
     for ret_idx in range(1, 151):
-        if not returnable_orders:
+        if not pool:
             break
-        order = returnable_orders[ret_idx % len(returnable_orders)]
+        order = pool[(ret_idx * 7) % len(pool)]
+        if order.id in used:
+            continue
+        used.add(order.id)
         ret_status = rng.choice([
             ReturnStatus.COMPLETED.value,
             ReturnStatus.AWAITING_RETURN.value,
             ReturnStatus.RECEIVED.value,
             ReturnStatus.REJECTED.value,
         ])
-        reason = rng.choice([ReturnReason.DEFECTIVE.value, ReturnReason.CHANGE_OF_MIND.value])
-
-        return_req = ReturnRequestModel(
-            id=uuid.UUID(int=2000000 + ret_idx),
-            code=f"RT-{ret_idx:06d}",
-            order_id=order.id,
-            customer_id=order.customer_id,
-            reason_code=reason,
-            resolution=ReturnResolution.REFUND.value,
-            status=ret_status,
-            risk_flags=[],
-            policy_version=order.policy_version,
-            deadline_ship_back=now + timedelta(days=5),
-            created_at=order.placed_at + timedelta(days=5),
+        reason = rng.choice([
+            ReturnReason.DEFECTIVE.value, ReturnReason.CHANGE_OF_MIND.value,
+            ReturnReason.DAMAGED_IN_TRANSIT.value, ReturnReason.WRONG_ITEM.value, ReturnReason.NOT_AS_DESCRIBED.value,
+        ])
+        created = (order.delivered_at or order.placed_at) + timedelta(days=rng.uniform(0.5, 4.0))
+        if created > now:
+            created = now - timedelta(hours=1)
+        ret_id = uuid.UUID(int=2000000 + ret_idx)
+        session.add(
+            ReturnRequestModel(
+                id=ret_id, code=f"RT-{ret_idx:06d}", order_id=order.id, customer_id=order.customer_id,
+                reason_code=reason, resolution=ReturnResolution.REFUND.value, status=ret_status, risk_flags=[],
+                policy_version=order.policy_version,
+                deadline_ship_back=created + timedelta(days=5) if ret_status == ReturnStatus.AWAITING_RETURN.value else None,
+                created_at=created, updated_at=created,
+            )
         )
-        session.add(return_req)
+        net = 0
+        for it in items_by_order.get(order.id, []):
+            session.add(
+                ReturnItemModel(
+                    id=generate_uuid(), return_id=ret_id, order_item_id=it.id, qty=it.qty,
+                    inspection_result="accepted" if ret_status == ReturnStatus.COMPLETED.value else "pending",
+                )
+            )
+            if ret_status != ReturnStatus.REJECTED.value:
+                it.returned_qty = it.qty
+            net += it.unit_price * it.qty - it.allocated_discount
+        if reason != ReturnReason.CHANGE_OF_MIND.value:
+            for p in range(1, 3):
+                path = f"seed/RT-{ret_idx:06d}/photo-{p}.jpg"
+                session.add(
+                    EvidenceFileModel(
+                        id=generate_uuid(), return_id=ret_id, kind="photo", path=path,
+                        sha256=hashlib.sha256(path.encode()).hexdigest(), size=150_000, uploaded_by="customer", created_at=created,
+                    )
+                )
+        if ret_status == ReturnStatus.COMPLETED.value and net > 0:
+            session.add(
+                RefundModel(
+                    id=generate_uuid(), code=f"RF-{ret_idx:06d}", order_id=order.id, return_id=ret_id, amount=net,
+                    breakdown={"net_refundable": net}, method="original", status="succeeded",
+                    gateway_txn_id=f"SEED-RFD-{ret_idx:06d}", attempts=1, created_at=created, updated_at=created,
+                )
+            )
+            order.refunded_amount = net
+            order.payment_status = PaymentStatus.REFUNDED.value if net >= order.paid_amount else PaymentStatus.PARTIALLY_REFUNDED.value
         return_count += 1
+
+    await session.flush()
+    demo = await seed_demo_scenarios(session, now)
 
     await session.commit()
 
@@ -315,4 +402,5 @@ async def generate_seed_data(
         "variants": len(variants),
         "orders": len(orders),
         "returns": return_count,
+        **demo,
     }

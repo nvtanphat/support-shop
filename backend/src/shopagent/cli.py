@@ -67,7 +67,8 @@ def seed_cmd(seed: int, now: str, customers: int, products: int, orders: int) ->
             click.echo(
                 f"Đã sinh xong: {counts['staff']} nhân viên, {counts['customers']} khách hàng, "
                 f"{counts['products']} sản phẩm, {counts['variants']} phân loại, "
-                f"{counts['orders']} đơn hàng, {counts['returns']} yêu cầu trả hàng."
+                f"{counts['orders']} đơn hàng, {counts['returns']} yêu cầu trả hàng, "
+                f"{counts['demo_orders']} đơn demo (SL-DEMO01..), {counts['demo_returns']} phiếu trả demo."
             )
 
     asyncio.run(_run())
