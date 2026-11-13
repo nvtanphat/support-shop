@@ -234,6 +234,23 @@ def build(args: argparse.Namespace) -> str:
     else:
         for _key, label in GATE_ROWS:
             matrix.append((label, "see quality_gates.yaml", "no Gemini run supplied", "NOT VERIFIED"))
+    # The independent final set (never used to tune) is gated on its own: dev-set scores cannot stand in for it.
+    if args.independent:
+        independent = json.loads((Path(args.independent) / "summary.json").read_text(encoding="utf-8"))
+        rows = {row["metric"]: row for row in independent["gates"]}
+        task = rows["task_success"]
+        failed = sorted(m for m, row in rows.items() if row["status"] != "PASS")
+        matrix.append(
+            (
+                "Independent final set, real Gemini (all gates)",
+                ">= 0.9 task success, every gate",
+                f"task success {fmt(task['value'])} ({task['numerator']}/{task['denominator']}, k={independent['meta'].get('k')})"
+                + (f"; failing: {', '.join(failed)}" if failed else ""),
+                "PASS" if not failed else "FAIL",
+            )
+        )
+    else:
+        matrix.append(("Independent final set, real Gemini (all gates)", ">= 0.9 task success, every gate", args.independent_note, "BLOCKED"))
     strategy = rag_rows.get(args.rag_strategy or "")
     held = holdout_rows[0]["holdout"] if holdout_rows else None
     if held:
@@ -264,6 +281,8 @@ def main() -> None:
     parser.add_argument("--null")
     parser.add_argument("--gemini")
     parser.add_argument("--retrieval")
+    parser.add_argument("--independent", help="Run directory of the independent final scenario set (--set holdout)")
+    parser.add_argument("--independent-note", default="not run", help="Why the independent run is missing, shown in the matrix")
     parser.add_argument("--rag-strategy")
     parser.add_argument("--holdout", help="JSON from evals.retrieval.holdout; preferred over --retrieval for the RAG rows")
     parser.add_argument("--pytest-passed", type=int, default=0)

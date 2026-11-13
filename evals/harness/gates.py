@@ -140,9 +140,16 @@ def save_run_artifacts(
 ) -> None:
     """Raw trajectories (expected-vs-actual evidence) and the gate table for later audit."""
     out_dir.mkdir(parents=True, exist_ok=True)
+    totals: dict[str, int] = {}
+    for r in results:
+        totals[r.scenario_id] = totals.get(r.scenario_id, 0) + 1
+    seen: dict[str, int] = {}
     for r in results:
         record = {**asdict(r), "failure_categories": sorted({categorize_failure(e) for e in r.errors})}
-        (out_dir / f"{r.scenario_id}.json").write_text(
+        seen[r.scenario_id] = seen.get(r.scenario_id, 0) + 1
+        # Repeated runs (k > 1) each keep their own file, so a failed run is not overwritten by a later pass.
+        name = r.scenario_id if totals[r.scenario_id] == 1 else f"{r.scenario_id}.run{seen[r.scenario_id]}"
+        (out_dir / f"{name}.json").write_text(
             json.dumps(record, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
         )
     (out_dir / "summary.json").write_text(

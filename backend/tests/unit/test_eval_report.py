@@ -34,7 +34,7 @@ def write_run(directory: Path, gate_values: dict[str, float | None]) -> None:
 
 
 def namespace(tmp_path: Path | None = None, **overrides) -> argparse.Namespace:  # type: ignore[no-untyped-def]
-    base = {"oracle": None, "null": None, "gemini": None, "retrieval": None, "holdout": None, "rag_strategy": None, "pytest_passed": 10, "pytest_failed": 0, "pytest_skipped": 0, "postgres_tests": 4, "ci": "PASS", "scenario_dir": "evals/scenarios", "truth_file": []}
+    base = {"oracle": None, "null": None, "gemini": None, "retrieval": None, "holdout": None, "rag_strategy": None, "pytest_passed": 10, "pytest_failed": 0, "pytest_skipped": 0, "postgres_tests": 4, "ci": "PASS", "scenario_dir": "evals/scenarios", "truth_file": [], "independent": None, "independent_note": "not run"}
     if tmp_path is not None:  # a synthetic scenario S-1 and a truth file that states the policy numbers
         (tmp_path / "scenarios").mkdir(exist_ok=True)
         (tmp_path / "scenarios" / "S-1.yaml").write_text("id: S-1" + chr(10) + "expect: {}" + chr(10), encoding="utf-8")
@@ -78,3 +78,10 @@ def test_independent_numeric_support_ignores_tool_results_and_uses_hand_written_
     }
     supported, total = independent_numeric_support([run], Path(ns.scenario_dir), [Path(f) for f in ns.truth_file])
     assert (supported, total) == (1, 2)  # 7 ngày is in the spec; 99.000 đ only in a tool result
+
+
+def test_a_missing_independent_run_blocks_acceptance_even_when_every_dev_gate_passes(tmp_path: Path) -> None:
+    write_run(tmp_path / "gemini", {})
+    blocked = build(namespace(tmp_path, gemini=str(tmp_path / "gemini"), independent_note="quota exhausted"))
+    assert "Independent final set, real Gemini (all gates) | >= 0.9 task success, every gate | quota exhausted | BLOCKED" in blocked
+    assert "AI AGENT ACCEPTANCE: PASS" not in blocked

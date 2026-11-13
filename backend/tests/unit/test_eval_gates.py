@@ -89,3 +89,21 @@ def test_failures_are_bucketed_by_cause() -> None:
     assert categorize_failure("something unexpected") == "other"
     failed = [run_result(passed=False, errors=["MISSING_TOOL: a", "MISSING_TOOL: b", "DB Order X not found"])]
     assert failure_category_counts(failed) == {"tool_selection": 2, "database_state": 1}
+
+
+def test_every_run_of_a_repeated_scenario_keeps_its_own_trajectory(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    # With k > 1 the runs used to share one file, so only the last survived and a failed run left no evidence.
+    import json
+
+    from evals.harness.gates import save_run_artifacts
+
+    def run(passed: bool) -> ScenarioRunResult:
+        return ScenarioRunResult(scenario_id="X-1", passed=passed, db_passed=passed, facts_passed=True, forbidden_passed=True,
+                                 invariants_passed=True, tool_calls_count=0, turns_count=1, fallback_turns=0)
+
+    save_run_artifacts(tmp_path, [run(False), run(True), run(True)], [], {"k": 3})
+    saved = sorted(p.name for p in tmp_path.glob("X-1*.json"))
+    assert saved == ["X-1.run1.json", "X-1.run2.json", "X-1.run3.json"]
+    assert json.loads((tmp_path / "X-1.run1.json").read_text(encoding="utf-8"))["passed"] is False
+    save_run_artifacts(tmp_path / "single", [run(True)], [], {"k": 1})
+    assert [p.name for p in (tmp_path / "single").glob("X-1*.json")] == ["X-1.json"]

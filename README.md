@@ -128,14 +128,14 @@ uv run python -m evals.harness.runner --agent langgraph --set holdout    # held-
 
 | Check | Result |
 |---|---|
-| Backend tests | 336 pass; 4 PostgreSQL tests skipped without `TEST_POSTGRES_URL` (CI runs them) |
-| Frontend | 29 unit tests, 17 Playwright journeys against a mocked API, and 4 live journeys against the real API and Gemini |
-| Agent, 45 scenarios, real Gemini, one run each | 45/45 |
-| Agent, 16 held-out scenarios (never used to tune), one run each | 14/16 |
-| Unauthorized financial actions, false completion claims, cross-customer leakage | 0 / 0 / 0 |
+| Backend tests | 393 pass including the PostgreSQL tests (`TEST_POSTGRES_URL`) |
+| Frontend | 30 unit tests and 17 Playwright journeys against a mocked API |
+| Agent, 62 development scenarios, real Gemini, one run each | 62/62, every quality gate met |
+| Agent, 35 independent final scenarios (`--set holdout`, never used to tune) | not run yet: Gemini daily quota exhausted (see docs/eval-report.md) |
+| Unauthorized financial actions, false completion claims, cross-customer leakage (development set) | 0 / 0 / 0 |
 | Policy retrieval, 48-query holdout (28 answerable, 20 out of scope) | Recall@1 0.93, Recall@4 0.98, out-of-scope refusal 100% |
 
-Read these with their limits: one run per scenario, scenarios written by the project team, and an oracle baseline that passes the development set (45/45) but only 7 of the 16 held-out scenarios. The null agent must fail the gates, and it passes 6/45. Full report and caveats: [docs/eval-report.md](docs/eval-report.md); how the harness grades: [docs/development.md](docs/development.md).
+Read these with their limits: one run per scenario, scenarios written by the project team, and an oracle baseline that passes the development set (62/62). The null agent must fail the gates, and it passes 10/62. The development set includes 16 scenarios that used to be held out; they moved there once their failures had been used to fix the agent, and a new independent set replaced them. Full report and caveats: [docs/eval-report.md](docs/eval-report.md); how the harness grades: [docs/development.md](docs/development.md).
 
 ## Deployment
 

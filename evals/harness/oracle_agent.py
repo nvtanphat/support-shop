@@ -6,6 +6,7 @@ import re
 import uuid
 from typing import Any
 
+from shopagent.core.clock import get_clock
 from shopagent.core.principal import Principal
 from shopagent.domain.models.enums import (
     ReturnReason,
@@ -56,9 +57,20 @@ class OracleAgent:
         (1, ("thứ hai", "thứ 2")),
         (2, ("thứ ba", "thứ 3")),
     )
-    _CHANGE_OF_MIND_WORDS = ("đổi ý", "không thích", "không vừa", "mặc không ưng", "xả kho", "đồ lót")
-    _DEFECT_WORDS = ("lỗi", "rách", "hỏng", "bung", "sờn", "dột", "méo")
+    _CHANGE_OF_MIND_WORDS = ("đổi ý", "không thích", "không vừa", "không hợp", "mặc không ưng", "xả kho", "đồ lót")
+    # Symptoms a customer reports for a faulty product, not only the word "lỗi".
+    _DEFECT_WORDS = ("lỗi", "rách", "hỏng", "bung", "sờn", "dột", "méo", "rè", "chập chờn", "không lên", "tắt ngúm")
+    _CANCEL_WORDS = ("hủy", "huỷ", "cancel", "bỏ đơn", "không lấy nữa")
+    _HANDOFF_WORDS = ("gặp nhân viên", "chuyển người", "tổng đài", "tranh chấp", "bức xúc", "người thật", "nhân viên thật")
+    # Refund timing by the payment channel the customer names (spec 2.4).
+    _REFUND_CHANNEL_WORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+        ("bank_transfer", ("chuyển khoản",)),
+        ("card", ("thẻ",)),
+        ("ewallet", ("ví điện tử", "ewallet", "ví")),
+    )
     _YES_WORDS = ("đúng", "ừ", "vâng", "dạ", "ok")
+    _WRONG_ITEM_WORDS = ("giao sai", "giao nhầm", "sai size", "sai màu", "nhận nhầm")
+    _RESOLUTION_WORDS = ("hoàn tiền", "đổi sang", "đổi lại", "trả lại")
 
     _POLICY_WORDS = ("bao nhiêu ngày", "hạn", "thời gian", "mấy ngày", "quy định", "chính sách", "phí", "bao lâu", "đổi size", "size", "chật")
 
@@ -107,11 +119,42 @@ class OracleAgent:
 
     def _reason_from(self, customer_text: str) -> ReturnReason | None:
         lowered = customer_text.lower()
+        if any(w in lowered for w in self._WRONG_ITEM_WORDS):
+            return ReturnReason.WRONG_ITEM
         if any(w in lowered for w in self._CHANGE_OF_MIND_WORDS):
             return ReturnReason.CHANGE_OF_MIND
         if any(w in lowered for w in self._DEFECT_WORDS):
             return ReturnReason.DEFECTIVE
         return None
+
+    def _past_every_window(self, order: OrderModel) -> bool:
+        """Delivered longer ago than the longest return window: no reason can make the order returnable."""
+        if order.delivered_at is None:
+            return False
+        delivered = order.delivered_at
+        now = get_clock().now()
+        if delivered.tzinfo is None:
+            now = now.replace(tzinfo=None)
+        return (now - delivered).days > self.policy.return_policy.windows_days.defect_like
+
+    async def _has_exchange_variant(self, items: list[OrderItemModel]) -> bool:
+        """Another variant of the same product, in stock: only then is an exchange a real option (spec 1.3)."""
+        for item in items:
+            variant = await self.session.get(ProductVariantModel, item.variant_id)
+            if variant is None:
+                continue
+            siblings = (
+                await self.session.execute(
+                    select(ProductVariantModel).where(
+                        ProductVariantModel.product_id == variant.product_id,
+                        ProductVariantModel.id != variant.id,
+                        ProductVariantModel.stock > 0,
+                    )
+                )
+            ).scalars().first()
+            if siblings is not None:
+                return True
+        return False
 
     async def step(
         self,
@@ -133,7 +176,7 @@ class OracleAgent:
                     break
 
         # 1. Escalation / Human handoff
-        if any(w in msg_lower for w in ("gặp nhân viên", "chuyển người", "tổng đài", "tranh chấp", "bức xúc")):
+        if any(w in msg_lower for w in self._HANDOFF_WORDS):
             ticket = await self.ticket_service.create_ticket(
                 principal=self.principal,
                 conversation_id=uuid.UUID(conversation_id),
@@ -150,7 +193,9 @@ class OracleAgent:
             )
 
         # 2. Return & Refund Request (slot filling: order, item, reason - never guessed)
-        is_return_turn = any(w in msg_lower for w in ("trả", "đổi trả", "hoàn tiền", "đổi ý", "lỗi", "hỏng"))
+        is_return_turn = any(w in msg_lower for w in ("trả", "đổi trả", "hoàn tiền", "đổi ý", "lỗi", "hỏng", *self._WRONG_ITEM_WORDS)) and not any(
+            w in msg_lower for w in self._CANCEL_WORDS
+        )
         is_policy_question = any(w in msg_lower for w in self._POLICY_WORDS) and not re.search(r"SL-\w+", user_message, re.IGNORECASE)
         if is_policy_question:
             self._pending_intent = None
@@ -185,8 +230,22 @@ class OracleAgent:
                     elif " bị " in f" {customer_text.lower()} ":
                         # A symptom the word lists do not know: confirm the reason instead of guessing it.
                         return ("Sản phẩm bị lỗi phải không ạ?", tool_calls, None)
+                if reason is None and self._past_every_window(order_model):
+                    days = self.policy.return_policy.windows_days.defect_like
+                    return (
+                        f"Đơn {order_code} đã giao quá {days} ngày nên đã hết thời hạn đổi trả, kể cả với sản phẩm lỗi [POL-RETURN-01].",
+                        tool_calls,
+                        None,
+                    )
                 if reason is None:
                     return ("Quý khách cho em biết lý do muốn trả hàng là gì ạ?", tool_calls, None)
+                if (
+                    reason == ReturnReason.WRONG_ITEM
+                    and not any(w in customer_text.lower() for w in self._RESOLUTION_WORDS)
+                    and await self._has_exchange_variant(chosen)
+                ):
+                    # Wrong goods: the customer may want the right ones or the money back; ask instead of choosing.
+                    return ("Quý khách muốn đổi sang đúng hàng hay hoàn tiền ạ?", tool_calls, None)
 
                 item_ids = [str(i.id) for i in chosen]
                 tool_calls.append({
@@ -231,7 +290,7 @@ class OracleAgent:
                     )
                     tool_calls.append({
                         "tool": "propose_return",
-                        "args": {"order_code": order_code, "items": items_payload, "reason_code": reason.value},
+                        "args": {"order_code": order_code, "items": items_payload, "reason_code": reason.value, "resolution": "refund"},
                         "result": {"action_id": prop_res["action_id"], "type": prop_res["type"]},
                     })
                     p_dict = {
@@ -258,7 +317,7 @@ class OracleAgent:
                 tool_calls,
                 None,
             )
-        if order_code and any(w in msg_lower for w in ("hủy", "hủy đơn", "cancel")):
+        if order_code and any(w in msg_lower for w in self._CANCEL_WORDS):
             stmt = select(OrderModel).where(OrderModel.code == order_code)
             res = await self.session.execute(stmt)
             order_model = res.scalar_one_or_none()
@@ -285,7 +344,7 @@ class OracleAgent:
                     )
                 except Exception:
                     return (
-                        f"Đơn hàng {order_code} đang ở trạng thái {order_model.status}, không thể hủy trực tiếp.",
+                        f"Đơn hàng {order_code} đang ở trạng thái {order_model.status}, không thể hủy trực tiếp [POL-CANCEL-01].",
                         tool_calls,
                         None,
                     )
@@ -327,9 +386,11 @@ class OracleAgent:
                 None,
             )
         if any(w in msg_lower for w in ("bao nhiêu ngày", "hạn", "thời gian", "mấy ngày", "quy định", "chính sách", "phí", "bao lâu", "đổi size", "size", "chật")):
-            if any(w in msg_lower for w in ("ví điện tử", "ewallet", "tiền hoàn")):
+            channel = next((c for c, words in self._REFUND_CHANNEL_WORDS if any(w in msg_lower for w in words)), None)
+            if channel is not None and any(w in msg_lower for w in ("hoàn", "nhận lại", "tiền về", "tiền")):
+                low, high = getattr(self.policy.refund_policy.sla_working_days, channel)
                 return (
-                    "Theo chính sách hoàn tiền [POL-REFUND-01], thời gian hoàn tiền về ví điện tử là 1-3 ngày làm việc.",
+                    f"Theo chính sách hoàn tiền [POL-REFUND-01], tiền hoàn về theo kênh này trong {low}-{high} ngày làm việc.",
                     tool_calls,
                     None,
                 )
