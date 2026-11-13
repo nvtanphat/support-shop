@@ -1,0 +1,32 @@
+# Phát triển
+
+## Cấu hình đáng chú ý
+
+- `RETRIEVAL_RERANKER_ENABLED=false` tắt reranker (mặc định bật trong `config/app.yaml`; mô hình khoảng 1 GB RAM).
+- `GEMINI_API_KEY` nhận nhiều khóa cách nhau bằng dấu phẩy; khóa bị giới hạn tốc độ được nghỉ tạm và hệ thống chuyển sang khóa khác.
+- Hạn mức vòng lặp agent, thời gian chờ và số lần thử lại LLM ở [config/models.yaml](../config/models.yaml).
+- Bộ nhớ đệm nặng (mô hình reranker) đặt qua `FASTEMBED_CACHE_PATH` và `HF_HOME`.
+
+## Kiểm thử và đánh giá
+
+```bash
+uv run ruff check backend evals
+uv run mypy backend/src
+uv run pytest backend/tests -q                     # đặt TEST_POSTGRES_URL để chạy test PostgreSQL
+npm --prefix frontend test
+npm --prefix frontend run test:e2e                 # API giả lập
+npm --prefix frontend exec playwright test -- --config playwright.live.config.ts   # giao diện + API + Gemini thật, tốn hạn mức
+
+uv run python -m evals.harness.runner --agent oracle --gate       # không gọi LLM
+uv run python -m evals.harness.runner --agent null                # phải trượt cổng chất lượng
+uv run python -m evals.harness.runner --agent langgraph --gate    # gọi Gemini thật, tốn hạn mức
+uv run --extra rerank python -m evals.retrieval.holdout           # đo retrieval, không gọi LLM
+```
+
+Mỗi lần chạy lưu quỹ đạo thô và bảng cổng chất lượng vào `evals/results/<run>/`. Ngưỡng cổng ở [evals/quality_gates.yaml](../evals/quality_gates.yaml). Harness ghi vào cơ sở dữ liệu riêng (`EVAL_DATABASE_URL`), không bao giờ vào cơ sở dữ liệu ứng dụng.
+
+## Chụp lại ảnh giao diện
+
+```bash
+npm --prefix frontend run shots    # ghi vào docs/images/, dùng API giả lập, không cần backend
+```
