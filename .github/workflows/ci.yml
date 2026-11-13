@@ -56,6 +56,10 @@ jobs:
       PYTHONPATH: "backend/src:."
       LLM_PRIMARY_PROVIDER: fake
       LLM_FALLBACK_PROVIDER: fake
+      # The retrieval models (about 3 GB) are not installed here; the dense and rerank stages are off,
+      # exactly as the unit tests assume. Their wiring is covered with fakes, the real models by evals.
+      RETRIEVAL_RERANKER_ENABLED: "false"
+      RETRIEVAL_EMBEDDING_ENABLED: "false"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
