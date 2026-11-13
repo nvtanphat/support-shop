@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     RETRIEVAL_RERANKER_ENABLED: bool | None = None
     # Same for `retrieval.embedding.enabled` (the dense half of hybrid candidate retrieval)
     RETRIEVAL_EMBEDDING_ENABLED: bool | None = None
+    LOG_LEVEL: str = "INFO"
     # Where the retrieval models are cached. Unset: `.cache/fastembed` inside the project, so a project on D:\ does
     # not fill the system drive through the operating system's temp directory (fastembed's own default).
     FASTEMBED_CACHE_PATH: str | None = None

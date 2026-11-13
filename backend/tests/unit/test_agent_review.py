@@ -407,3 +407,127 @@ def test_a_slot_reported_missing_twice_is_stuck_until_something_resolves_it() ->
     assert stuck_slot([_MISSING_REASON]) is None
     assert stuck_slot([_MISSING_REASON, other]) == "reason_code"
     assert stuck_slot([_MISSING_REASON, other, _OK_CHECK, {**other, "result": {"action_id": "a-1"}}]) is None
+
+
+# --- Refusals carry what to do next, and the same one twice is detected ------------------------------------
+from shopagent.agent.recovery import NEXT_STEP, refusal_code, with_recovery  # noqa: E402
+from shopagent.agent.slot_guard import stuck_refusal  # noqa: E402
+
+
+def test_a_known_refusal_gets_a_next_step_and_nothing_else_is_touched() -> None:
+    refusal = {"error_code": "EXCHANGE_SAME_VARIANT", "message": "x"}
+    assert with_recovery(refusal)["next_step"] == NEXT_STEP["EXCHANGE_SAME_VARIANT"]
+    ineligible = {"eligible": False, "decision_code": "EXPIRED_WINDOW"}
+    assert "next_step" in with_recovery(ineligible)
+    for untouched in ({"eligible": True, "decision_code": "ELIGIBLE"}, {"error_code": "ORDER_NOT_FOUND"}, {"status": "success"}, "text", None):
+        assert with_recovery(untouched) == untouched
+    assert refusal_code({"eligible": True, "decision_code": "EXPIRED_WINDOW"}) is None  # an eligible result is not a refusal
+
+
+_REFUSED = {"tool": "propose_return", "args": {}, "result": {"error_code": "EXCHANGE_SAME_VARIANT", "message": "x"}}
+
+
+@pytest.mark.parametrize(
+    ("executed", "stuck"),
+    [
+        ([_REFUSED], None),
+        ([_REFUSED, _REFUSED], "EXCHANGE_SAME_VARIANT"),
+        ([_REFUSED, {"tool": "propose_return", "args": {}, "result": {"action_id": "a-1"}}, _REFUSED], "EXCHANGE_SAME_VARIANT"),
+        ([_REFUSED, _REFUSED, {"tool": "propose_return", "args": {}, "result": {"action_id": "a-1"}}], None),  # overturned since
+        ([{"tool": "search_policy", "args": {}, "result": {"error_code": "TOOL_TIMEOUT"}}] * 2, None),         # a timeout is not a refusal
+    ],
+)
+def test_the_same_business_refusal_twice_is_stuck_until_something_overturns_it(executed: list[dict[str, Any]], stuck: str | None) -> None:
+    assert stuck_refusal(executed) == stuck
+
+
+# --- A proposal is not a return request ---------------------------------------------------------------------
+_RETURN_CLAIMS = [
+    "Em đã tạo yêu cầu trả hàng hoàn tiền cho đơn của bạn.",
+    "Mình đã gửi yêu cầu hoàn tiền rồi nhé.",
+    "Yêu cầu trả hàng của bạn đã được tạo thành công.",
+]
+_CASE_STATUS = {"tool": "get_case_status", "args": {}, "result": {"case_type": "return_request", "code": "RT-ABC123", "status": "pending_review"}}
+
+
+@pytest.mark.parametrize("text", _RETURN_CLAIMS)
+def test_saying_a_return_request_was_created_needs_one_to_exist(text: str) -> None:
+    proposal_only = {"tool_calls": [_CREATED]}  # a proposal card exists, the customer has not confirmed
+    assert "FALSE_COMPLETION_CLAIM" in _kinds(text, **proposal_only)
+    assert "FALSE_COMPLETION_CLAIM" not in _kinds(text, tool_calls=[_CASE_STATUS])  # a status lookup shows the request
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Mình đã tạo đề xuất trả hàng, bạn bấm Xác nhận trên thẻ để gửi yêu cầu nhé.",
+        "Bạn cho mình biết lý do để mình tạo yêu cầu trả hàng nhé.",
+        "Sau khi bạn xác nhận, yêu cầu trả hàng sẽ được tạo.",
+    ],
+)
+def test_proposals_and_future_requests_are_not_claims_that_a_request_exists(text: str) -> None:
+    kinds = {v.claim for v in check_claims(text, {"messages": [], "tool_calls": [_CREATED]})[0]}  # type: ignore[arg-type]
+    assert "return request created" not in kinds
+
+
+# --- Entity-aware grounding: figures belong to their order, numbers to the clause cited beside them ---------
+def _order(code: str, total: int) -> dict[str, Any]:
+    return {"tool": "get_order", "args": {"order_code": code}, "result": {"code": code, "total": total, "items": [{"unit_price": total}]}}
+
+
+_ORDER_A, _ORDER_B = _order("SL-A00001", 450000), _order("SL-B00001", 229000)
+_ELIGIBILITY_A = {
+    "tool": "check_return_eligibility",
+    "args": {"order_code": "SL-A00001"},
+    "result": {"eligible": True, "estimated_refund": {"amount": 420000, "breakdown": {"shipping_fee_deduction": 30000}}},
+}
+_POLICY = {
+    "tool": "search_policy",
+    "args": {"query": "x"},
+    "result": {
+        "status": "success",
+        "results": [
+            {"clause_id": "POL-RETURN-02", "text": "Đổi ý trong 7 ngày, khách chịu phí 30.000 đ."},
+            {"clause_id": "POL-RETURN-01", "text": "Hàng lỗi trong 15 ngày, cửa hàng chịu phí."},
+            {"clause_id": "POL-REFUND-02", "text": "Trên 500.000 đ cần nhân viên duyệt."},
+        ],
+    },
+}
+_EVIDENCE = [_ORDER_A, _ORDER_B, _ELIGIBILITY_A, _POLICY]
+
+
+def _entity_kinds(text: str) -> set[str]:
+    return {v.kind for v in check_claims(text, {"messages": [], "tool_calls": _EVIDENCE})[0]}  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Đơn SL-B00001 có tổng giá trị 450.000 đ.",                       # A's total on B
+        "Đơn SL-B00001 của bạn:\n- Tổng giá trị: 450.000 đ",               # the same, in a list under B
+    ],
+)
+def test_an_amount_attached_to_the_wrong_order_is_caught(text: str) -> None:
+    assert "CROSS_ORDER_MISMATCH" in _entity_kinds(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Đơn SL-A00001 có tổng giá trị 450.000 đ.",
+        "Đơn SL-A00001 hoàn dự kiến 420.000 đ, đã trừ phí 30.000 đ.",     # derived figure and a fee, both in A's results
+        "Đơn SL-A00001 450.000 đ, còn đơn SL-B00001 229.000 đ.",          # two orders in a sentence: not attributed
+        "Đơn SL-A00001 đã giao.\n\nĐơn khác có tổng 229.000 đ.",           # a blank line ends the paragraph
+        "Phí vận chuyển chiều về là 30.000 đ với đơn SL-B00001.",          # a policy figure is not any order's
+    ],
+)
+def test_amounts_that_belong_to_their_order_are_not_flagged(text: str) -> None:
+    assert "CROSS_ORDER_MISMATCH" not in _entity_kinds(text)
+
+
+def test_a_number_cited_to_a_clause_that_does_not_contain_it_is_caught() -> None:
+    assert "CITATION_MISMATCH" in _entity_kinds("Đổi ý được trả trong 15 ngày `[POL-RETURN-02]`.")   # 15 days is POL-RETURN-01
+    assert "CITATION_MISMATCH" not in _entity_kinds("Đổi ý được trả trong 7 ngày `[POL-RETURN-02]`.")
+    assert "CITATION_MISMATCH" not in _entity_kinds("Hàng lỗi được trả trong 15 ngày `[POL-RETURN-01]`.")
+    assert "CITATION_MISMATCH" not in _entity_kinds("Đổi ý được trả trong 7 ngày [POL-RETURN-02] và hàng lỗi trong 15 ngày [POL-RETURN-01].")
+    assert "CITATION_MISMATCH" not in _entity_kinds("Bạn có 7 ngày.")   # no citation: nothing to check against

@@ -10,6 +10,7 @@
    - Yêu cầu xem, chỉnh sửa hoặc xóa dữ liệu cá nhân (GDPR/Luật Bảo vệ Dữ liệu Cá nhân).
    - Đơn mua qua sàn thương mại điện tử (Shopee, TikTok Shop) sau khi đã giải thích kênh của sàn mà khách vẫn cần nhân viên hỗ trợ.
 2. Thực hiện:
+   - Nếu ngữ cảnh hội thoại đã có phiếu hỗ trợ đang mở, không gọi lại `escalate_to_human`: nhắc khách mã phiếu và thời gian phản hồi.
    - Gọi tool `escalate_to_human` với `reason_code` và bản `summary` súc tích, khách quan.
    - Thông báo cho khách hàng mã phiếu hỗ trợ và thời gian phản hồi dự kiến của chuyên viên chăm sóc khách hàng (trong vòng 30 phút).
    - Khi hội thoại đã chuyển sang chế độ nhân viên, bot dừng phản hồi và nhường luồng chat cho nhân viên hỗ trợ.

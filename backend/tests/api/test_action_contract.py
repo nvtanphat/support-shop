@@ -78,3 +78,11 @@ def test_dto_accepts_tool_results_and_stored_rows_alike() -> None:
     assert (from_tool["id"], from_tool["payload_hash"], from_tool["status"], from_tool["conversation_id"]) == ("a1", "x", "proposed", "c1")
     assert from_tool["preview"]["estimated_refund_vnd"] == 5 and from_tool["preview"]["requires_approval"] is True
     assert pending_action_dto(None) is None
+
+
+def test_a_return_card_carries_the_reason_in_words_the_customer_reads() -> None:
+    # The card is where the customer confirms the reason the assistant chose; a code like `defective` says nothing.
+    dto = pending_action_dto({"action_id": "a2", "type": "return_request", "preview": {"title": "t", "reason_code": "defective"}})
+    assert dto is not None and dto["preview"]["reason_label"] == "sản phẩm bị lỗi"
+    cancel = pending_action_dto({"action_id": "a3", "type": "cancel_order", "preview": {"title": "t"}})
+    assert cancel is not None and "reason_label" not in cancel["preview"]

@@ -96,6 +96,12 @@ export const ActionCard: React.FC<ActionCardProps> = ({
 
       <p className="text-sm text-slate-700 mb-3">{action.preview.description}</p>
 
+      {action.preview.reason_label && (
+        <p className="text-sm text-slate-700 mb-3">
+          <span className="font-semibold text-slate-900">Lý do:</span> {action.preview.reason_label}
+        </p>
+      )}
+
       {/* Breakdown Details & Estimated Refund */}
       {(action.preview.breakdown || action.preview.estimated_refund_vnd !== undefined) && (
         <div className="bg-brand-50/50 rounded-xl p-3 text-xs mb-3 space-y-1.5 border border-brand-100">

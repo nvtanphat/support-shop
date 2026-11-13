@@ -33,6 +33,11 @@ class CheckReturnEligibilityInput(BaseModel):
     item_ids: list[str] = Field(min_length=1, description="Danh sách item_id của các sản phẩm muốn trả (tối thiểu 1 sản phẩm).")
     reason_code: str = Field(description="Lý do đổi trả: defective, damaged_in_transit, wrong_item, missing_item, not_as_described, hoặc change_of_mind.")
     resolution: str = Field(default="refund", description="refund (hoàn tiền) hoặc exchange (đổi hàng).")
+    reason_quote: str | None = Field(
+        default=None,
+        description="Đoạn khách đã viết mô tả sự cố, chép nguyên văn (ví dụ: 'bị rè một bên tai'). Bắt buộc khi khách mô tả "
+        "sự cố bằng lời riêng thay vì nói thẳng lý do.",
+    )
 
 
 class CheckVariantStockInput(BaseModel):
@@ -55,6 +60,11 @@ class ProposeReturnInput(BaseModel):
     resolution: str = Field(default="refund", description="refund hoặc exchange.")
     exchange_sku: str | None = Field(default=None, description="Mã SKU mới muốn đổi sang nếu resolution=exchange.")
     refund_method: str = Field(default="original", description="Phương thức hoàn tiền: original hoặc bank_transfer.")
+    reason_quote: str | None = Field(
+        default=None,
+        description="Đoạn khách đã viết mô tả sự cố, chép nguyên văn (ví dụ: 'bị rè một bên tai'). Bắt buộc khi khách mô tả "
+        "sự cố bằng lời riêng thay vì nói thẳng lý do.",
+    )
 
 
 class EscalateToHumanInput(BaseModel):

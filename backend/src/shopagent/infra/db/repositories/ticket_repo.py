@@ -34,6 +34,17 @@ class TicketRepository:
         res = await self.session.execute(stmt)
         return list(res.scalars().all())
 
+    async def find_active_for_conversation(self, conversation_id: uuid.UUID) -> TicketModel | None:
+        """The open or assigned ticket of a conversation, if there is one."""
+        stmt = (
+            select(TicketModel)
+            .where(TicketModel.conversation_id == conversation_id, TicketModel.status.in_(["open", "assigned"]))
+            .order_by(TicketModel.created_at.desc())
+            .limit(1)
+        )
+        res = await self.session.execute(stmt)
+        return res.scalar_one_or_none()
+
     async def save(self, ticket: TicketModel) -> None:
         self.session.add(ticket)
         await self.session.flush()

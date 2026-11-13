@@ -56,6 +56,26 @@ class ScriptedModel:
         return item
 
 
+class ToolAwareModel(ScriptedModel):
+    def __init__(self, script: list[AIMessage | Exception]) -> None:
+        super().__init__(script)
+        self.had_tools: list[bool] = []
+
+    def bind_tools(self, tools: list[Any]) -> Any:
+        outer = self
+
+        class Bound:
+            async def ainvoke(self_, messages: list[Any], **kw: Any) -> AIMessage:  # noqa: N805
+                outer.had_tools.append(True)
+                return await ScriptedModel.ainvoke(outer, messages, **kw)
+
+        return Bound()
+
+    async def ainvoke(self, messages: list[Any], **kw: Any) -> AIMessage:
+        self.had_tools.append(False)
+        return await super().ainvoke(messages, **kw)
+
+
 @pytest_asyncio.fixture
 async def session() -> AsyncIterator[AsyncSession]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
@@ -243,25 +263,6 @@ async def test_a_slot_reported_missing_twice_turns_the_tools_off_and_ends_with_a
 ) -> None:
     """Seen live: four refused calls in a row, then an unwanted hand-off to staff, then a blocked reply."""
 
-    class ToolAwareModel(ScriptedModel):
-        def __init__(self, script: list[AIMessage | Exception]) -> None:
-            super().__init__(script)
-            self.had_tools: list[bool] = []
-
-        def bind_tools(self, tools: list[Any]) -> Any:
-            outer = self
-
-            class Bound:
-                async def ainvoke(self_, messages: list[Any], **kw: Any) -> AIMessage:  # noqa: N805
-                    outer.had_tools.append(True)
-                    return await ScriptedModel.ainvoke(outer, messages, **kw)
-
-            return Bound()
-
-        async def ainvoke(self, messages: list[Any], **kw: Any) -> AIMessage:
-            self.had_tools.append(False)
-            return await super().ainvoke(messages, **kw)
-
     model = ToolAwareModel(
         [
             tool_call_msg("lookup_order_guest", {"order_code": "SL-999999"}),  # ungrounded: MISSING_SLOT order_code
@@ -275,6 +276,95 @@ async def test_a_slot_reported_missing_twice_turns_the_tools_off_and_ends_with_a
     assert out["turn_status"] == "completed"
     assert model.had_tools == [True, True, False]  # the third call could not have called a tool
     assert [c["tool"] for c in out["tool_calls"]] == ["lookup_order_guest", "lookup_order_guest"]
+
+
+def _refusing_registry(monkeypatch: pytest.MonkeyPatch, result: dict[str, Any], calls: list[dict[str, Any]]) -> None:
+    """A tool that always refuses with `result`, standing in for the domain rejecting the same action."""
+    from langchain_core.tools import StructuredTool
+    from pydantic import BaseModel
+
+    class Args(BaseModel):
+        sku: str
+
+    async def refuse(sku: str) -> dict[str, Any]:
+        calls.append({"sku": sku})
+        return dict(result)
+
+    tool = StructuredTool.from_function(coroutine=refuse, name="check_variant_stock", description="x", args_schema=Args)
+
+    class Registry:
+        def __init__(self, _session: Any) -> None: ...
+
+        def get_tools(self, **_: Any) -> list[Any]:
+            return [tool]
+
+    monkeypatch.setattr(agent_module, "ToolRegistry", Registry)
+
+
+@pytest.mark.asyncio
+async def test_the_same_refusal_twice_turns_the_tools_off_and_the_turn_ends_explaining(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Seen live: a rejected exchange was followed by nine policy searches and ten requests for photos."""
+    calls: list[dict[str, Any]] = []
+    _refusing_registry(monkeypatch, {"eligible": False, "decision_code": "EXPIRED_WINDOW", "message": "Quá hạn"}, calls)
+    model = ToolAwareModel(
+        [
+            tool_call_msg("check_variant_stock", {"sku": "A"}),
+            tool_call_msg("check_variant_stock", {"sku": "B"}),  # a different argument, the same refusal
+            AIMessage(content="Đơn đã quá thời hạn trả hàng nên mình chưa tạo yêu cầu được. Bạn có muốn mình kiểm tra lý do khác không?"),
+        ]
+    )
+    use_model(monkeypatch, model)
+    out = await agent_node(make_state("Mình muốn trả hàng"), run_config(session))
+
+    assert out["turn_status"] == "completed" and model.had_tools == [True, True, False]
+    assert len(calls) == 2  # the tool was not called a third time
+    assert all("next_step" in c["result"] for c in out["tool_calls"])  # the model was told what to do after each refusal
+
+
+@pytest.mark.asyncio
+async def test_one_tool_cannot_be_called_without_limit_in_a_turn(session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+    _refusing_registry(monkeypatch, {"in_stock": True}, calls)
+    script: list[AIMessage | Exception] = [tool_call_msg("check_variant_stock", {"sku": f"S{i}"}) for i in range(6)]
+    script.append(AIMessage(content="Mình đã có đủ thông tin về tồn kho."))
+    model = ScriptedModel(script)
+    use_model(monkeypatch, model)
+    use_budget(monkeypatch, max_iterations=8)
+    out = await agent_node(make_state("Còn hàng không?"), run_config(session))
+
+    assert len(calls) == 5  # the sixth call was refused before it ran
+    limited = [c for c in out["tool_calls"] if c["result"].get("error_code") == "TOOL_CALL_LIMIT"]
+    assert len(limited) == 1 and "next_step" in limited[0]["result"]
+
+
+@pytest.mark.asyncio
+async def test_the_last_iterations_are_reserved_for_the_answer(session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Seen live: six lookups used the whole budget, so the final draft could no longer be corrected and was blocked."""
+    calls: list[dict[str, Any]] = []
+    _refusing_registry(monkeypatch, {"in_stock": True}, calls)
+    script: list[AIMessage | Exception] = [tool_call_msg("check_variant_stock", {"sku": f"S{i}"}) for i in range(6)]
+    script.append(AIMessage(content="Mình đã có đủ thông tin về tồn kho."))
+    model = ToolAwareModel(script)
+    use_model(monkeypatch, model)
+    use_budget(monkeypatch, max_iterations=8)
+    out = await agent_node(make_state("Còn hàng không?"), run_config(session))
+
+    assert out["turn_status"] == "completed"
+    assert model.had_tools == [True] * 6 + [False]  # iterations 7 and 8 are tool-less; the answer came on the first of them
+
+
+@pytest.mark.asyncio
+async def test_each_turn_logs_where_its_time_went(session: AsyncSession, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    calls: list[dict[str, Any]] = []
+    _refusing_registry(monkeypatch, {"in_stock": True}, calls)
+    use_model(monkeypatch, ScriptedModel([tool_call_msg("check_variant_stock", {"sku": "S1"}), AIMessage(content="Còn hàng.")]))
+    with caplog.at_level("INFO", logger=agent_module.logger.name):
+        await agent_node(make_state("Còn hàng không?"), run_config(session))
+    text = caplog.text
+    assert "tool_done tool=check_variant_stock outcome=succeeded" in text
+    assert "agent_turn_done" in text and "llm_calls=2" in text and "llm_s=" in text and "tool_s=" in text
 
 
 def test_unretrieved_citations_ignores_clauses_that_were_looked_up() -> None:

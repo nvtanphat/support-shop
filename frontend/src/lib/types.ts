@@ -31,6 +31,7 @@ export interface PendingAction {
     breakdown?: Record<string, any>;
     estimated_refund_vnd?: number;
     refund_explanation?: string | null;
+    reason_label?: string;
     message?: string;
     requires_evidence?: boolean;
     requires_approval?: boolean;

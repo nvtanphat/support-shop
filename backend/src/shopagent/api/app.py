@@ -23,6 +23,7 @@ from shopagent.api.routers import (
 )
 from shopagent.core.config import get_settings
 from shopagent.core.errors import AppError
+from shopagent.core.logging import setup_logging
 from shopagent.rag.embeddings import warm_up_embedder
 from shopagent.rag.reranker import warm_up
 
@@ -38,8 +39,9 @@ async def lifespan(app: FastAPI):
     from shopagent.agent.graph import get_agent_graph
     from shopagent.infra.db.session import get_engine
 
-    logger = logging.getLogger("shopagent.startup")
     settings = get_settings()
+    setup_logging(settings.LOG_LEVEL)  # without this every INFO event of the agent is dropped
+    logger = logging.getLogger("shopagent.startup")
 
     logger.info(
         "Khởi động ShopSupport AI API: env=%s, mode=%s, llm=%s",

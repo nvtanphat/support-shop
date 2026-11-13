@@ -36,7 +36,14 @@ class TicketService:
         priority: str = "normal",
         context_data: dict[str, Any] | None = None,
     ) -> TicketModel:
-        """Create a human escalation ticket and switch conversation mode."""
+        """Create a human escalation ticket and switch conversation mode.
+
+        A conversation has at most one active ticket: asking again while one is open or assigned returns that
+        ticket instead of queueing the same customer twice (seen live: every follow-up message opened a new one).
+        """
+        active = await self.ticket_repo.find_active_for_conversation(conversation_id)
+        if active is not None:
+            return active
         now = self.clock.now()
         ticket = TicketModel(
             id=generate_uuid(),

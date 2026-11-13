@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from shopagent.agent.recovery import BUSINESS_REFUSALS, refusal_code
+
 ORDER_CODE_RE = re.compile(r"\bSL-[A-Za-z0-9]+\b", re.IGNORECASE)
 
 # A request for a person, not any sentence that mentions one: "mình không gặp người giao hàng" or
@@ -152,6 +154,27 @@ def derive_requirements(user_text: str, available_tools: Iterable[str]) -> list[
         )
 
     return requirements
+
+
+def refusal_requirements(executed_calls: list[dict[str, Any]], available_tools: Iterable[str]) -> list[ToolRequirement]:
+    """After a business refusal the answer must rest on the policy: the customer is told why, with the clause.
+
+    A refusal from `propose_cancel_order` or `propose_return` carries no clause, so without a lookup the explanation
+    has nothing to cite (seen live: "đơn đang giao nên không hủy được" with no [POL-CANCEL-01]). An eligibility check
+    that refuses already returns its clause and satisfies this by itself.
+    """
+    tools = set(available_tools)
+    if "search_policy" not in tools or not any(refusal_code(c.get("result")) in BUSINESS_REFUSALS for c in executed_calls):
+        return []
+    return [
+        ToolRequirement(
+            key="policy:refusal",
+            accepted_tools=POLICY_EVIDENCE_TOOLS & tools,
+            order_code=None,
+            reason="Công cụ đã từ chối theo nghiệp vụ; lời giải thích phải dựa trên điều khoản đã tra cứu.",
+            preferred_tool="search_policy",
+        )
+    ]
 
 
 def unmet_requirements(

@@ -46,6 +46,7 @@ def render_system_prompt(state: AgentState) -> str:
         principal_role=role_val,
         active_proposal=active_action,
         active_cases=None,
+        outcomes=dynamic_context.get("conversation_outcomes") or {},
         recent_orders=recent_orders,
         policy_version=policy_version,
     )

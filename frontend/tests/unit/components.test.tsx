@@ -68,6 +68,16 @@ describe('ActionCard', () => {
     expect(screen.getByText(/250.000 đ/i)).toBeInTheDocument();
   });
 
+  it('shows the return reason the customer is confirming', () => {
+    const returnAction: PendingAction = {
+      ...mockAction,
+      type: 'return_request',
+      preview: { ...mockAction.preview, title: 'Xác nhận yêu cầu trả hàng hoàn tiền SL-900001', reason_label: 'sản phẩm bị lỗi' },
+    };
+    render(<ActionCard action={returnAction} onActionUpdated={() => {}} />);
+    expect(screen.getByText(/Lý do:/).closest('p')).toHaveTextContent('Lý do: sản phẩm bị lỗi');
+  });
+
   it('renders confirmed status when action is confirmed', () => {
     const confirmedAction: PendingAction = {
       ...mockAction,

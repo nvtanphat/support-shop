@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from shopagent.agent.presentation import CODE_LABELS
+
 
 def _preview_for_ui(preview: dict[str, Any]) -> dict[str, Any]:
     shaped = dict(preview)
@@ -17,6 +19,10 @@ def _preview_for_ui(preview: dict[str, Any]) -> dict[str, Any]:
         shaped.setdefault("estimated_refund_vnd", refund)
     if "needs_approval" in preview:
         shaped.setdefault("requires_approval", preview["needs_approval"])
+    # The card is where the customer confirms the reason the assistant chose, so it is shown in plain words.
+    reason = preview.get("reason_code")
+    if isinstance(reason, str) and reason in CODE_LABELS:
+        shaped.setdefault("reason_label", CODE_LABELS[reason])
     return shaped
 
 

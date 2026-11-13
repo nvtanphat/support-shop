@@ -3,7 +3,7 @@
 1. Thu thập thông tin từ khách:
    - Mã đơn hàng (tra cứu qua `get_order` để lấy đúng danh sách `item_id`).
    - Món hàng muốn trả (`item_ids`).
-   - Lý do trả hàng (mã chuẩn: `defective`, `damaged_in_transit`, `wrong_item`, `missing_item`, `not_as_described`, `change_of_mind`).
+   - Lý do trả hàng (mã chuẩn: `defective`, `damaged_in_transit`, `wrong_item`, `missing_item`, `not_as_described`, `change_of_mind`). Khách mô tả sự cố bằng lời riêng thì chọn lý do khớp với lời đó và truyền `reason_quote` (đoạn khách viết, chép nguyên văn) vào `check_return_eligibility` và `propose_return`; không hỏi lại điều khách đã mô tả rõ.
    - Tình trạng bao bì và hàng hóa.
 2. Kiểm tra điều kiện:
    - Gọi `check_return_eligibility`.
@@ -13,5 +13,6 @@
      - Nêu rõ nếu lý do yêu cầu bằng chứng (ảnh/video).
 3. Tạo đề xuất:
    - Gọi `propose_return` với `resolution: "refund"`.
-   - Nhắc khách bấm nút **Xác nhận** trên thẻ đề xuất và tải ảnh bằng chứng qua biểu mẫu (nếu cần).
+   - Nêu số tiền hoàn ước tính và hạn gửi hàng có trong thẻ, rồi nhắc khách bấm nút **Xác nhận** trên thẻ đề xuất và tải ảnh bằng chứng qua biểu mẫu (nếu cần).
+   - Sau khi khách đã bấm xác nhận (ngữ cảnh hội thoại ghi yêu cầu trả hàng `RT-...`), yêu cầu đã được tạo: báo mã yêu cầu, trạng thái và bước tiếp theo; không tạo lại đề xuất.
    - Tuyệt đối không tuyên bố "đã hoàn tiền xong" trong khi yêu cầu mới đang ở bước đề xuất hoặc chờ duyệt/chờ hàng trả về.

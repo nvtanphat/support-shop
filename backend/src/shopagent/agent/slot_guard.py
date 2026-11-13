@@ -16,6 +16,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 
+from shopagent.agent.recovery import BUSINESS_REFUSALS, refusal_code
 from shopagent.agent.tool_requirements import ORDER_CODE_RE
 from shopagent.core.text import extract_text_content
 from shopagent.domain.models.enums import ReturnReason, ReturnResolution
@@ -32,6 +33,22 @@ _ORDER_TOOLS = frozenset(
     }
 )
 _RETURN_TOOLS = frozenset({"check_return_eligibility", "propose_return"})
+# Tools that start a write proposal: the order must be one the customer chose, not merely one in the recent list.
+_PROPOSAL_ORDER_TOOLS = frozenset({"check_return_eligibility", "propose_return", "propose_cancel_order"})
+# "đơn gần nhất", "đơn thứ hai", "đơn mới đặt": the customer points into the recent-orders list shown to the model.
+_RECENT_ORDER_REFERENCE_RE = re.compile(
+    r"\bđơn(?:\s+hàng)?\s+(?:gần\s+(?:nhất|đây)|mới\s+nhất|mới\s+đặt|vừa\s+(?:đặt|mua)|cuối(?:\s+cùng)?|đầu\s+tiên"
+    r"|thứ\s+(?:nhất|hai|ba|1|2|3)|số\s+[123]|hôm\s+(?:qua|nay|trước))"
+)
+# Words of a return request itself, not of the problem: a quote made only of these describes nothing.
+_NON_DESCRIPTIVE_TOKENS = frozenset(
+    {
+        "tra", "doi", "hoan", "tien", "hang", "muon", "minh", "toi", "em", "ban", "shop", "don", "cho", "voi", "giup",
+        "nhe", "oi", "la", "cai", "chiec", "mon", "san", "pham", "nay", "do", "vi", "bi", "da", "roi", "mua", "nhan",
+        "duoc", "khong", "lai", "yeu", "cau", "ve", "hom", "thi", "ma", "va", "nhung", "cua", "co", "the",
+        "quy", "khach", "sp",
+    }
+)
 _REASONS = frozenset(r.value for r in ReturnReason)
 # Words by which a customer states each reason. The model may only pick a reason the customer
 # actually expressed; anything else is asked, never inferred. Words are written with diacritics and
@@ -67,7 +84,9 @@ class GroundingContext:
     """Values the model is allowed to reuse, collected from verifiable sources."""
 
     def __init__(self, messages: Iterable[BaseMessage], recent_order_codes: Iterable[str]) -> None:
-        self._order_codes: set[str] = {c.upper() for c in recent_order_codes}
+        self._recent_codes: set[str] = {c.upper() for c in recent_order_codes}
+        self._order_codes: set[str] = set(self._recent_codes)
+        self._customer_codes: set[str] = set()
         self._tool_text: list[str] = []
         self._human_text: list[str] = []
         self._human_raw: list[str] = []  # lower-cased, NFC, diacritics kept
@@ -81,7 +100,8 @@ class GroundingContext:
                 self._human_text.append(remove_vietnamese_accents(text))
                 self._human_raw.append(unicodedata.normalize("NFC", text.lower()))
                 self._latest_human, self._assistant_before_latest = text, last_assistant
-                self._order_codes.update(m.group(0).upper() for m in ORDER_CODE_RE.finditer(text))
+                self._customer_codes.update(m.group(0).upper() for m in ORDER_CODE_RE.finditer(text))
+                self._order_codes.update(self._customer_codes)
             elif isinstance(msg, AIMessage) and not msg.tool_calls:
                 last_assistant = extract_text_content(msg.content)
             elif isinstance(msg, ToolMessage):
@@ -137,6 +157,40 @@ class GroundingContext:
             return False
         return _mentions_reason(unicodedata.normalize("NFC", asked.lower()), remove_vietnamese_accents(asked), reason)
 
+    def order_chosen_by_customer(self, code: str) -> bool:
+        """The customer chose this order: typed its code, pointed into the recent list, said yes to a question naming
+        it, or has only this one recent order. Being in the recent list alone is not a choice when there are several."""
+        code = code.strip().upper()
+        if code in self._customer_codes:
+            return True
+        if code in self._recent_codes and (len(self._recent_codes) == 1 or any(_RECENT_ORDER_REFERENCE_RE.search(h) for h in self._human_raw)):
+            return True
+        asked = {m.group(0).upper() for m in ORDER_CODE_RE.finditer(self._assistant_before_latest)}
+        return asked == {code} and _AFFIRMATION_RE.match(self._latest_human) is not None
+
+    def quote_supports_reason(self, reason: str, quote: Any) -> bool:
+        """The customer's own description of the problem, copied verbatim, grounds the reason the model read from it.
+
+        The word list cannot know every symptom ("bị rè một bên tai", "sạc không vào điện"), and a yes/no question
+        after a clear description only adds a turn. The quote must be text the customer wrote, must describe something
+        beyond the request and the product's name, and must not use the words of a different reason. The reason is
+        shown again on the confirmation card, and shop-fault returns are checked by staff against photos.
+        """
+        if not isinstance(quote, str) or not quote.strip():
+            return False
+        needle = _squash(quote)
+        if not needle or not any(needle in _squash(h) for h in self._human_raw):
+            return False
+        raw, stripped = unicodedata.normalize("NFC", quote.lower()), remove_vietnamese_accents(quote)
+        if any(other != reason and _mentions_reason(raw, stripped, other) for other in _REASON_WORDS_VI):
+            return False
+        product_tokens = {tok for name, _ in self._item_names.values() for tok in tokenize_unaccent(name)}
+        described = [
+            tok for tok in tokenize_unaccent(ORDER_CODE_RE.sub(" ", quote))
+            if tok not in _NON_DESCRIPTIVE_TOKENS and tok not in product_tokens and not tok.isdigit()
+        ]
+        return bool(described)
+
     def item_is_identified(self, item_id: str) -> bool:
         """A line of a multi-item order must be named by the customer; a single line is implicit."""
         name, siblings = self._item_names.get(item_id, ("", 0))
@@ -157,6 +211,12 @@ def _mentions_reason(raw: str, stripped: str, reason: str) -> bool:
     if raw != stripped:
         return any(_has_word(raw, w) for w in _REASON_WORDS_VI[reason])
     return any(_has_word(stripped, w) for w in _REASON_WORDS[reason])
+
+
+def _squash(text: str) -> str:
+    """Lower-case, NFC, single spaces, no surrounding punctuation: how a quote is compared with the customer's text."""
+    collapsed = re.sub(r"\s+", " ", unicodedata.normalize("NFC", text.lower())).strip()
+    return collapsed.strip(" .,!?;:\"'“”‘’()[]-")
 
 
 def _has_word(text: str, phrase: str) -> bool:
@@ -186,6 +246,13 @@ def find_ungrounded_slot(
             "Hãy hỏi khách mã đơn (hoặc cho khách chọn trong danh sách đơn gần đây), không tự suy đoán.",
         )
 
+    if tool in _PROPOSAL_ORDER_TOOLS and not grounding.order_chosen_by_customer(str(code)):
+        return _missing(
+            "order_code",
+            "Khách có nhiều đơn gần đây và chưa nói rõ muốn xử lý đơn nào. Hãy liệt kê các đơn phù hợp (mã đơn, sản phẩm, "
+            "trạng thái) và hỏi khách chọn đơn nào; không tự chọn đơn mới nhất.",
+        )
+
     if tool not in _RETURN_TOOLS:
         return None
 
@@ -203,14 +270,16 @@ def find_ungrounded_slot(
             "và hỏi khách muốn trả sản phẩm nào; không tự chọn.",
         )
     reason = args.get("reason_code")
-    if reason not in _REASONS or not grounding.customer_stated_reason(str(reason)):
+    if reason not in _REASONS or not (
+        grounding.customer_stated_reason(str(reason)) or grounding.quote_supports_reason(str(reason), args.get("reason_quote"))
+    ):
         return _missing(
             "reason_code",
-            "Khách chưa nêu hoặc chưa xác nhận lý do đổi trả. Nếu khách đã mô tả sự cố (ví dụ 'bị rè', 'không lên nguồn'), hãy "
-            "hỏi lại bằng MỘT câu đóng nêu nhóm lý do bằng từ chuẩn (lỗi, hư hại khi vận chuyển, giao sai, thiếu, không "
-            "đúng mô tả, đổi ý), ví dụ 'Sản phẩm bị lỗi phải không ạ?' (không hỏi bằng chính triệu chứng như 'bị rè phải "
-            "không?'), rồi chờ khách trả lời; chỉ gọi lại công cụ sau khi khách xác nhận. Nếu khách chưa mô tả gì, hãy hỏi lý do. "
-            f"Mã hợp lệ: {sorted(_REASONS)}.",
+            "Chưa có căn cứ cho lý do đổi trả này. Nếu khách đã tự mô tả sự cố (ví dụ 'bị rè một bên tai', 'sạc không vào "
+            "điện'), gọi lại công cụ với `reason_quote` là đúng đoạn khách đã viết (chép nguyên văn, không diễn đạt lại) và "
+            "lý do khớp với đoạn đó. Nếu khách chưa mô tả sự cố, hãy hỏi lý do; nếu lời khách chưa rõ thuộc lý do nào, hỏi "
+            "MỘT câu đóng nêu lý do bằng từ chuẩn, ví dụ 'Sản phẩm bị lỗi phải không ạ?'. Không tự chọn lý do khi khách "
+            f"chưa nói gì về sự cố. Mã hợp lệ: {sorted(_REASONS)}.",
         )
     if args.get("resolution", "refund") not in _RESOLUTIONS:
         return _missing("resolution", "Hãy hỏi khách muốn hoàn tiền (refund) hay đổi hàng (exchange).")
@@ -260,6 +329,26 @@ def stuck_slot(executed: list[dict[str, Any]]) -> str | None:
         still_missing = any(r.get("error_code") == "MISSING_SLOT" and r.get("slot") == slot for r in latest.values())
         if count >= 2 and still_missing:
             return slot
+    return None
+
+
+def stuck_refusal(executed: list[dict[str, Any]]) -> str | None:
+    """The business refusal a tool returned at least twice this turn and nothing has overturned since.
+
+    A refusal the domain gives twice will be given a third time: the turn must end with an explanation and an
+    alternative instead of more tool calls (seen live: a rejected exchange was followed by nine policy searches and
+    ten requests for photos).
+    """
+    counts: dict[str, int] = {}
+    last_for_tool: dict[Any, str | None] = {}
+    for call in executed:
+        code = refusal_code(call.get("result"))
+        last_for_tool[call.get("tool")] = code
+        if code in BUSINESS_REFUSALS:
+            counts[str(code)] = counts.get(str(code), 0) + 1
+    for code, count in counts.items():
+        if count >= 2 and code in last_for_tool.values():
+            return code
     return None
 
 

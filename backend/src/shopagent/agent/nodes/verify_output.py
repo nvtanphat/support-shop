@@ -8,7 +8,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage
 
-from shopagent.agent.grounding import check_claims
+from shopagent.agent.grounding import check_claims, escalation_exists
 from shopagent.agent.presentation import strip_internal_codes
 from shopagent.agent.state import AgentState
 from shopagent.core.text import extract_text_content
@@ -102,11 +102,7 @@ def verify_output_node(state: AgentState) -> dict[str, Any]:
         return {"verified_output": _degraded_response(state), "error": "TURN_NOT_COMPLETED: empty assistant message"}
 
     retrieved_clauses = set(state.get("retrieved_clauses", []))
-    tool_calls = state.get("tool_calls", [])
-    escalation_done = any(
-        tc.get("tool") == "escalate_to_human" and "ticket_code" in (tc.get("result") or {})
-        for tc in tool_calls
-    )
+    escalation_done = escalation_exists(state)
 
     violations = []
 

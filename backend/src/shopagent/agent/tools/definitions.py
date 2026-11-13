@@ -48,6 +48,14 @@ from shopagent.rag.retriever import PolicyIndexUnavailableError, PolicyRetriever
 logger = logging.getLogger(__name__)
 
 
+def _refusal(error: AppError) -> dict[str, Any]:
+    """A domain refusal as the model sees it: code, message and the domain's own hint."""
+    result: dict[str, Any] = {"error_code": error.error_code, "message": str(error)}
+    if error.hint:
+        result["hint"] = error.hint
+    return result
+
+
 def _order_not_found(order_code: str) -> dict[str, Any]:
     """The same answer for "no such order" and "not yours", so order codes cannot be probed."""
     return {
@@ -165,7 +173,7 @@ def create_tools(
             # Unknown and unverified orders look the same to a guest.
             return dict(_GUEST_VERIFICATION_REQUIRED)
         except AppError as e:
-            return {"error_code": e.error_code, "message": str(e)}
+            return _refusal(e)
 
     # Tool 3: list_my_orders
     async def list_my_orders(limit: int = 5) -> dict[str, Any]:
@@ -174,7 +182,7 @@ def create_tools(
             orders = await order_service.list_orders_for_principal(principal, limit=limit)
             return {"orders": orders, "count": len(orders)}
         except AppError as e:
-            return {"error_code": e.error_code, "message": str(e)}
+            return _refusal(e)
 
     # Tool 4: get_order
     async def get_order(order_code: str) -> dict[str, Any]:
@@ -184,7 +192,7 @@ def create_tools(
         except (ForbiddenError, NotFoundError):
             return _order_not_found(order_code)
         except AppError as e:
-            return {"error_code": e.error_code, "message": str(e)}
+            return _refusal(e)
 
     # Tool 5: track_shipment
     async def track_shipment(order_code: str) -> dict[str, Any]:
@@ -215,6 +223,7 @@ def create_tools(
         item_ids: list[str],
         reason_code: str,
         resolution: str = "refund",
+        reason_quote: str | None = None,  # read by the slot guard before the call, not by the domain
     ) -> dict[str, Any]:
         """Kiểm tra điều kiện đổi trả theo chính sách và ước tính khoản tiền hoàn."""
         try:
@@ -233,7 +242,7 @@ def create_tools(
                 "checked": {"order_code": order_code, "item_ids": list(item_ids), "reason_code": reason_code, "resolution": resolution},
             }
         except AppError as e:
-            return {"error_code": e.error_code, "message": str(e)}
+            return _refusal(e)
 
     # Tool 7: check_variant_stock
     async def check_variant_stock(sku: str) -> dict[str, Any]:
@@ -351,7 +360,7 @@ def create_tools(
                 "instruction": "Đã tạo thẻ đề xuất hủy đơn. Yêu cầu khách hàng kiểm tra thông tin và bấm 'Xác nhận hủy đơn' trên thẻ để hệ thống thực hiện.",
             }
         except AppError as e:
-            return {"error_code": e.error_code, "message": str(e)}
+            return _refusal(e)
 
     # Tool 10: propose_return
     async def propose_return(
@@ -361,6 +370,7 @@ def create_tools(
         resolution: str = "refund",
         exchange_sku: str | None = None,
         refund_method: str = "original",
+        reason_quote: str | None = None,  # read by the slot guard before the call, not by the domain
     ) -> dict[str, Any]:
         """Tạo bản xem trước và thẻ đề xuất đổi trả hàng để khách bấm xác nhận qua API."""
         try:
@@ -385,11 +395,13 @@ def create_tools(
                 "instruction": "Đã tạo thẻ đề xuất đổi trả. Yêu cầu khách hàng kiểm tra số tiền hoàn và hạn gửi hàng, sau đó bấm 'Xác nhận' trên thẻ.",
             }
         except AppError as e:
-            return {"error_code": e.error_code, "message": str(e)}
+            return _refusal(e)
 
     # Tool 11: escalate_to_human
     async def escalate_to_human(reason_code: str, summary: str) -> dict[str, Any]:
-        """Tạo phiếu hỗ trợ khẩn và chuyển phiên chat cho chuyên viên chăm sóc khách hàng."""
+        """Tạo phiếu hỗ trợ khẩn và chuyển phiên chat cho chuyên viên chăm sóc khách hàng.
+
+        Cuộc trò chuyện đã có phiếu đang mở thì trả lại phiếu đó, không tạo phiếu mới."""
         ticket = await ticket_service.create_ticket(
             principal=principal,
             conversation_id=conversation_id,
@@ -400,7 +412,7 @@ def create_tools(
         return {
             "ticket_code": ticket.code,
             "status": "open",
-            "message": f"Đã tạo phiếu hỗ trợ #{ticket.code} và chuyển tiếp yêu cầu đến chuyên viên chăm sóc khách hàng. Chuyên viên sẽ liên hệ lại với bạn trong vòng 30 phút.",
+            "message": f"Yêu cầu đã được chuyển đến chuyên viên chăm sóc khách hàng qua phiếu hỗ trợ #{ticket.code}. Chuyên viên sẽ liên hệ lại với bạn trong vòng 30 phút.",
             "estimated_response_minutes": 30,
         }
 

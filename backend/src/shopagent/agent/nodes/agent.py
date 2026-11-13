@@ -26,11 +26,13 @@ from shopagent.agent.context_window import estimate_text_tokens, prune_messages_
 from shopagent.agent.grounding import check_claims
 from shopagent.agent.prompt import render_system_prompt
 from shopagent.agent.proposal_guard import find_proposal_conflict
+from shopagent.agent.recovery import with_recovery
 from shopagent.agent.slot_guard import (
     GroundingContext,
     find_ungrounded_slot,
     recent_order_codes,
     serialize_result,
+    stuck_refusal,
     stuck_slot,
     unasked_missing_slots,
 )
@@ -40,6 +42,7 @@ from shopagent.agent.tool_requirements import (
     classify_result,
     derive_requirements,
     draft_steering_message,
+    refusal_requirements,
     steering_message,
     unmet_requirements,
     unretrieved_citations,
@@ -53,6 +56,9 @@ from shopagent.infra.llm.factory import get_chat_model
 logger = logging.getLogger(__name__)
 
 _MAX_DUPLICATE_CALLS = 2
+# Calls of one tool in a single turn. Seen live: nine search_policy calls in a row while the model circled a refusal.
+_MAX_CALLS_PER_TOOL = {"search_policy": 3}
+_DEFAULT_MAX_CALLS_PER_TOOL = 5
 _MAX_STEERING_ROUNDS = 2
 
 
@@ -206,6 +212,10 @@ async def _run_tool_call(
         logger.info("tool_rejected_ungrounded tool=%s reason=%s", name, missing_slot.get("slot") or missing_slot["error_code"])
         return missing_slot
 
+    tool_calls_made = sig_counts.get(f"#{name}", 0) + 1
+    sig_counts[f"#{name}"] = tool_calls_made
+    if tool_calls_made > _MAX_CALLS_PER_TOOL.get(name, _DEFAULT_MAX_CALLS_PER_TOOL):
+        return with_recovery({"error_code": "TOOL_CALL_LIMIT", "message": f"Công cụ '{name}' đã được gọi quá nhiều lần trong lượt này."})
     signature = f"{name}:{json.dumps(args, sort_keys=True, default=str)}"
     sig_counts[signature] = sig_counts.get(signature, 0) + 1
     if sig_counts[signature] > _MAX_DUPLICATE_CALLS:
@@ -215,7 +225,7 @@ async def _run_tool_call(
             "Hãy dùng kết quả đã có hoặc hỏi thêm khách.",
         }
     try:
-        return await asyncio.wait_for(tool.ainvoke(args), timeout=tool_timeout_s)
+        return with_recovery(await asyncio.wait_for(tool.ainvoke(args), timeout=tool_timeout_s))
     except TimeoutError:
         logger.error("tool_timeout tool=%s timeout_s=%s", name, tool_timeout_s)
         return {"error_code": "TOOL_TIMEOUT", "message": f"Công cụ '{name}' phản hồi quá lâu."}
@@ -285,6 +295,8 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
     sig_counts: dict[str, int] = {}
     steering_rounds = 0
     tools_off = False  # set once a slot is stuck: the rest of the turn is spent asking the customer
+    llm_seconds = tool_seconds = 0.0
+    llm_calls = 0
     turn_status = "incomplete"
     unmet: list[ToolRequirement] = []
 
@@ -293,17 +305,35 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
             logger.error("turn_timeout elapsed_s=%.1f", time.monotonic() - started)
             break
 
-        stuck = stuck_slot(recorded)
-        if stuck is not None and not tools_off:
+        # The final iterations are reserved for the answer: tools off, so the model cannot spend the budget on
+        # lookups and leave only a last draft that can no longer be corrected.
+        if not tools_off and iteration >= budget.max_iterations - budget.max_iterations // 4 and recorded:
             tools_off = True
             working.append(
                 HumanMessage(
                     content="[HỆ THỐNG - không phải lời khách]\n"
+                    "Đã hết lượt tra cứu. Không gọi thêm công cụ: hãy trả lời khách ngay từ kết quả đã có (hoặc hỏi thêm khách "
+                    "nếu còn thiếu thông tin). Chỉ nêu điều có trong kết quả công cụ."
+                )
+            )
+        stuck = stuck_slot(recorded)
+        refused = stuck_refusal(recorded)
+        if (stuck is not None or refused is not None) and not tools_off:
+            tools_off = True
+            if stuck is not None:
+                instruction = (
                     f"Công cụ đã báo thiếu '{stuck}' nhiều lần và không thể tự có thông tin này. Không gọi thêm công cụ nào: "
                     "hãy hỏi khách đúng thông tin còn thiếu trong một câu ngắn (lý do trả hàng thì hỏi câu đóng như "
                     "'Sản phẩm bị lỗi phải không ạ?')."
                 )
-            )
+            else:
+                instruction = (
+                    f"Công cụ đã từ chối nhiều lần với cùng lý do ({refused}); thử lại không đổi được kết quả. Không gọi thêm "
+                    "công cụ nào: hãy nói rõ cho khách vì sao chưa làm được, theo `next_step` trong kết quả công cụ, và đưa "
+                    "ra hướng thay thế để khách chọn (một câu hỏi ngắn). Không hỏi khách thứ không làm thay đổi kết quả."
+                )
+            working.append(HumanMessage(content="[HỆ THỐNG - không phải lời khách]\n" + instruction))
+        llm_started = time.monotonic()
         ai = await _invoke_llm(
             llm if tools_off else llm_with_tools,
             [] if tools_off else tools,
@@ -311,13 +341,15 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
             budget.llm_retry_delays_s,
             deadline=started + budget.turn_timeout_s,
         )
+        llm_seconds += time.monotonic() - llm_started
+        llm_calls += 1
         if ai is None:
             turn_status = "degraded"
             break
         working.append(ai)
 
         if not ai.tool_calls:
-            unmet = unmet_requirements(requirements, recorded)
+            unmet = unmet_requirements([*requirements, *refusal_requirements(recorded, tools_by_name)], recorded)
             draft = extract_text_content(ai.content)
             unretrieved = unretrieved_citations(draft, retrieved_clauses)
             draft_state: dict[str, Any] = {
@@ -350,9 +382,13 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
         new_messages.append(ai)
         for call in ai.tool_calls:
             grounding = GroundingContext([*history, *new_messages], recent_order_codes(dynamic_context))
+            tool_started = time.monotonic()
             result = find_proposal_conflict(
                 call["name"], recorded, dynamic_context.get("active_pending_action")
             ) or await _run_tool_call(call, tools_by_name, sig_counts, budget.tool_timeout_s, grounding)
+            tool_ms = (time.monotonic() - tool_started) * 1000
+            tool_seconds += tool_ms / 1000
+            logger.info("tool_done tool=%s outcome=%s ms=%d", call.get("name"), classify_result(result).value, tool_ms)
             recorded.append(
                 {
                     "tool": call.get("name"),
@@ -372,7 +408,7 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
     if turn_status == "incomplete" and recorded:
         final = await _synthesize_final(llm, sys_msg, working, budget.synthesis_timeout_s)
         if final is not None:
-            unmet = unmet_requirements(requirements, recorded)
+            unmet = unmet_requirements([*requirements, *refusal_requirements(recorded, tools_by_name)], recorded)
             if unmet:
                 turn_status = "requirements_unmet"
             else:
@@ -382,8 +418,8 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
         turn_status = "degraded"
 
     logger.info(
-        "agent_turn_done conv_id=%s status=%s tools=%d unmet=%d duration_s=%.2f",
-        conv_id_str, turn_status, len(recorded), len(unmet), time.monotonic() - started,
+        "agent_turn_done conv_id=%s status=%s tools=%d unmet=%d duration_s=%.2f llm_s=%.2f llm_calls=%d tool_s=%.2f",
+        conv_id_str, turn_status, len(recorded), len(unmet), time.monotonic() - started, llm_seconds, llm_calls, tool_seconds,
     )
 
     update: dict[str, Any] = {
