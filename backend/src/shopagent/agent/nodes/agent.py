@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -115,6 +116,18 @@ def _is_transient(exc: Exception) -> bool:
     return any(marker in str(exc).lower() for marker in _TRANSIENT_MARKERS)
 
 
+_RETRY_HINT_RE = re.compile(r"retry in ([0-9]+(?:\.[0-9]+)?)\s*s", re.IGNORECASE)
+_MAX_RATE_LIMIT_WAIT_S = 20.0
+
+
+def _retry_wait_s(exc: Exception, default_s: float) -> float:
+    """Wait at least as long as the provider asks ("Please retry in 23s"), within a bound."""
+    hint = _RETRY_HINT_RE.search(str(exc))
+    if hint is None:
+        return default_s
+    return min(max(default_s, float(hint.group(1)) + 1.0), _MAX_RATE_LIMIT_WAIT_S)
+
+
 async def _invoke_llm(
     primary: Any, fallback_tools: list[Any], call_input: list[BaseMessage], retry_delays_s: tuple[float, ...]
 ) -> AIMessage | None:
@@ -130,7 +143,7 @@ async def _invoke_llm(
             logger.warning("llm_call_failed attempt=%d transient=%s error=%s", attempt + 1, transient, exc)
             if not transient or attempt == len(retry_delays_s):
                 break
-            await asyncio.sleep(retry_delays_s[attempt])
+            await asyncio.sleep(_retry_wait_s(exc, retry_delays_s[attempt]))
     try:
         fallback = _bind_tools(get_chat_model("agent_fallback"), fallback_tools)
         return _normalize_ai_message(await fallback.ainvoke(call_input))

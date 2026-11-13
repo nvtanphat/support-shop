@@ -556,3 +556,13 @@ async def test_agent_turn_survives_a_proposal_blocked_for_missing_eligibility_ch
     # The order lookup happened in an earlier turn, so this turn is steered for a fresh one; whatever the
     # final status, the blocked proposal must not have created a card or crashed the node.
     assert out["turn_status"] in ("completed", "requirements_unmet") and "pending_action" not in out
+
+
+def test_rate_limit_hint_sets_the_wait_within_bounds() -> None:
+    from shopagent.agent.nodes.agent import _retry_wait_s
+
+    hinted = RuntimeError("429 RESOURCE_EXHAUSTED. Please retry in 12.4s.")
+    assert _retry_wait_s(hinted, 1.0) == pytest.approx(13.4)
+    assert _retry_wait_s(RuntimeError("429 ... retry in 600s"), 1.0) == 20.0  # bounded
+    assert _retry_wait_s(RuntimeError("503 UNAVAILABLE"), 3.0) == 3.0  # no hint: the configured backoff
+    assert _retry_wait_s(RuntimeError("retry in 0.5s"), 3.0) == 3.0  # never shorter than the backoff
