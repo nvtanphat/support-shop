@@ -14,7 +14,7 @@ import unicodedata
 from collections.abc import Iterable
 from typing import Any
 
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 
 from shopagent.agent.tool_requirements import ORDER_CODE_RE
 from shopagent.core.text import extract_text_content
@@ -49,6 +49,17 @@ _REASON_WORDS_VI: dict[str, tuple[str, ...]] = {
 _REASON_WORDS: dict[str, tuple[str, ...]] = {
     reason: tuple(dict.fromkeys(remove_vietnamese_accents(w) for w in words)) for reason, words in _REASON_WORDS_VI.items()
 }
+# The customer answering a closed question the assistant just asked ("Sản phẩm bị lỗi phải không ạ?").
+# Any yes/no question: "...phải không ạ?", "...đúng chứ?", "bạn có muốn mình tạo đề xuất không?".
+_CLOSED_QUESTION_RE = re.compile(r"(?:phải|đúng|có đúng|đúng là)\s+(?:không|chứ|vậy)|không(?:\s+ạ)?\s*\?|phải\s+vậy|đúng\s+chứ")
+_AFFIRMATION_RE = re.compile(
+    r"^\s*(?:dạ|vâng|ừ|ừm|à|ờ|ok|okay|đúng|phải|chính xác|chuẩn|có|yes|y)\b[^?\n]{0,40}$", re.IGNORECASE
+)
+# A polite request without a question mark is still a question: "vui lòng cho em xin mã đơn".
+_ASKS_RE = re.compile(
+    r"(?:vui\s+lòng|xin|làm\s+ơn|bạn|quý\s+khách)\s+(?:\w+\s+){0,3}?(?:cho|cung\s+cấp|nhập|gửi|chọn|nói|biết)"
+    r"|cho\s+(?:mình|em|tôi)\s+(?:biết|xin|hỏi)|(?:mình|em)\s+cần\s+(?:biết|thêm\s+thông\s+tin)"
+)
 _RESOLUTIONS = frozenset(r.value for r in ReturnResolution)
 
 
@@ -60,13 +71,19 @@ class GroundingContext:
         self._tool_text: list[str] = []
         self._human_text: list[str] = []
         self._human_raw: list[str] = []  # lower-cased, NFC, diacritics kept
+        self._latest_human = ""
+        self._assistant_before_latest = ""
+        last_assistant = ""
         self._item_names: dict[str, tuple[str, int]] = {}
         for msg in messages:
             if isinstance(msg, HumanMessage):
                 text = extract_text_content(msg.content)
                 self._human_text.append(remove_vietnamese_accents(text))
                 self._human_raw.append(unicodedata.normalize("NFC", text.lower()))
+                self._latest_human, self._assistant_before_latest = text, last_assistant
                 self._order_codes.update(m.group(0).upper() for m in ORDER_CODE_RE.finditer(text))
+            elif isinstance(msg, AIMessage) and not msg.tool_calls:
+                last_assistant = extract_text_content(msg.content)
             elif isinstance(msg, ToolMessage):
                 text = extract_text_content(msg.content)
                 self._tool_text.append(text)
@@ -103,16 +120,22 @@ class GroundingContext:
         return None
 
     def customer_stated_reason(self, reason: str) -> bool:
-        """The customer used a word for this reason, read with diacritics whenever they typed them."""
-        accented = _REASON_WORDS_VI[reason]
-        plain = _REASON_WORDS[reason]
+        """The customer used a word for this reason, or confirmed it when the assistant asked.
+
+        Words are read with diacritics whenever they were typed. A symptom the word list does not know ("tai nghe bị
+        rè") is grounded the other way: the assistant asks a closed question that names the reason and the customer
+        answers yes. The model alone never decides the reason.
+        """
         for raw, stripped in zip(self._human_raw, self._human_text, strict=True):
-            if raw != stripped:  # typed with diacritics
-                if any(_has_word(raw, w) for w in accented):
-                    return True
-            elif any(_has_word(stripped, w) for w in plain):
+            if _mentions_reason(raw, stripped, reason):
                 return True
-        return False
+        return self._confirmed_after_closed_question(reason)
+
+    def _confirmed_after_closed_question(self, reason: str) -> bool:
+        asked = self._assistant_before_latest
+        if not asked or not _AFFIRMATION_RE.match(self._latest_human) or not _CLOSED_QUESTION_RE.search(asked.lower()):
+            return False
+        return _mentions_reason(unicodedata.normalize("NFC", asked.lower()), remove_vietnamese_accents(asked), reason)
 
     def item_is_identified(self, item_id: str) -> bool:
         """A line of a multi-item order must be named by the customer; a single line is implicit."""
@@ -127,6 +150,13 @@ class GroundingContext:
 
     def knows_item(self, item_id: str) -> bool:
         return any(item_id in text for text in self._tool_text)
+
+
+def _mentions_reason(raw: str, stripped: str, reason: str) -> bool:
+    """Whether a text uses a word for the reason: accented words when it has diacritics, plain ones when it has none."""
+    if raw != stripped:
+        return any(_has_word(raw, w) for w in _REASON_WORDS_VI[reason])
+    return any(_has_word(stripped, w) for w in _REASON_WORDS[reason])
 
 
 def _has_word(text: str, phrase: str) -> bool:
@@ -176,7 +206,11 @@ def find_ungrounded_slot(
     if reason not in _REASONS or not grounding.customer_stated_reason(str(reason)):
         return _missing(
             "reason_code",
-            f"Khách chưa nêu lý do đổi trả. Hãy hỏi khách lý do rồi mới chọn mã trong {sorted(_REASONS)}.",
+            "Khách chưa nêu hoặc chưa xác nhận lý do đổi trả. Nếu khách đã mô tả sự cố (ví dụ 'bị rè', 'không lên nguồn'), hãy "
+            "hỏi lại bằng MỘT câu đóng nêu nhóm lý do bằng từ chuẩn (lỗi, hư hại khi vận chuyển, giao sai, thiếu, không "
+            "đúng mô tả, đổi ý), ví dụ 'Sản phẩm bị lỗi phải không ạ?' (không hỏi bằng chính triệu chứng như 'bị rè phải "
+            "không?'), rồi chờ khách trả lời; chỉ gọi lại công cụ sau khi khách xác nhận. Nếu khách chưa mô tả gì, hãy hỏi lý do. "
+            f"Mã hợp lệ: {sorted(_REASONS)}.",
         )
     if args.get("resolution", "refund") not in _RESOLUTIONS:
         return _missing("resolution", "Hãy hỏi khách muốn hoàn tiền (refund) hay đổi hàng (exchange).")
@@ -201,6 +235,56 @@ def find_ungrounded_slot(
                 "message": "Kiểm tra điều kiện cho thấy yêu cầu này không đủ điều kiện; không tạo đề xuất, hãy giải thích lý do cho khách.",
             }
     return None
+
+
+def _names_a_reason(lowered: str) -> bool:
+    stripped = remove_vietnamese_accents(lowered)
+    return any(_has_word(lowered, w) for words in _REASON_WORDS_VI.values() for w in words) or any(
+        _has_word(stripped, w) for words in _REASON_WORDS.values() for w in words
+    )
+
+
+def stuck_slot(executed: list[dict[str, Any]]) -> str | None:
+    """A slot that tools reported missing at least twice this turn and that nothing has resolved since.
+
+    Calling the same tools again cannot supply what only the customer knows; the turn must end with a question
+    (seen live: four refused calls in a row, then an unwanted hand-off to staff).
+    """
+    latest = {call.get("tool"): call.get("result") or {} for call in executed}
+    counts: dict[str, int] = {}
+    for call in executed:
+        result = call.get("result") or {}
+        if result.get("error_code") == "MISSING_SLOT" and result.get("slot"):
+            counts[str(result["slot"])] = counts.get(str(result["slot"]), 0) + 1
+    for slot, count in counts.items():
+        still_missing = any(r.get("error_code") == "MISSING_SLOT" and r.get("slot") == slot for r in latest.values())
+        if count >= 2 and still_missing:
+            return slot
+    return None
+
+
+def unasked_missing_slots(executed: list[dict[str, Any]], draft: str) -> list[str]:
+    """Problems for slots a tool still reports missing at the end of the turn while the draft asks the customer nothing.
+
+    Without a question the customer is left with a statement and no way to move on (seen live: both calls were
+    refused for a missing reason and the reply was an explanation of the policy). Only the latest result of each
+    tool counts, so a call that succeeded afterwards clears the problem.
+    """
+    latest = {call.get("tool"): call.get("result") or {} for call in executed}
+    slots = sorted({str(r["slot"]) for r in latest.values() if r.get("error_code") == "MISSING_SLOT" and r.get("slot")})
+    lowered = draft.lower()
+    if "reason_code" in slots and _CLOSED_QUESTION_RE.search(lowered) and not _names_a_reason(lowered):
+        return [
+            "UNCLEAR_REASON_QUESTION: reason_code (the question does not name a reason in the standard words, so the "
+            "customer's yes could not be tied to one: ask 'Sản phẩm bị lỗi phải không ạ?' or the matching reason, not the symptom)"
+        ]
+    if "?" in draft or _ASKS_RE.search(lowered):
+        return []
+    return [
+        f"UNASKED_MISSING_SLOT: {slot} (a tool reported it missing and the reply asks the customer nothing: ask for it in one "
+        "short question; for reason_code ask a closed question such as 'Sản phẩm bị lỗi phải không ạ?')"
+        for slot in slots
+    ]
 
 
 def recent_order_codes(dynamic_context: dict[str, Any]) -> list[str]:

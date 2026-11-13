@@ -17,6 +17,7 @@ class ScriptedUser:
         "items": ["sản phẩm nào", "món nào", "mặt hàng", "cần trả món nào", "chiếc nào"],
         "payout": ["số tài khoản", "ngân hàng", "stk", "thông tin tài khoản", "thụ hưởng"],
         "exchange_variant": ["kích cỡ", "size", "màu", "đổi sang", "phân loại"],
+        "confirm_reason": ["phải không", "đúng không", "đúng chứ", "có đúng"],
     }
 
     def __init__(self, script: UserScript) -> None:

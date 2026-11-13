@@ -15,7 +15,13 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from shopagent.infra.db.tables import ExchangeModel, OrderModel, RefundModel, ReturnRequestModel
+from shopagent.infra.db.tables import (
+    ExchangeModel,
+    OrderModel,
+    PendingActionModel,
+    RefundModel,
+    ReturnRequestModel,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,9 +64,18 @@ _NOT_A_CLAIM = re.compile(
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n+")
 
 
+# Pointing the customer at a confirmation card is a claim that one exists, however politely it is phrased
+# ("vui lòng bấm Xác nhận trên thẻ" is exactly the sentence that must not appear without a card), so it is not
+# subject to the negation filter that keeps "if you confirm, the order will be cancelled" from counting.
+_CARD_CLAIM = re.compile(
+    r"thẻ\s+(?:hành\s+động|đề\s+xuất|xác\s+nhận)|đã\s+tạo\s+(?:một\s+)?đề\s+xuất|(?:nhấn|bấm)\s+(?:vào\s+)?(?:nút\s+)?\**xác\s+nhận",
+    re.IGNORECASE,
+)
+
+
 def detect_claims(text: str) -> set[str]:
     """Kinds of completion this reply asserts, sentence by sentence."""
-    found: set[str] = set()
+    found: set[str] = {"proposal_card"} if _CARD_CLAIM.search(text) else set()
     for sentence in _SENTENCE_SPLIT.split(text.lower()):
         for kind, pattern in _CLAIMS.items():
             for match in pattern.finditer(sentence):
@@ -78,6 +93,7 @@ class StateSnapshot:
     orders_cancelled: int = 0
     returns: int = 0
     exchanges_done: int = 0
+    proposals: int = 0
 
     def supports(self, kind: str) -> bool:
         return {
@@ -85,6 +101,7 @@ class StateSnapshot:
             "cancel_done": self.orders_cancelled > 0,
             "return_created": self.returns > 0,
             "exchange_done": self.exchanges_done > 0,
+            "proposal_card": self.proposals > 0,
         }[kind]
 
 
@@ -98,7 +115,9 @@ async def snapshot_state(session: AsyncSession) -> StateSnapshot:
     # returned item of an exchange request.
     exchanges = (await session.execute(select(ExchangeModel))).scalars().all()
     accepted_exchanges = [r for r in returns if r.resolution == "exchange" and r.status in ("accepted", "closed")]
+    proposals = (await session.execute(select(PendingActionModel))).scalars().all()
     return StateSnapshot(
+        proposals=len(proposals),
         refunds_succeeded=len(refunds),
         orders_cancelled=len(cancelled),
         returns=len(returns),

@@ -259,3 +259,151 @@ def test_instruction_override_attempts_are_flagged(typed: str) -> None:
 @pytest.mark.parametrize("typed", ["Mình muốn bỏ qua bước xác minh được không", "Hướng dẫn mình cách trả hàng với"])
 def test_ordinary_requests_are_not_flagged_as_injection(typed: str) -> None:
     assert screen_input_node({"messages": [HumanMessage(content=typed, id="m")]})["screen_passed"] is True
+
+
+# --- A reply may only point at a confirmation card that exists ---------------------------------------
+from typing import Any  # noqa: E402
+
+from shopagent.agent.grounding import check_claims  # noqa: E402
+
+_CARD_PROMISES = [
+    "Mình sẽ tạo đề xuất cho bạn. Vui lòng bấm nút **Xác nhận** trên thẻ hành động bên dưới.",
+    "Mình đã tạo đề xuất trả hàng cho bạn, bạn kiểm tra lại thông tin nhé.",
+    "Bạn vui lòng kiểm tra lại thông tin và xác nhận yêu cầu trả hàng nhé.",
+    "Hãy nhấn Xác nhận trên thẻ đề xuất ở bên dưới.",
+]
+
+
+def _kinds(text: str, **state: Any) -> set[str]:
+    return {v.kind for v in check_claims(text, {"messages": [], "tool_calls": [], **state})[0]}  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("text", _CARD_PROMISES)
+def test_promising_a_card_that_was_never_created_is_a_violation(text: str) -> None:
+    assert "FALSE_PROPOSAL_CLAIM" in _kinds(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Theo chính sách [POL-RETURN-02], bạn có 7 ngày kể từ khi nhận hàng.",
+        "Bạn có muốn mình tạo đề xuất trả hàng không ạ?",
+        "Yêu cầu RT-ABC123 của bạn đang chờ nhân viên duyệt.",
+        "Mình cần biết sản phẩm nào trong đơn bạn muốn trả.",
+    ],
+)
+def test_ordinary_replies_do_not_trip_the_card_check(text: str) -> None:
+    assert "FALSE_PROPOSAL_CLAIM" not in _kinds(text)
+
+
+_CREATED = {"tool": "propose_return", "args": {}, "result": {"action_id": "a-1", "preview": {}}}
+_FAILED = {"tool": "propose_return", "args": {}, "result": {"error_code": "MISSING_SLOT", "slot": "reason_code"}}
+
+
+@pytest.mark.parametrize(
+    ("state", "violation"),
+    [
+        ({"tool_calls": [_CREATED]}, False),                                            # created this turn
+        ({"pending_action": {"id": "a-1"}}, False),                                     # set by the agent node
+        ({"dynamic_context": {"active_pending_action": {"code": "a-1"}}}, False),       # still waiting from before
+        ({"tool_calls": [_FAILED]}, True),                                              # the attempt failed
+        ({"tool_calls": [{"tool": "check_return_eligibility", "args": {}, "result": {"eligible": True}}]}, True),
+    ],
+)
+def test_the_card_check_accepts_any_real_proposal_and_nothing_else(state: dict[str, Any], violation: bool) -> None:
+    assert ("FALSE_PROPOSAL_CLAIM" in _kinds(_CARD_PROMISES[0], **state)) is violation
+
+
+# --- A symptom the word list does not know is grounded by the customer's answer to a closed question ---
+from langchain_core.messages import AIMessage  # noqa: E402
+
+
+def _stated(reason: str, *turns: tuple[str, str]) -> bool:
+    messages = [HumanMessage(content=t) if who == "customer" else AIMessage(content=t) for who, t in turns]
+    return GroundingContext(messages, []).customer_stated_reason(reason)
+
+
+_SYMPTOM = ("customer", "Tai nghe đơn SL-DEMO07 bị rè một bên, mình muốn trả")
+_ASKED_DEFECT = ("assistant", "Sản phẩm bị lỗi phải không ạ?")
+
+
+def test_an_unknown_symptom_alone_is_not_a_reason() -> None:
+    assert _stated("defective", _SYMPTOM) is False
+
+
+@pytest.mark.parametrize("answer", ["Đúng rồi", "ừ", "Vâng, đúng vậy ạ", "Dạ đúng", "ok bạn"])
+def test_a_yes_to_a_closed_question_naming_the_reason_grounds_it(answer: str) -> None:
+    assert _stated("defective", _SYMPTOM, _ASKED_DEFECT, ("customer", answer)) is True
+
+
+@pytest.mark.parametrize(
+    ("turns", "why"),
+    [
+        ((_SYMPTOM, _ASKED_DEFECT, ("customer", "Thôi để mình xem lại đã")), "not an affirmation"),
+        ((_SYMPTOM, _ASKED_DEFECT, ("customer", "Đúng không?")), "a question back is not a yes"),
+        ((_SYMPTOM, ("assistant", "Bạn cho mình biết lý do nhé"), ("customer", "ừ")), "the assistant asked nothing closed"),
+        ((_SYMPTOM, ("assistant", "Bạn đổi ý phải không ạ?"), ("customer", "đúng")), "it asked about a different reason"),
+    ],
+)
+def test_the_confirmation_must_answer_a_closed_question_about_that_reason(turns: tuple[tuple[str, str], ...], why: str) -> None:
+    assert _stated("defective", *turns) is False, why
+
+
+def test_the_confirmed_reason_is_the_one_that_was_asked() -> None:
+    turns = (_SYMPTOM, ("assistant", "Bạn đổi ý phải không ạ?"), ("customer", "đúng"))
+    assert _stated("change_of_mind", *turns) is True
+
+
+# --- The customer is never left with a statement after a tool asked for more -------------------------
+from shopagent.agent.slot_guard import unasked_missing_slots  # noqa: E402
+
+_MISSING_REASON = {"tool": "check_return_eligibility", "args": {}, "result": {"error_code": "MISSING_SLOT", "slot": "reason_code"}}
+_OK_CHECK = {"tool": "check_return_eligibility", "args": {}, "result": {"eligible": True}}
+
+
+@pytest.mark.parametrize(
+    ("executed", "draft", "flagged"),
+    [
+        ([_MISSING_REASON], "Theo chính sách, hàng lỗi được trả trong 15 ngày.", True),             # explains, asks nothing
+        ([_MISSING_REASON], "Sản phẩm bị lỗi phải không ạ?", False),                                 # asks
+        ([_MISSING_REASON], "Quý khách vui lòng cho em biết lý do trả hàng ạ.", False),             # polite request, no "?"
+        ([_MISSING_REASON, _OK_CHECK], "Đơn đủ điều kiện trả hàng.", False),                        # resolved by a later success
+        ([], "Theo chính sách, hàng lỗi được trả trong 15 ngày.", False),                            # nothing missing
+    ],
+)
+def test_a_reply_after_a_missing_slot_must_ask_for_it(executed: list[dict[str, Any]], draft: str, flagged: bool) -> None:
+    assert bool(unasked_missing_slots(executed, draft)) is flagged
+
+
+def test_a_yes_to_any_closed_question_that_states_the_reason_grounds_it() -> None:
+    turns = (
+        _SYMPTOM,
+        ("assistant", "Tai nghe được xác định là lỗi sản phẩm. Bạn có muốn mình tạo đề xuất trả hàng không?"),
+        ("customer", "Đúng rồi"),
+    )
+    assert _stated("defective", *turns) is True
+    assert _stated("change_of_mind", *turns) is False  # the question stated a defect, not a change of mind
+
+
+# --- A question about the reason must use words the guard can tie a yes to; a stuck slot is detected ---
+from shopagent.agent.slot_guard import stuck_slot  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    ("draft", "flagged"),
+    [
+        ("Tai nghe bị rè phải không ạ?", True),               # asks about the symptom: the yes attaches to no reason
+        ("Sản phẩm bị lỗi phải không ạ?", False),
+        ("Bạn đổi ý không muốn giữ nữa đúng không?", False),
+        ("Bạn cho mình biết lý do trả hàng nhé?", False),    # an open question is fine when nothing was described
+    ],
+)
+def test_a_closed_question_about_the_reason_must_name_it(draft: str, flagged: bool) -> None:
+    assert bool(unasked_missing_slots([_MISSING_REASON], draft)) is flagged
+
+
+def test_a_slot_reported_missing_twice_is_stuck_until_something_resolves_it() -> None:
+    other = {"tool": "propose_return", "args": {}, "result": {"error_code": "MISSING_SLOT", "slot": "reason_code"}}
+    assert stuck_slot([_MISSING_REASON]) is None
+    assert stuck_slot([_MISSING_REASON, other]) == "reason_code"
+    assert stuck_slot([_MISSING_REASON, other, _OK_CHECK, {**other, "result": {"action_id": "a-1"}}]) is None

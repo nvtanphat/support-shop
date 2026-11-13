@@ -31,6 +31,8 @@ from shopagent.agent.slot_guard import (
     find_ungrounded_slot,
     recent_order_codes,
     serialize_result,
+    stuck_slot,
+    unasked_missing_slots,
 )
 from shopagent.agent.state import AgentState
 from shopagent.agent.tool_requirements import (
@@ -282,6 +284,7 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
     recorded: list[dict[str, Any]] = []
     sig_counts: dict[str, int] = {}
     steering_rounds = 0
+    tools_off = False  # set once a slot is stuck: the rest of the turn is spent asking the customer
     turn_status = "incomplete"
     unmet: list[ToolRequirement] = []
 
@@ -290,8 +293,23 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
             logger.error("turn_timeout elapsed_s=%.1f", time.monotonic() - started)
             break
 
+        stuck = stuck_slot(recorded)
+        if stuck is not None and not tools_off:
+            tools_off = True
+            working.append(
+                HumanMessage(
+                    content="[HỆ THỐNG - không phải lời khách]\n"
+                    f"Công cụ đã báo thiếu '{stuck}' nhiều lần và không thể tự có thông tin này. Không gọi thêm công cụ nào: "
+                    "hãy hỏi khách đúng thông tin còn thiếu trong một câu ngắn (lý do trả hàng thì hỏi câu đóng như "
+                    "'Sản phẩm bị lỗi phải không ạ?')."
+                )
+            )
         ai = await _invoke_llm(
-            llm_with_tools, tools, [sys_msg, *working], budget.llm_retry_delays_s, deadline=started + budget.turn_timeout_s
+            llm if tools_off else llm_with_tools,
+            [] if tools_off else tools,
+            [sys_msg, *working],
+            budget.llm_retry_delays_s,
+            deadline=started + budget.turn_timeout_s,
         )
         if ai is None:
             turn_status = "degraded"
@@ -308,6 +326,7 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
                 "dynamic_context": dynamic_context,
             }
             claim_problems = [f"{v.kind}: {v.claim} ({v.detail})" for v in check_claims(draft, draft_state)[0]]  # type: ignore[arg-type]
+            claim_problems += unasked_missing_slots(recorded, draft)
             is_last = iteration == budget.max_iterations - 1
             if not unmet and (unretrieved or claim_problems) and steering_rounds < _MAX_STEERING_ROUNDS and not is_last:
                 # verify_output would replace this draft with a refusal; ask the model to fix it while it still can.

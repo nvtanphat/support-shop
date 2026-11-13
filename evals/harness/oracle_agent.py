@@ -58,6 +58,7 @@ class OracleAgent:
     )
     _CHANGE_OF_MIND_WORDS = ("đổi ý", "không thích", "không vừa", "mặc không ưng", "xả kho", "đồ lót")
     _DEFECT_WORDS = ("lỗi", "rách", "hỏng", "bung", "sờn", "dột", "méo")
+    _YES_WORDS = ("đúng", "ừ", "vâng", "dạ", "ok")
 
     _POLICY_WORDS = ("bao nhiêu ngày", "hạn", "thời gian", "mấy ngày", "quy định", "chính sách", "phí", "bao lâu", "đổi size", "size", "chật")
 
@@ -177,6 +178,13 @@ class OracleAgent:
                         None,
                     )
                 reason = self._reason_from(customer_text)
+                if reason is None:
+                    last_assistant = next((t["content"] for t in reversed(dialogue_history) if t.get("role") == "assistant"), "")
+                    if "phải không" in last_assistant.lower() and msg_lower.strip().startswith(self._YES_WORDS):
+                        reason = ReturnReason.DEFECTIVE  # the customer confirmed the closed question below
+                    elif " bị " in f" {customer_text.lower()} ":
+                        # A symptom the word lists do not know: confirm the reason instead of guessing it.
+                        return ("Sản phẩm bị lỗi phải không ạ?", tool_calls, None)
                 if reason is None:
                     return ("Quý khách cho em biết lý do muốn trả hàng là gì ạ?", tool_calls, None)
 

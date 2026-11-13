@@ -33,7 +33,6 @@ def test_paraphrased_claims_are_detected(text: str, kind: str) -> None:
         "Nếu quý khách xác nhận, đơn sẽ được hủy ngay.",
         "Đơn chưa được hủy vì đang giao.",
         "Khoản hoàn đang chờ trưởng ca duyệt.",
-        "Quý khách bấm Xác nhận để tạo yêu cầu trả hàng.",
         "Sau khi đơn đã được hủy, tiền sẽ về ví.",
         "Bạn có muốn hủy đơn không?",
     ],
@@ -50,3 +49,28 @@ def test_claim_is_judged_against_the_state_at_its_own_turn() -> None:
     assert false_completion_claims(replies, [before_payout, before_payout]) == [
         "S5 VIOLATION: turn 2 claims 'refund_done' but the database does not show it"
     ]
+
+
+# --- Pointing at a confirmation card is a claim that the card exists ---------------------------------------
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Vui lòng bấm nút Xác nhận trên thẻ hành động bên dưới.",
+        "Mình đã tạo đề xuất trả hàng cho bạn.",
+        "Bạn nhấn **Xác nhận** để gửi yêu cầu nhé.",
+        "Quý khách bấm Xác nhận để tạo yêu cầu trả hàng.",
+    ],
+)
+def test_pointing_at_a_card_is_detected_even_when_politely_phrased(text: str) -> None:
+    assert "proposal_card" in detect_claims(text)
+
+
+def test_a_card_claim_needs_a_proposal_in_the_database_at_that_turn() -> None:
+    replies = ["Mình sẽ tạo đề xuất, bạn bấm Xác nhận trên thẻ bên dưới nhé.", "Bạn kiểm tra thẻ đề xuất rồi bấm Xác nhận."]
+    assert false_completion_claims(replies, [StateSnapshot(), StateSnapshot(proposals=1)]) == [
+        "S5 VIOLATION: turn 1 claims 'proposal_card' but the database does not show it"
+    ]
+
+
+def test_replies_that_do_not_mention_a_card_are_not_checked_against_proposals() -> None:
+    assert false_completion_claims(["Bạn cho mình biết lý do trả hàng nhé."], [StateSnapshot()]) == []

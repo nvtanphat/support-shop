@@ -34,6 +34,16 @@ _CANCEL_DONE_RE = re.compile(
     r"đã\s+hủy\s+(?:thành\s+công\s+)?đơn|đã\s+hủy\s+giúp|đơn\s+hàng\s+của\s+bạn\s+đã\s+được\s+hủy|đã\s+xác\s+nhận\s+hủy\s+đơn"
 )
 _EXCHANGE_DONE_RE = re.compile(r"đã\s+đổi\s+hàng\s+thành\s+công")
+# The reply points the customer at a confirmation card. The card only exists once propose_* succeeded, so a reply
+# that promises one ("mình sẽ tạo đề xuất... bấm Xác nhận trên thẻ bên dưới") without the call leaves the customer
+# with instructions and nothing to click.
+_PROPOSAL_CARD_RE = re.compile(
+    r"thẻ\s+(?:hành\s+động|đề\s+xuất|xác\s+nhận)"
+    r"|(?:nhấn|bấm|chọn)\s+(?:vào\s+)?(?:nút\s+)?\**xác\s+nhận[^.\n]{0,25}?\s(?:trên|ở)\s+(?:thẻ|màn\s+hình)"
+    r"|(?:đã|em\s+đã|mình\s+đã|tôi\s+đã)\s+(?:tạo|lập)\s+(?:một\s+)?đề\s+xuất"
+    r"|vui\s+lòng\s+(?:kiểm\s+tra[^.\n]{0,40}?\s)?xác\s+nhận\s+(?:lại\s+)?(?:yêu\s+cầu|đề\s+xuất)"
+)
+_PROPOSAL_TOOLS = ("propose_return", "propose_cancel_order")
 
 
 @dataclass(frozen=True)
@@ -125,6 +135,16 @@ def claimed_numbers(content: str) -> dict[str, str]:
     return claimed
 
 
+def _proposal_exists(state: AgentState) -> bool:
+    """A confirmation card was created this turn, or one is still waiting from an earlier turn."""
+    if state.get("pending_action") or (state.get("dynamic_context") or {}).get("active_pending_action"):
+        return True
+    return any(
+        call.get("tool") in _PROPOSAL_TOOLS and "action_id" in (call.get("result") or {}) and "error_code" not in (call.get("result") or {})
+        for call in state.get("tool_calls", [])
+    )
+
+
 def check_claims(content: str, state: AgentState) -> tuple[list[Violation], dict[str, str]]:
     """Return violations and, for each supported claim, the source that backs it."""
     evidence = collect_evidence(state)
@@ -156,4 +176,13 @@ def check_claims(content: str, state: AgentState) -> tuple[list[Violation], dict
         violations.append(Violation("FALSE_COMPLETION_CLAIM", "order cancelled", "no order with status cancelled in tool results"))
     if _EXCHANGE_DONE_RE.search(lowered):
         violations.append(Violation("FALSE_COMPLETION_CLAIM", "exchange completed", "no tool reports a completed exchange"))
+    if _PROPOSAL_CARD_RE.search(lowered) and not _proposal_exists(state):
+        violations.append(
+            Violation(
+                "FALSE_PROPOSAL_CLAIM",
+                "confirmation card",
+                "no confirmation card exists: call propose_return or propose_cancel_order if the customer has given everything "
+                "needed, otherwise ask for what is missing and do not mention a card or a Xác nhận button",
+            )
+        )
     return violations, supported

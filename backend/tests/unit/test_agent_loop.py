@@ -195,6 +195,88 @@ async def test_draft_with_a_number_no_tool_returned_is_steered_instead_of_blocke
     assert "error" not in verify_output_node({**state, **out, "messages": [*state["messages"], *out["messages"]]})
 
 
+@pytest.mark.asyncio
+async def test_draft_promising_a_card_that_does_not_exist_is_steered_instead_of_shown(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Seen live (1 turn in 3): the reply said "bấm Xác nhận trên thẻ bên dưới" but propose_return was never called."""
+    model = ScriptedModel(
+        [
+            AIMessage(content="Mình sẽ tạo đề xuất trả hàng cho bạn, bạn bấm nút Xác nhận trên thẻ hành động bên dưới nhé."),
+            AIMessage(content="Bạn cho mình biết mã đơn muốn trả để mình kiểm tra nhé."),
+        ]
+    )
+    use_model(monkeypatch, model)
+    state = make_state("Mình muốn trả hàng")
+    out = await agent_node(state, run_config(session))
+
+    assert out["turn_status"] == "completed" and model.calls == 2
+    assert not out.get("pending_action")
+    texts = [str(m.content) for m in out["messages"] if isinstance(m, AIMessage)]
+    assert not any("thẻ hành động" in t for t in texts)  # the promise never reaches the customer or the history
+    assert "error" not in verify_output_node({**state, **out, "messages": [*state["messages"], *out["messages"]]})
+
+
+@pytest.mark.asyncio
+async def test_draft_that_ignores_a_missing_slot_is_steered_into_asking(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Seen live: both calls were refused for a missing reason and the reply explained policy instead of asking."""
+    model = ScriptedModel(
+        [
+            tool_call_msg("lookup_order_guest", {"order_code": "SL-999999"}),  # ungrounded: refused with MISSING_SLOT
+            AIMessage(content="Theo chính sách, hàng lỗi được hoàn tiền về ví ban đầu."),
+            AIMessage(content="Quý khách cho em xin mã đơn hàng cần tra cứu ạ?"),
+        ]
+    )
+    use_model(monkeypatch, model)
+    out = await agent_node(make_state("Mình muốn kiểm tra đơn hàng"), run_config(session))
+
+    assert out["turn_status"] == "completed" and model.calls == 3
+    texts = [str(m.content) for m in out["messages"] if isinstance(m, AIMessage)]
+    assert any("?" in t for t in texts) and not any("hoàn tiền về ví" in t for t in texts)
+
+
+@pytest.mark.asyncio
+async def test_a_slot_reported_missing_twice_turns_the_tools_off_and_ends_with_a_question(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Seen live: four refused calls in a row, then an unwanted hand-off to staff, then a blocked reply."""
+
+    class ToolAwareModel(ScriptedModel):
+        def __init__(self, script: list[AIMessage | Exception]) -> None:
+            super().__init__(script)
+            self.had_tools: list[bool] = []
+
+        def bind_tools(self, tools: list[Any]) -> Any:
+            outer = self
+
+            class Bound:
+                async def ainvoke(self_, messages: list[Any], **kw: Any) -> AIMessage:  # noqa: N805
+                    outer.had_tools.append(True)
+                    return await ScriptedModel.ainvoke(outer, messages, **kw)
+
+            return Bound()
+
+        async def ainvoke(self, messages: list[Any], **kw: Any) -> AIMessage:
+            self.had_tools.append(False)
+            return await super().ainvoke(messages, **kw)
+
+    model = ToolAwareModel(
+        [
+            tool_call_msg("lookup_order_guest", {"order_code": "SL-999999"}),  # ungrounded: MISSING_SLOT order_code
+            tool_call_msg("lookup_order_guest", {"order_code": "SL-888888"}),  # ungrounded again
+            AIMessage(content="Quý khách cho em xin mã đơn hàng cần tra cứu ạ?"),
+        ]
+    )
+    use_model(monkeypatch, model)
+    out = await agent_node(make_state("Mình muốn kiểm tra đơn hàng"), run_config(session))
+
+    assert out["turn_status"] == "completed"
+    assert model.had_tools == [True, True, False]  # the third call could not have called a tool
+    assert [c["tool"] for c in out["tool_calls"]] == ["lookup_order_guest", "lookup_order_guest"]
+
+
 def test_unretrieved_citations_ignores_clauses_that_were_looked_up() -> None:
     from shopagent.agent.tool_requirements import unretrieved_citations
 
