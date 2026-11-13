@@ -300,3 +300,71 @@ async def test_order_cancellation_flow_pure_domain(db_session):
     # 4. Check order cancelled & refund disbursed
     await session.refresh(order)
     assert order.status == OrderStatus.CANCELLED.value
+
+
+@pytest.mark.asyncio
+async def test_large_refund_needs_a_second_staff_member_and_settles_the_return(db_session):
+    """Gate B path (refund above the auto limit): four-eyes, no second inspection, return leaves 'received'."""
+    from shopagent.core.errors import ConflictError, ForbiddenError
+
+    session, session_factory = db_session
+    clock = Clock(datetime(2026, 11, 11, 10, 0, 0))
+    set_global_clock(clock)
+    cust_id, inspector_id, approver_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    prod = ProductModel(id=uuid.uuid4(), name="Áo khoác", category=ProductCategory.FASHION.value, return_flags=[])
+    var = ProductVariantModel(id=uuid.uuid4(), product_id=prod.id, sku="JACKET-01", price=900000, stock=5)
+    session.add_all(
+        [
+            CustomerModel(id=cust_id, email="big@example.com", phone="0911111111", full_name="Khách Lớn"),
+            StaffUserModel(id=inspector_id, email="kho@example.com", password_hash="x", role="agent", full_name="Kho"),
+            StaffUserModel(id=approver_id, email="duyet@example.com", password_hash="x", role="agent", full_name="Duyệt"),
+            prod,
+            var,
+        ]
+    )
+    order_id = uuid.uuid4()
+    session.add(
+        OrderModel(
+            id=order_id, code="SL-BIG001", customer_id=cust_id, status=OrderStatus.DELIVERED.value,
+            payment_method=PaymentMethod.CARD.value, payment_status=PaymentStatus.PAID.value,
+            subtotal=900000, discount_total=0, shipping_fee=0, total=900000, paid_amount=900000, refunded_amount=0,
+            placed_at=clock.now() - timedelta(days=5), delivered_at=clock.now() - timedelta(days=3),
+        )
+    )
+    item = OrderItemModel(id=uuid.uuid4(), order_id=order_id, variant_id=var.id, qty=1, unit_price=900000, allocated_discount=0, returned_qty=0)
+    session.add(item)
+    await session.commit()
+
+    customer = Principal.authenticated_customer(customer_id=cust_id)
+    inspector = Principal.staff(user_id=inspector_id, role=PrincipalRole.AGENT)
+    approver = Principal.staff(user_id=approver_id, role=PrincipalRole.AGENT)
+
+    proposal = await ReturnService(session).propose_return(
+        principal=customer, conversation_id=uuid.uuid4(), order_code="SL-BIG001",
+        items=[{"item_id": str(item.id), "qty": 1}], reason_code=ReturnReason.DEFECTIVE.value, resolution=ReturnResolution.REFUND.value,
+    )
+    confirmed = await ActionService(session).confirm_action(principal=customer, action_id=uuid.UUID(proposal["action_id"]), preview_hash=proposal["preview_hash"])
+    return_code = confirmed["return_code"]
+    for gate_a in await ApprovalRepository(session).list_pending():
+        await ApprovalService(session).decide_approval(principal=approver, approval_id=gate_a.id, decision="approved", note="Ảnh hợp lệ")
+
+    warehouse = WarehouseService(session)
+    with pytest.raises(ConflictError):  # nothing to inspect before the parcel arrives
+        await warehouse.inspect_return(principal=inspector, return_code=return_code, items_result=[])
+    await warehouse.receive_shipment(principal=inspector, return_code=return_code)
+    result = await warehouse.inspect_return(principal=inspector, return_code=return_code, items_result=[])
+    await session.commit()
+    assert result["needs_approval"] is True and result["refund_amount"] == 900000
+    with pytest.raises(ConflictError):  # a second inspection would create a second refund
+        await warehouse.inspect_return(principal=inspector, return_code=return_code, items_result=[])
+
+    (gate_b,) = await ApprovalRepository(session).list_pending()
+    with pytest.raises(ForbiddenError):  # the inspector raised the request and may not approve it
+        await ApprovalService(session).decide_approval(principal=inspector, approval_id=gate_b.id, decision="approved", note="tự duyệt")
+    await ApprovalService(session).decide_approval(principal=approver, approval_id=gate_b.id, decision="approved", note="Đã xem kết quả kiểm")
+    await session.commit()
+
+    ret = await ReturnRepository(session).get_by_code(return_code)
+    assert ret is not None and ret.status == ReturnStatus.ACCEPTED.value
+    refund = await RefundRepository(session).get_by_code(result["refund_code"])
+    assert refund is not None and refund.status == RefundStatus.APPROVED.value

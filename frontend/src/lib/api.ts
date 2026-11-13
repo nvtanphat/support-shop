@@ -7,10 +7,24 @@ import {
   PolicySummary,
   ApprovalRequest,
   StaffMetrics,
+  StaffReturn,
   Ticket,
 } from './types';
 
 const API_BASE = '/api';
+const REFRESH_MARGIN_MS = 2 * 60 * 1000;
+export const SESSION_EXPIRED_EVENT = 'shopsupport:session-expired';
+
+/** Expiry of a JWT in epoch milliseconds, or null when it cannot be read. */
+export function tokenExpiry(token: string | null): number | null {
+  if (!token) return null;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
 
 /** The API answers with `{error:{message}}`, `{detail: string}`, `{detail:{message}}` or FastAPI's validation list. */
 export function readErrorMessage(body: any): string | null {
@@ -26,9 +40,33 @@ class ApiClient {
   private token: string | null = null;
   private guestToken: string | null = null;
 
+  private refreshing: Promise<void> | null = null;
+
   constructor() {
     this.token = localStorage.getItem('token');
     this.guestToken = localStorage.getItem('guest_token');
+    const exp = tokenExpiry(this.token);
+    if (this.token && exp !== null && exp <= Date.now()) {
+      // A token left from an earlier visit has expired: start as a guest instead of failing every call.
+      this.logout();
+    }
+  }
+
+  /** Access tokens are short-lived (15 min). Swap one that is about to expire for a fresh one. */
+  private async ensureFreshToken(): Promise<void> {
+    const exp = tokenExpiry(this.token);
+    if (!this.token || exp === null || exp - Date.now() > REFRESH_MARGIN_MS || exp <= Date.now()) return;
+    if (!this.refreshing) {
+      this.refreshing = fetch(`${API_BASE}/auth/refresh`, { method: 'POST', headers: { Authorization: `Bearer ${this.token}` } })
+        .then(async (res) => {
+          if (res.ok) this.setToken((await res.json()).access_token);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          this.refreshing = null;
+        });
+    }
+    await this.refreshing;
   }
 
   setToken(token: string | null) {
@@ -73,6 +111,8 @@ class ApiClient {
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const isAuthCall = path.startsWith('/auth/') || path.startsWith('/staff/auth/');
+    if (!isAuthCall) await this.ensureFreshToken();
     const headers = new Headers(options.headers || {});
     if (this.token) {
       headers.set('Authorization', `Bearer ${this.token}`);
@@ -88,6 +128,12 @@ class ApiClient {
       ...options,
       headers,
     });
+
+    if (response.status === 401 && this.token && !isAuthCall) {
+      this.logout();
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+      throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+    }
 
     if (!response.ok) {
       let errorDetail = 'Lỗi hệ thống';
@@ -278,8 +324,8 @@ class ApiClient {
     });
   }
 
-  async listTickets(status: string = 'open'): Promise<{ tickets: Ticket[] }> {
-    return this.request<{ tickets: Ticket[] }>(`/staff/tickets?status=${status}`);
+  async listTickets(status: string = 'open,assigned'): Promise<{ tickets: Ticket[] }> {
+    return this.request<{ tickets: Ticket[] }>(`/staff/tickets?status=${encodeURIComponent(status)}`);
   }
 
   async claimTicket(ticketId: string) {
@@ -317,6 +363,21 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({}),
     });
+  }
+
+  async listStaffReturns(): Promise<{ returns: StaffReturn[] }> {
+    return this.request<{ returns: StaffReturn[] }>('/staff/returns');
+  }
+
+  async receiveReturn(code: string) {
+    return this.request<{ code: string; status: string }>(`/staff/returns/${encodeURIComponent(code)}/receive`, { method: 'POST' });
+  }
+
+  async inspectReturn(code: string, notes: string) {
+    return this.request<{ message: string; refund_code: string; refund_amount: number; needs_approval: boolean }>(
+      `/staff/returns/${encodeURIComponent(code)}/inspection`,
+      { method: 'POST', body: JSON.stringify({ notes, items: [] }) }
+    );
   }
 }
 

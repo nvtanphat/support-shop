@@ -276,6 +276,16 @@ async def send_message(
                 content=req.content,
             )
             session.add(msg)
+            await session.flush()
+            conv.last_event_seq += 1
+            session.add(
+                ConversationEventModel(
+                    conversation_id=conversation_id,
+                    seq=conv.last_event_seq,
+                    type="message.received",  # for staff views; the customer already shows their own message
+                    payload={"id": str(msg.id), "seq": seq, "role": "customer", "content": req.content},
+                )
+            )
             await session.commit()
             return {
                 "status": "waiting_human",
@@ -411,6 +421,8 @@ async def handoff_to_human(
     verify_conversation_access(conv, principal, x_guest_token or guest_token)
 
     conv.mode = "waiting_human"
+    conv.last_event_seq += 1
+    session.add(ConversationEventModel(conversation_id=conversation_id, seq=conv.last_event_seq, type="conversation.mode_changed", payload={"mode": "waiting_human"}))
     ticket_service = TicketService(session)
     ticket = await ticket_service.create_ticket(
         principal=principal,

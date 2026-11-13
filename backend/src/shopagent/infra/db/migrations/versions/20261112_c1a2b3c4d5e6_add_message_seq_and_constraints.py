@@ -19,9 +19,12 @@ depends_on: Sequence[str] | None = None
 
 def upgrade() -> None:
     op.add_column('conversations', sa.Column('last_message_seq', sa.Integer(), nullable=False, server_default='0'))
-    op.create_unique_constraint('uq_message_conv_seq', 'messages', ['conversation_id', 'seq'])
+    # batch mode so the migration also runs on SQLite (local development), which cannot ALTER constraints
+    with op.batch_alter_table('messages') as batch:
+        batch.create_unique_constraint('uq_message_conv_seq', ['conversation_id', 'seq'])
 
 
 def downgrade() -> None:
-    op.drop_constraint('uq_message_conv_seq', 'messages', type_='unique')
+    with op.batch_alter_table('messages') as batch:
+        batch.drop_constraint('uq_message_conv_seq', type_='unique')
     op.drop_column('conversations', 'last_message_seq')

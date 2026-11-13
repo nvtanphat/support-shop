@@ -107,3 +107,14 @@ class SandboxClockRequest(BaseModel):
 
 class SandboxFailNextRequest(BaseModel):
     message: str = Field(default="Simulated payment failure", max_length=200)
+
+
+class InspectionItemResult(BaseModel):
+    item_id: str = Field(description="order_item_id của dòng hàng được trả.")
+    passed: bool = True
+    notes: str = Field(default="", max_length=500)
+
+
+class InspectionRequest(BaseModel):
+    items: list[InspectionItemResult] = Field(default_factory=list, description="Bỏ trống nghĩa là mọi dòng đạt.")
+    notes: str = Field(default="", max_length=1000)

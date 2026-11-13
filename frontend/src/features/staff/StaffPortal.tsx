@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
-import { ApprovalRequest, StaffMetrics, Ticket } from '../../lib/types';
+import { ApprovalRequest, Message, StaffMetrics, StaffReturn, Ticket } from '../../lib/types';
 import {
   ShieldCheck,
   Inbox,
@@ -26,7 +26,7 @@ export const StaffPortal: React.FC = () => {
   const role = api.getProfile()?.role ?? 'agent';
   const canSeeMetrics = role === 'supervisor' || role === 'admin'; // the API refuses /staff/metrics to agents
   const canUseSandbox = role === 'admin';
-  const [tab, setTab] = useState<'approvals' | 'tickets' | 'metrics' | 'sandbox'>('approvals');
+  const [tab, setTab] = useState<'approvals' | 'tickets' | 'returns' | 'metrics' | 'sandbox'>('approvals');
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(false);
@@ -46,6 +46,40 @@ export const StaffPortal: React.FC = () => {
   const [sandboxOrderCode, setSandboxOrderCode] = useState('');
   const [sandboxStatus, setSandboxStatus] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<StaffMetrics | null>(null);
+  const [returns, setReturns] = useState<StaffReturn[]>([]);
+  const [returnNotice, setReturnNotice] = useState<string | null>(null);
+
+  const runReturnStep = async (step: () => Promise<string>) => {
+    setError(null);
+    setReturnNotice(null);
+    try {
+      setReturnNotice(await step());
+      setReturns((await api.listStaffReturns()).returns || []);
+    } catch (err: any) {
+      setError(err.message || 'Thao tác kho thất bại.');
+    }
+  };
+  const [threadMessages, setThreadMessages] = useState<Message[]>([]);
+
+  // The conversation of the selected ticket, refreshed every few seconds so the customer's new messages appear.
+  useEffect(() => {
+    if (!selectedTicket) {
+      setThreadMessages([]);
+      return;
+    }
+    let cancelled = false;
+    const load = () =>
+      api
+        .getConversation(selectedTicket.conversation_id)
+        .then((c) => !cancelled && setThreadMessages(c.messages || []))
+        .catch(() => undefined);
+    load();
+    const timer = setInterval(load, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [selectedTicket]);
 
   const runSandbox = async (action: () => Promise<string>) => {
     setError(null);
@@ -67,6 +101,8 @@ export const StaffPortal: React.FC = () => {
       } else if (tab === 'tickets') {
         const res = await api.listTickets();
         setTickets(res.tickets || []);
+      } else if (tab === 'returns') {
+        setReturns((await api.listStaffReturns()).returns || []);
       } else if (tab === 'metrics') {
         setMetrics(await api.staffMetrics());
       }
@@ -123,6 +159,7 @@ export const StaffPortal: React.FC = () => {
     setTakeoverLoading(true);
     try {
       await api.sendStaffMessage(selectedTicket.conversation_id, staffMessage.trim());
+      api.getConversation(selectedTicket.conversation_id).then((c) => setThreadMessages(c.messages || [])).catch(() => undefined);
       setStaffMessage('');
     } catch (err: any) {
       setError(err.message || 'Gửi tin nhắn nhân viên thất bại.');
@@ -196,6 +233,18 @@ export const StaffPortal: React.FC = () => {
           )}
         </button>
 
+        <button
+          onClick={() => setTab('returns')}
+          className={`pb-3 border-b-2 flex items-center gap-2 transition ${
+            tab === 'returns'
+              ? 'border-indigo-600 text-indigo-600 font-bold'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Inbox className="w-4 h-4" />
+          <span>Kho hàng trả về</span>
+        </button>
+
         {canSeeMetrics && (
         <button
           onClick={() => setTab('metrics')}
@@ -265,8 +314,17 @@ export const StaffPortal: React.FC = () => {
                       </span>
                     </div>
                     <div className="text-sm font-semibold text-slate-900">
-                      Đối tượng: {req.subject_type} (#{req.subject_id.slice(0, 8)})
+                      {req.subject_type === 'refund' ? 'Hoàn tiền' : req.subject_type === 'return_request' ? 'Yêu cầu trả hàng' : req.subject_type}{' '}
+                      {req.refund_code || req.return_code || `#${req.subject_id.slice(0, 8)}`}
+                      {req.order_code && <span className="font-normal text-slate-600"> · đơn {req.order_code}</span>}
+                      {typeof req.amount === 'number' && (
+                        <span className="font-mono text-slate-900"> · {req.amount.toLocaleString('vi-VN')} đ</span>
+                      )}
                     </div>
+                    {req.note && <div className="text-xs text-slate-500 mt-0.5">{req.note}</div>}
+                    {req.subject_type === 'return_request' && req.evidence_count === 0 && (
+                      <div className="text-xs text-amber-700 mt-1">Khách chưa tải bằng chứng ảnh/video.</div>
+                    )}
                   </div>
 
                   <button
@@ -341,10 +399,25 @@ export const StaffPortal: React.FC = () => {
                   </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-3 bg-slate-50 rounded-lg text-xs text-slate-600 mb-4 border border-slate-200">
-                  <div className="text-center text-slate-400 py-6">
-                    Nhân viên đã tiếp quản hội thoại. Tin nhắn của bạn sẽ được gửi trực tiếp đến khách hàng.
-                  </div>
+                <div className="flex-1 overflow-y-auto p-3 bg-slate-50 rounded-lg text-xs text-slate-700 mb-4 border border-slate-200 space-y-2">
+                  {threadMessages.length === 0 ? (
+                    <div className="text-center text-slate-400 py-6">Chưa có tin nhắn trong cuộc trò chuyện này.</div>
+                  ) : (
+                    threadMessages.map((m) => (
+                      <div key={m.id} className={m.role === 'customer' ? 'text-left' : 'text-right'}>
+                        <span className="block text-[10px] font-semibold text-slate-400">
+                          {m.role === 'customer' ? 'Khách hàng' : m.role === 'staff' ? 'Nhân viên' : 'Trợ lý AI'}
+                        </span>
+                        <span
+                          className={`inline-block px-3 py-1.5 rounded-lg whitespace-pre-wrap ${
+                            m.role === 'customer' ? 'bg-white border border-slate-200' : m.role === 'staff' ? 'bg-indigo-600 text-white' : 'bg-slate-200'
+                          }`}
+                        >
+                          {m.content}
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
 
                 <form onSubmit={handleSendStaffMessage} className="flex gap-2">
@@ -372,6 +445,54 @@ export const StaffPortal: React.FC = () => {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Returns in the warehouse workflow: receive the parcel, then record the inspection */}
+      {tab === 'returns' && (
+        <div className="space-y-3">
+          {returnNotice && (
+            <div className="p-3 bg-emerald-50 text-emerald-800 text-xs rounded-lg border border-emerald-200">{returnNotice}</div>
+          )}
+          {returns.length === 0 ? (
+            <div className="text-sm text-slate-400">Không có yêu cầu trả hàng nào đang chờ kho.</div>
+          ) : (
+            returns.map((r) => (
+              <div key={r.code} className="bg-white p-4 rounded-xl border border-slate-200 flex items-center justify-between gap-4">
+                <div className="text-sm">
+                  <div className="font-semibold text-slate-900">
+                    {r.code} <span className="font-normal text-slate-600">· đơn {r.order_code}</span>
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {r.status} · {r.reason_code} · {r.evidence_count} bằng chứng
+                  </div>
+                </div>
+                {r.status === 'awaiting_return' && (
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-medium rounded-lg"
+                    onClick={() => runReturnStep(async () => `${(await api.receiveReturn(r.code)).code}: đã nhận hàng về kho.`)}
+                  >
+                    Xác nhận đã nhận hàng
+                  </button>
+                )}
+                {r.status === 'received' && (
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg"
+                    onClick={() =>
+                      runReturnStep(async () => {
+                        const res = await api.inspectReturn(r.code, 'Kiểm hàng đạt');
+                        return `${res.message} (${res.refund_code}: ${res.refund_amount.toLocaleString('vi-VN')} đ)`;
+                      })
+                    }
+                  >
+                    Kiểm hàng đạt
+                  </button>
+                )}
+              </div>
+            ))
+          )}
         </div>
       )}
 

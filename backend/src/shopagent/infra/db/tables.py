@@ -280,6 +280,8 @@ class ApprovalRequestModel(Base):
     required_role: Mapped[str] = mapped_column(String(32), default="agent")  # agent, supervisor
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    # Staff member whose action raised the request (None when the customer did); they may not decide it.
+    requested_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("staff_users.id"), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)

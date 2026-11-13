@@ -98,3 +98,13 @@ describe('readErrorMessage', () => {
     expect(readErrorMessage({})).toBeNull();
   });
 });
+
+describe('tokenExpiry', () => {
+  it('reads exp from a JWT and tolerates garbage', async () => {
+    const { tokenExpiry } = await import('../../src/lib/api');
+    const payload = btoa(JSON.stringify({ exp: 1700000000 })).replace(/=+$/, '');
+    expect(tokenExpiry(`a.${payload}.b`)).toBe(1700000000 * 1000);
+    expect(tokenExpiry('not-a-jwt')).toBeNull();
+    expect(tokenExpiry(null)).toBeNull();
+  });
+});

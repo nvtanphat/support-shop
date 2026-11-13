@@ -4,7 +4,7 @@ import { LogIn } from 'lucide-react';
 import { EnvironmentBanner } from '../components/EnvironmentBanner';
 import { ChatView, ChatCommand } from '../features/chat/ChatView';
 import { StaffPortal } from '../features/staff/StaffPortal';
-import { api } from '../lib/api';
+import { api, SESSION_EXPIRED_EVENT } from '../lib/api';
 import {
   CartIcon,
   ChatIcon,
@@ -40,6 +40,19 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     initConversation();
+  }, [initConversation]);
+
+  // The API signed us out (expired session): fall back to a guest conversation and say why.
+  useEffect(() => {
+    const onExpired = () => {
+      setProfile(null);
+      setTab('assistant');
+      setAuthError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+      setShowLogin(true);
+      initConversation();
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, [initConversation]);
 
   const send = (type: ChatCommand['type']) => {

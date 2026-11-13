@@ -96,7 +96,7 @@ class ApprovalService:
 
         # Four-eyes principle: Staff who requested cannot approve their own request
         staff_id = principal.user_id
-        if staff_id and getattr(approval, "requested_by", None) == staff_id:
+        if staff_id and approval.requested_by == staff_id:
             raise ForbiddenError(
                 "Nguyên tắc bốn mắt (four-eyes): Người đề xuất không được tự phê duyệt yêu cầu của mình.",
                 error_code="FOUR_EYES_VIOLATION",
@@ -144,6 +144,17 @@ class ApprovalService:
                     transition_refund_status(refund, RefundStatus.REJECTED.value)
                 refund.updated_at = now
                 await self.refund_repo.save(refund)
+                # The return waited in "received" for this decision; settle it the same way the auto path does.
+                if refund.return_id:
+                    linked_return = await self.return_repo.get_by_id(refund.return_id)
+                    if linked_return and linked_return.status == ReturnStatus.RECEIVED.value:
+                        transition_return_status(
+                            linked_return,
+                            ReturnStatus.ACCEPTED.value
+                            if target_status == ApprovalStatus.APPROVED.value
+                            else ReturnStatus.REJECTED_AFTER_INSPECTION.value,
+                        )
+                        await self.return_repo.save(linked_return)
 
                 await self.audit_repo.log(
                     actor_type="staff",

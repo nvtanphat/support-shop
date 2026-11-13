@@ -78,13 +78,31 @@ export interface ApprovalRequest {
   decided_by?: string | null;
   decided_at?: string | null;
   note?: string | null;
+  // What is being approved (filled by the API when known)
+  order_code?: string | null;
+  return_code?: string | null;
+  refund_code?: string | null;
+  amount?: number | null;
+  reason_code?: string | null;
+  evidence_count?: number | null;
+}
+
+/** One row of GET /staff/returns. */
+export interface StaffReturn {
+  code: string;
+  order_code: string;
+  status: string;
+  reason_code: string;
+  resolution: string;
+  evidence_count: number;
+  created_at: string;
 }
 
 export interface Ticket {
   id: string;
   code: string;
   conversation_id: string;
-  status: 'open' | 'in_progress' | 'resolved' | 'closed';
+  status: 'open' | 'assigned' | 'resolved' | 'closed';
   priority: 'normal' | 'high' | 'urgent';
   reason_code: string;
   summary: string;

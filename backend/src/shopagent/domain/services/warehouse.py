@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopagent.core.clock import get_clock
 from shopagent.core.config import get_rules_config
-from shopagent.core.errors import ForbiddenError, NotFoundError
+from shopagent.core.errors import ConflictError, ForbiddenError, NotFoundError
 from shopagent.core.ids import generate_uuid
 from shopagent.core.principal import Principal, PrincipalRole
 from shopagent.domain.models.entities import Order, OrderItem
@@ -30,7 +31,12 @@ from shopagent.infra.db.repositories.audit_repo import AuditRepository
 from shopagent.infra.db.repositories.order_repo import OrderRepository
 from shopagent.infra.db.repositories.outbox_repo import OutboxRepository
 from shopagent.infra.db.repositories.return_repo import ReturnRepository
-from shopagent.infra.db.tables import ApprovalRequestModel, OrderModel, ReturnRequestModel
+from shopagent.infra.db.tables import (
+    ApprovalRequestModel,
+    OrderModel,
+    RefundModel,
+    ReturnRequestModel,
+)
 
 
 class WarehouseService:
@@ -135,6 +141,15 @@ class WarehouseService:
         if not return_req:
             raise NotFoundError(f"Không tìm thấy yêu cầu trả hàng '{return_code}'.", error_code="RETURN_NOT_FOUND")
 
+        if return_req.status != ReturnStatus.RECEIVED.value:
+            raise ConflictError(
+                f"Chỉ kiểm định được hàng đã nhận về kho (hiện tại: {return_req.status}).", error_code="RETURN_NOT_RECEIVED"
+            )
+        existing_refunds = await self.session.execute(select(RefundModel).where(RefundModel.return_id == return_req.id))
+        if existing_refunds.scalars().first() is not None:
+            # A second inspection would create a second refund for the same goods.
+            raise ConflictError("Yêu cầu trả hàng này đã được kiểm định và lập khoản hoàn.", error_code="RETURN_ALREADY_INSPECTED")
+
         order = await self.order_repo.get_by_id(return_req.order_id)
         if not order:
             raise NotFoundError("Không tìm thấy đơn hàng của yêu cầu trả hàng.", error_code="ORDER_NOT_FOUND")
@@ -213,6 +228,7 @@ class WarehouseService:
                 required_role=required_role,
                 status=ApprovalStatus.PENDING.value,
                 requested_at=now,
+                requested_by=principal.user_id if principal.is_staff else None,
                 note=f"Kiểm hàng hoàn trả: {staff_notes or 'Cần duyệt trước khi giải ngân'}.",
             )
             await self.approval_repo.save(approval)

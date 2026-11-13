@@ -7,7 +7,7 @@ Nguyên tắc cốt lõi: **LLM đề xuất, khách hàng xác nhận, hệ th�
 ## Kiến trúc
 
 - LLM chỉ tạo `ActionProposal` có `preview_hash` và hạn 15 phút. Hành động chỉ chạy khi khách gọi `POST /actions/{id}/confirm`; domain service kiểm tra lại điều kiện và tính tiền hoàn bằng code.
-- Hoàn tiền từ 500.000 đ trở lên hoặc có rủi ro cao chuyển sang nhân viên duyệt (`PENDING_STAFF_APPROVAL`).
+- Hoàn tiền trên 500.000 đ cần nhân viên duyệt, trên 2.000.000 đ hoặc có cờ rủi ro cần trưởng ca (`config/policy/rules.yaml`). Người kiểm hàng không được tự duyệt khoản hoàn mình vừa lập.
 - Số thứ tự tin nhắn và sự kiện SSE cấp phát nguyên tử bằng khóa bi quan trên PostgreSQL; client gửi `X-Idempotency-Key` để khử trùng lặp.
 
 ```mermaid
@@ -61,8 +61,8 @@ Số liệu đo ngày 12-13/11/2026. Báo cáo đầy đủ, giới hạn và m�
 | Null agent | 6/44, trượt cổng | bộ chấm không cho qua agent rỗng |
 | Hành động tài chính trái phép, tuyên bố sai, rò rỉ giữa khách | 0 / 0 / 0 | |
 | RAG trên tập holdout | Recall@1 0,93, Recall@4 0,98, từ chối ngoài phạm vi 1,00 | 28 câu hợp lệ, 20 câu ngoài phạm vi |
-| Backend | 179 test đạt, 4 test PostgreSQL bỏ qua khi không đặt `TEST_POSTGRES_URL` | CI chạy đủ với PostgreSQL |
-| Frontend | Vitest 28/28, Playwright 13/13 (đủ 9 luồng của kế hoạch), build sạch | API được giả lập; chưa chạy với backend thật |
+| Backend | 182 test đạt, 4 test PostgreSQL bỏ qua khi không đặt `TEST_POSTGRES_URL` | CI chạy đủ với PostgreSQL |
+| Frontend | Vitest 28/28, Playwright 16/16 (đủ 9 luồng của kế hoạch), build sạch | API được giả lập; chưa chạy với backend thật |
 
 Chưa kiểm chứng: ảnh Docker chưa build, chưa chạy lặp k ≥ 3, chưa thử tải đồng thời với Gemini thật.
 

@@ -41,6 +41,9 @@ export async function mockConversation(page: Page, id: string, mode: 'ai' | 'wai
 
 /** Signs in as staff without the login form: the app reads the token and profile from localStorage. */
 export async function signInAsStaff(page: Page, role: 'agent' | 'supervisor' = 'agent') {
+  // The token is fake, so no request may reach the real backend (a 401 would sign the page out).
+  // Registered first, this catch-all loses to every route a test adds afterwards.
+  await page.route('**/api/**', (route) => json(route, { detail: 'not mocked in this test' }, 404));
   await page.addInitScript((r) => {
     localStorage.setItem('token', `staff-token-${r}`);
     localStorage.setItem('session_profile', JSON.stringify({ kind: 'staff', label: r, role: r }));

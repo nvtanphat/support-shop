@@ -162,6 +162,10 @@ export const ChatView: React.FC<ChatViewProps> = ({ conversationId, isGuest, com
         setMessages((prev) => {
           // 1. Exact ID duplicate check
           if (newMsg.id && prev.some((m) => m.id === newMsg.id)) return prev;
+          // A staff reply is always a new bubble; the reconciliation below is only for the assistant's own turn.
+          if (newMsg.role !== 'assistant') {
+            return newMsg.seq && prev.some((m) => m.seq === newMsg.seq && m.role === newMsg.role) ? prev : [...prev, newMsg];
+          }
           // 2. Turn ID match: upgrade optimistic assistant message to canonical message
           if (newMsg.turn_id && prev.some((m) => m.turn_id === newMsg.turn_id && m.role === 'assistant')) {
             return prev.map((m) => (m.turn_id === newMsg.turn_id && m.role === 'assistant' ? { ...newMsg } : m));

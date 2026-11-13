@@ -20,6 +20,10 @@ test('customer asks for a person, staff take over, reply and hand the conversati
   let sent: { content?: string } = {};
   await staff.route('**/api/conversations', (route) => json(route, { id: 'x', conversation_id: 'x', guest_token: 'g', mode: 'ai' }));
   await staff.route('**/api/staff/approvals?*', (route) => json(route, { approvals: [] }));
+  // The takeover pane shows the real thread, so staff can read what the customer wrote.
+  await staff.route(`**/api/conversations/${conv}`, (route) =>
+    json(route, { id: conv, mode: 'human', messages: [{ id: 'm1', seq: 1, role: 'customer', content: 'Mình cần gặp nhân viên gấp', citations: [] }], pending_actions: [] })
+  );
   await staff.route('**/api/staff/tickets?*', (route) =>
     json(route, {
       tickets: [
@@ -49,6 +53,7 @@ test('customer asks for a person, staff take over, reply and hand the conversati
   await expect.poll(() => calls).toContain('claim');
 
   await staff.getByText('TK-HAND01').first().click();
+  await expect(staff.getByText('Mình cần gặp nhân viên gấp')).toBeVisible();
   await staff.getByPlaceholder('Nhập phản hồi trực tiếp tới khách hàng...').fill('Chào anh/chị, em là nhân viên hỗ trợ.');
   await staff.getByRole('button', { name: 'Gửi' }).click();
   await expect.poll(() => sent.content).toBe('Chào anh/chị, em là nhân viên hỗ trợ.');
