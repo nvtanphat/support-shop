@@ -413,7 +413,9 @@ async def handoff_to_human(
     session: AsyncSession = Depends(get_db_session),
 ):
     """Customer explicitly clicks button to talk to human staff."""
-    stmt = select(ConversationModel).where(ConversationModel.id == conversation_id)
+    # Lock the conversation first, as every writer of its counters does: an agent turn finishing at the same moment
+    # otherwise deadlocks with this request or takes the same event number (seen live on PostgreSQL).
+    stmt = select(ConversationModel).where(ConversationModel.id == conversation_id).with_for_update()
     res = await session.execute(stmt)
     conv = res.scalar_one_or_none()
     if not conv:

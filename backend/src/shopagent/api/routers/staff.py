@@ -37,7 +37,11 @@ router = APIRouter(prefix="/staff", tags=["Staff Operations"])
 
 
 def _emit(session: AsyncSession, conv: ConversationModel, event_type: str, payload: dict) -> None:  # type: ignore[type-arg]
-    """Queue a durable conversation event; the customer's SSE stream delivers it."""
+    """Queue a durable conversation event; the customer's SSE stream delivers it.
+
+    The caller must have loaded `conv` with `with_for_update()`: the counter is read and written here, and two
+    requests incrementing it from an unlocked row take the same number or deadlock.
+    """
     conv.last_event_seq += 1
     session.add(ConversationEventModel(conversation_id=conv.id, seq=conv.last_event_seq, type=event_type, payload=payload))
 
@@ -150,7 +154,9 @@ async def claim_ticket(
 ):
     """Agent claims ticket and takes over conversation (rules and audit live in TicketService)."""
     ticket = await TicketService(session).claim_ticket(principal, ticket_id)
-    conv = (await session.execute(select(ConversationModel).where(ConversationModel.id == ticket.conversation_id))).scalar_one_or_none()
+    conv = (
+        await session.execute(select(ConversationModel).where(ConversationModel.id == ticket.conversation_id).with_for_update())
+    ).scalar_one_or_none()
     if conv:
         _emit(session, conv, "conversation.mode_changed", {"mode": "human"})
     await session.commit()
@@ -206,7 +212,7 @@ async def return_conversation_to_ai(
     session: AsyncSession = Depends(get_db_session),
 ):
     """Staff agent hands conversation back to AI Assistant."""
-    stmt_c = select(ConversationModel).where(ConversationModel.id == conversation_id)
+    stmt_c = select(ConversationModel).where(ConversationModel.id == conversation_id).with_for_update()
     res_c = await session.execute(stmt_c)
     conv = res_c.scalar_one_or_none()
     if not conv:
