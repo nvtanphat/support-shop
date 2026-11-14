@@ -12,11 +12,33 @@ A customer-support agent for e-commerce. It answers policy questions with retrie
 
 > **Simulated by default.** Payments, carrier tracking and SMS/OTP run against built-in simulators (`INTEGRATION_MODE=simulated`); no money moves. There are no real VNPay or SMS adapters yet. See [integration modes](docs/integration-modes.md).
 
+## At a glance
+
+| | |
+|---|---|
+| **Agent** | LangGraph, 5 nodes, one agent with 11 tools; Gemini; deterministic guards around the model |
+| **Retrieval** | BM25 + BGE-M3 candidates, cross-encoder rerank, calibrated refusal of out-of-scope questions |
+| **Backend** | FastAPI, PostgreSQL (SQLite for local use), transactional outbox, SSE with replay |
+| **Frontend** | React + Vite + Tailwind: customer chat and staff portal |
+| **Agent quality** | 62/62 on the 62 development scenarios with real Gemini; 0 unauthorized financial actions; 35 independent scenarios not yet run ([evidence and limits](#measured-results)) |
+| **Tests** | 396 backend tests, 30 frontend unit tests, 17 browser journeys |
+
+## What it looks like
+
+All screenshots come from the running application with the seeded demo data (`npm --prefix frontend run shots`). Only the assistant's wording is scripted, so they can be regenerated without spending any model quota.
+
+| | |
+|---|---|
+| ![Policy answer with citations](docs/images/chat-policy.png) **Policy answers cite their source.** Every `[POL-…]` is checked against the clauses the retrieval step actually returned. | ![Clause shown on click](docs/images/citation-modal.png) **A citation opens the real clause**, with its version and effective date. |
+| ![Order card](docs/images/chat-order.png) **Order lookup.** Order data and the delivery timeline come from the database, not from the model's text. | ![Return proposal](docs/images/customer-proposal.png) **Proposal card.** It states what will happen and whether evidence or approval is needed; nothing runs until the customer presses Confirm. |
+| ![Approval queue](docs/images/staff-approvals.png) **Approval queue.** Each request shows the order, the amount and the role it needs; a 6.49 M VND refund waits for a supervisor. | ![Warehouse](docs/images/staff-warehouse.png) **Warehouse.** Receive a returned parcel, then record the inspection that creates the refund. |
+| ![Takeover](docs/images/staff-takeover.png) **Human takeover.** Staff read the real thread, reply to the customer and hand the conversation back to the assistant. | ![Operations](docs/images/staff-metrics.png) **Operations.** Counts come from the database (supervisor and admin only). |
+
 ## Design guarantees
 
-- **Proposals, not actions.** `propose_*` tools create a `PendingAction` with a `preview_hash` and a 30-minute expiry. Only `POST /actions/{id}/confirm` executes it, after re-validating the order, the policy window and the refund amount.
-- **Approval scales with risk.** Refunds up to 500,000 VND are automatic, up to 2,000,000 VND need a support agent, and anything above that or carrying a risk flag needs a supervisor. The staff member who inspects a returned parcel cannot approve the refund they created (four-eyes).
-- **Grounded answers.** Before a reply is shown, deterministic guards check that every policy citation `[POL-…]`, amount, order code and "done" claim is backed by a successful tool result, and that tool arguments (order, item, reason, exchange SKU) came from the customer or a tool, never from a guess. Failing replies are replaced, not shown.
+- **Proposals, not actions.** `propose_*` tools create a `PendingAction` with a `preview_hash` and a 30-minute expiry (`pending_action_ttl_minutes`). Only `POST /actions/{id}/confirm` executes it, after re-validating the order, the policy window and the refund amount.
+- **Approval scales with risk.** Refunds up to 500,000 VND are automatic, up to 2,000,000 VND need a support agent, and anything above that or carrying a risk flag needs a supervisor. A return whose reason requires photos cannot pass the first gate until they are uploaded. The staff member who inspects a returned parcel cannot approve the refund they created (four-eyes).
+- **Grounded answers.** Before a reply is shown, deterministic guards check that every policy citation `[POL-…]`, amount, order code and "done" claim is backed by a successful tool result, and that tool arguments (order, item, reason, exchange SKU) came from the customer or a tool, never from a guess. A draft that fails is sent back to the model once to be fixed; if it still fails it is replaced, never shown.
 - **Bounded turns.** A turn has limits on steps, tool calls and wall-clock time. It always ends with a grounded answer, a clarifying question, or an explicit error, including when the model times out or is rate-limited.
 - **Safe by construction.** Idempotency keys on writes, atomic message and event sequencing, owner checks at the service layer, prompt-injection screening, and masking of card and national-ID numbers before the model or the stored history sees them. See the [threat model](docs/threat-model.md).
 
@@ -58,15 +80,77 @@ flowchart LR
     PE --> SSE
 ```
 
-**One turn:** `load_context` loads the principal, clock and pending proposal → `screen_input` blocks injection and masks card numbers → `agent` runs the bounded tool loop with deterministic guards outside the model → `verify_output` checks citations, numbers and completion claims → `persist_emit` stores the messages and emits SSE events.
+Layers depend inward: `api → agent → domain ← infra`, with `core` shared. The domain layer has no LLM dependency, so the rules that move money can be tested without a model. Details: [architecture](docs/architecture.md), [decision records](docs/adr/).
 
-**One write:** the agent creates a proposal → the customer confirms it → the service re-checks and computes the refund → an approval request is created if the amount or risk requires it → the state change and an outbox event commit in one transaction → the worker disburses and the reconciler settles stuck payments.
+### One turn
 
-Layers depend inward: `api → agent → domain ← infra`, with `core` shared. The domain layer has no LLM dependency. Details: [architecture](docs/architecture.md), [decision records](docs/adr/).
+```mermaid
+sequenceDiagram
+    participant C as Customer
+    participant A as API
+    participant G as Graph
+    participant M as Gemini
+    participant T as Tools / domain
+    C->>A: message (X-Idempotency-Key)
+    A->>G: invoke(thread = conversation)
+    G->>G: load_context, screen_input (injection, PII masking)
+    loop bounded: steps, tool calls, seconds
+        G->>M: messages + tool schemas
+        M-->>G: tool call or draft answer
+        G->>T: run tool (read or propose only)
+        T-->>G: result, classified succeeded / negative / failed
+        Note over G: guards run here, outside the model:<br/>required tools, grounded arguments,<br/>no duplicate proposal, claims backed by evidence
+    end
+    G->>G: verify_output (citations, numbers, completion claims)
+    G->>A: persist_emit (messages + events in one transaction)
+    A-->>C: answer, proposal card, SSE events
+```
+
+### One write
+
+```mermaid
+stateDiagram-v2
+    [*] --> Proposed: propose_* tool (preview_hash, expiry)
+    Proposed --> Expired: lifetime elapsed
+    Proposed --> Cancelled: customer declines
+    Proposed --> Confirmed: customer confirms, service re-checks
+    Confirmed --> GateA: reason needs review
+    Confirmed --> AwaitingReturn: auto-approved
+    GateA --> AwaitingReturn: agent approves (evidence present)
+    GateA --> Rejected: agent rejects
+    AwaitingReturn --> Received: warehouse receives parcel
+    Received --> Inspected: inspection creates the refund
+    Inspected --> Refunded: within auto limit
+    Inspected --> GateB: above limit or risk flag
+    GateB --> Refunded: approver is not the inspector
+    GateB --> Rejected: approver rejects
+    Refunded --> [*]: outbox worker disburses, reconciler settles
+```
+
+| Refund amount | Approval |
+|---|---|
+| up to 500,000 VND, no risk flag | automatic |
+| up to 2,000,000 VND | support agent |
+| above 2,000,000 VND, or any risk flag | supervisor |
+
+The limits live in [config/policy/rules.yaml](config/policy/rules.yaml), the same file the customer-facing policy text is generated from, so the text and the engine cannot disagree.
 
 ### Policy retrieval
 
-Candidates come from BM25 (with query normalization for chat shorthand and amounts) fused by rank with BGE-M3 dense similarity; a cross-encoder (`bge-reranker-v2-m3`) then reorders them. A question whose best score is below a calibrated threshold is refused rather than answered with a loosely related clause. Policy clauses come from `config/policy/rules.yaml` (rules with numbers, so the text and the engine cannot disagree) and from Markdown documents; both are versioned with effective dates. See [policy authoring](docs/policy-authoring.md).
+```mermaid
+flowchart LR
+    Q["Question"] --> N["Normalize<br/>chat shorthand, amounts, diacritics"]
+    N --> B["BM25 (gate)"]
+    N --> V["BGE-M3 vectors"]
+    B --> F["Rank fusion"]
+    V --> F
+    F --> R["Cross-encoder rerank<br/>10 candidates"]
+    R --> T{"score ≥ threshold?"}
+    T -->|yes| A["Clauses with version and date"]
+    T -->|no| X["Refuse: no clause covers this"]
+```
+
+BM25 is the gate: if no query term matches, the answer is "no evidence", because a vector model always finds some nearest clause. A calibrated threshold on the reranker score then refuses questions the policy does not cover instead of answering with a loosely related clause. Policy clauses come from `config/policy/rules.yaml` and from Markdown documents; both are versioned with effective dates ([policy authoring](docs/policy-authoring.md)).
 
 ### Agent tools
 
@@ -79,6 +163,66 @@ Candidates come from BM25 (with query normalization for chat shorthand and amoun
 | `get_case_status` | signed in | Return (`RT-`), refund (`RF-`) and ticket (`TK-`) progress |
 | `propose_cancel_order`, `propose_return` | signed in | Create a proposal for the customer to confirm |
 | `escalate_to_human` | everyone | Open a ticket and hand the conversation to staff |
+
+The registry filters tools by principal before they reach the model, so a guest's model never sees a tool it may not use. There is no tool that confirms or changes order or money state.
+
+## Measured results
+
+Everything below is produced by the evaluation harness from raw run artifacts ([docs/eval-report.md](docs/eval-report.md), regenerated by `python -m evals.report`). The harness is separate from the application: it has its own database, its own ground truth, and three kinds of agent that must disagree.
+
+### Agent: 62 development scenarios
+
+| Gate | Threshold | Oracle (reference solution) | Null agent (always refuses) | Gemini (real) |
+|---|---|---|---|---|
+| Tool selection | ≥ 0.95 | 1.000 (63/63) | 0.000 | **1.000 (63/63)** |
+| Tool arguments | ≥ 0.95 | 1.000 (22/22) | 0.000 | **1.000 (22/22)** |
+| Tool order | ≥ 0.95 | 1.000 (15/15) | 0.000 | **1.000 (15/15)** |
+| Asks when a slot is missing | ≥ 0.95 | 1.000 (8/8) | 0.000 | **1.000 (8/8)** |
+| Multi-turn follow-up | ≥ 0.95 | 1.000 (10/10) | 0.100 | **1.000 (10/10)** |
+| Task success (database state and answer) | ≥ 0.90 | 1.000 (62/62) | 0.161 (10/62) | **1.000 (62/62)** |
+| Business-policy compliance | ≥ 0.99 | 1.000 | 1.000 | **1.000 (62/62)** |
+| Unauthorized financial actions | 0 | 0 | 0 | **0** |
+| False "done" claims | 0 | 0 | 0 | **0** |
+| Cross-customer data leakage | 0 | 0 | 0 | **0** |
+
+Why three columns: the oracle shows the scenarios and graders are solvable; the null agent proves the gates can fail (it scores 16% on task success and fails seven gates), so a pass means something. Real-model cost for the 62 scenarios: 255 LLM calls, about 2.17 M tokens in and 20 K out, p50 12.9 s and p95 30.9 s per scenario (one run with a free-tier key, so treat latency as indicative).
+
+Grounding, recomputed independently from the raw conversations: 91/91 policy citations were backed by a successful lookup, and 103/104 numeric claims match the scenario fixtures, the business spec and the hand-written decision table (not the tool output, and not the configuration the engine reads).
+
+### Policy retrieval: 48 held-out questions (28 answerable, 20 out of scope)
+
+| Metric | Result |
+|---|---|
+| Recall@1 | 0.929 |
+| Recall@4 | 0.982 |
+| Out-of-scope questions correctly refused | 20/20 (100%) |
+| Answerable questions wrongly refused | 0/28 |
+
+The refusal threshold was calibrated on a separate set and frozen before this one was scored. The number of reranker candidates is a measured trade-off, not a guess:
+
+| Candidates | Seconds per query | Recall@1 | Recall@4 | Out-of-scope refused |
+|---|---|---|---|---|
+| **10 (used)** | 2.07 | 0.929 | 0.982 | 100% |
+| 6 | 1.09 | 0.857 | 0.964 | 100% |
+| 4 | 0.78 | 0.929 | 1.000 | 95% (1 of 20 slipped through) |
+
+Four candidates is 1.3 s faster but lets one out-of-scope question through, and the non-monotonic result (6 is worse than 4) shows 48 questions are too few to trust small differences, so the safer setting stays ([ADR-007](docs/adr/007-D7-hybrid-rag.md)).
+
+### Tests
+
+| Suite | Result |
+|---|---|
+| Backend | 396 pass locally; 4 more PostgreSQL tests (checkpoint recovery) run when `TEST_POSTGRES_URL` is set, and in CI |
+| Frontend | 30 unit tests; 17 Playwright journeys against a mocked API, plus an opt-in run against the real API and Gemini |
+| Static checks | `ruff`, `mypy` clean |
+
+### What these numbers do not show
+
+- **One run per scenario (k=1).** The 62/62 is a single run, so it says nothing about run-to-run stability. A k=3 run was started and stopped when the daily Gemini quota ran out.
+- **The development set is not an independent test.** It includes 16 scenarios that used to be held out; their failures were used to fix the agent, so they moved here. An earlier k=3 run on them scored 38/48.
+- **The independent set has not been run.** 35 scenarios (`evals/scenarios_holdout/`) were written from the specification and frozen before any agent change. They are **blocked**: the free-tier quota (500 requests per day per model) was exhausted on all four keys. The report's acceptance verdict is therefore `BLOCKED / NOT VERIFIED`, on purpose. Command once quota is back: `uv run python -m evals.harness.runner --agent langgraph --set holdout -k 3`.
+- **Scenarios were written by the project team**, and the retrieval holdout is small (48 questions), so confidence intervals are wide.
+- **Not verified:** the Docker image (unbuilt), concurrent load against real Gemini, and response time on other hardware.
 
 ## Quick start
 
@@ -94,12 +238,12 @@ npm --prefix frontend install
 
 uv run --extra rerank uvicorn shopagent.api.app:app --port 8000
 uv run python -m shopagent.worker          # outbox worker, separate terminal
-npm --prefix frontend run dev              # http://localhost:5173, staff portal under /staff
+npm --prefix frontend run dev              # http://localhost:5173
 ```
 
 The first start downloads the retrieval models (about 1.1 GB: int8 BGE-M3 and the reranker) and loads them at startup. They are cached in `.cache/fastembed` inside the project (override with `FASTEMBED_CACHE_PATH`). On Windows set `PYTHONUTF8=1` for the CLI. `seed` drops and recreates every table: development only.
 
-Sign in with `customer1@example.com` / `pass123`, or as staff with `agent@shop.vn` or `supervisor@shop.vn` / `staff123`. [Demo data](docs/demo-data.md) lists 24 fixed orders, each built for one flow (self-service cancel, return windows, excluded goods, evidence and approval gates, exchange stock, risk flags).
+Sign in with `customer1@example.com` / `pass123`; as staff with `agent@shop.vn` or `supervisor@shop.vn` / `staff123`, or `admin@shop.vn` / `admin123` for the simulation panel. [Demo data](docs/demo-data.md) lists 24 fixed orders, each built for one flow (self-service cancel, return windows, excluded goods, evidence and approval gates, exchange stock, risk flags) and a pre-filled staff queue.
 
 ### Configuration
 
@@ -121,21 +265,15 @@ All variables are in [.env.example](.env.example).
 uv run ruff check backend evals && uv run mypy backend/src
 uv run pytest backend/tests -q                 # set TEST_POSTGRES_URL to include the PostgreSQL tests
 npm --prefix frontend test && npm --prefix frontend run test:e2e
+npm --prefix frontend run shots                # regenerate the README screenshots (needs the API and seeded data)
+
 uv run python -m evals.harness.runner --agent oracle --gate              # no LLM calls
+uv run python -m evals.harness.runner --agent null                       # must fail the gates
 uv run python -m evals.harness.runner --agent langgraph --gate           # real Gemini, spends quota
-uv run python -m evals.harness.runner --agent langgraph --set holdout    # held-out scenarios
+uv run python -m evals.harness.runner --agent langgraph --set holdout    # independent scenarios
 ```
 
-| Check | Result |
-|---|---|
-| Backend tests | 393 pass including the PostgreSQL tests (`TEST_POSTGRES_URL`) |
-| Frontend | 30 unit tests and 17 Playwright journeys against a mocked API |
-| Agent, 62 development scenarios, real Gemini, one run each | 62/62, every quality gate met |
-| Agent, 35 independent final scenarios (`--set holdout`, never used to tune) | not run yet: Gemini daily quota exhausted (see docs/eval-report.md) |
-| Unauthorized financial actions, false completion claims, cross-customer leakage (development set) | 0 / 0 / 0 |
-| Policy retrieval, 48-query holdout (28 answerable, 20 out of scope) | Recall@1 0.93, Recall@4 0.98, out-of-scope refusal 100% |
-
-Read these with their limits: one run per scenario, scenarios written by the project team, and an oracle baseline that passes the development set (62/62). The null agent must fail the gates, and it passes 10/62. The development set includes 16 scenarios that used to be held out; they moved there once their failures had been used to fix the agent, and a new independent set replaced them. Full report and caveats: [docs/eval-report.md](docs/eval-report.md); how the harness grades: [docs/development.md](docs/development.md).
+Each run keeps its raw trajectories and gate table under `evals/results/<run>/`. Thresholds are in [evals/quality_gates.yaml](evals/quality_gates.yaml). The harness writes only to its own database (`EVAL_DATABASE_URL`), never to the application database. How scenarios are graded: [docs/development.md](docs/development.md).
 
 ## Deployment
 
@@ -153,8 +291,8 @@ backend/src/shopagent/
   rag/      policy corpus, chunking, indexing, BM25, embeddings, reranker
 frontend/   React + Vite + Tailwind SPA (customer chat and staff portal)
 config/     policy rules, model and retrieval settings, system prompt, procedures
-evals/      harness, scenarios and held-out scenarios, ground truth, retrieval benchmarks
-docs/       business spec, architecture, ADRs, threat model, runbook, evaluation report
+evals/      harness, development and independent scenarios, ground truth, retrieval benchmarks
+docs/       business spec, architecture, ADRs, threat model, runbook, evaluation report, images
 ```
 
 ## Documentation
