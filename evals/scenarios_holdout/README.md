@@ -13,3 +13,4 @@ Quy tắc:
 
 - 2026-11-13: tập đầu tiên (16 kịch bản `H-*`). Sau khi chạy với Gemini, lỗi của tập này đã được phân tích để sửa agent, nên cả 16 kịch bản được chuyển sang `evals/scenarios/` (gắn tag `former_holdout`) theo quy tắc 3.
 - 2026-11-13: tập thay thế, 35 kịch bản `F-*`, viết từ đặc tả trước khi sửa agent và chưa chạy với Gemini. Chỉ chạy oracle (không gọi LLM) để kiểm tra kịch bản nạp được và số tiền mong đợi khớp miền nghiệp vụ. Sinh bởi một script một lần; không sửa nội dung sau khi đã chạy với agent thật.
+- 2026-11-14: lần chạy Gemini đầu tiên trên tập `F-*` (k=1): 32/35. Hai kịch bản trượt vì lỗi thật của agent (`F-RET-07`, `F-SLOT-01`) được phân tích để sửa, nên chuyển sang `evals/scenarios/` theo quy tắc 3; thay bằng `F-RET-13` và `F-SLOT-06`, viết trước khi sửa agent. `F-ORD-01` trượt do bộ chấm không nhận "đang giao" (nhãn của app cho `shipped`); không dùng để sửa nên giữ nguyên.

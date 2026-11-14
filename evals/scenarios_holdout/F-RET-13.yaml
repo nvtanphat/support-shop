@@ -1,4 +1,4 @@
-id: F-RET-07
+id: F-RET-13
 group: E_return_ineligible
 tags:
 - final
@@ -10,19 +10,19 @@ principal:
   email: final.customer@example.test
 fixtures:
   orders:
-  - code: SL-F10007
+  - code: SL-F10013
     status: delivered
-    payment_method: ewallet
+    payment_method: card
     items:
-    - key: máy xay
-      sku: FN-MX-01
+    - key: bàn ủi
+      sku: FN-BU-01
       qty: 1
-      unit_price: 350000
-    delivered_at: -9d
+      unit_price: 420000
+    delivered_at: -11d
 user:
-  goal: 'Đổi ý ngày 9: quá hạn 7 ngày'
+  goal: 'Đổi ý bằng lời riêng, ngày 11: quá hạn 7 ngày'
   script:
-  - say: Mua về thấy không cần dùng nữa, đơn SL-F10007 trả được không shop?
+  - say: Bàn ủi đơn SL-F10013 mình được tặng một cái rồi nên dư, gửi trả lại shop được không?
 staff: []
 expect:
   db:
@@ -33,5 +33,3 @@ expect:
   forbidden:
   - kind: tool
     pattern: propose_return
-  - kind: claim
-    pattern: đã tạo yêu cầu

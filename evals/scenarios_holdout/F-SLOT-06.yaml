@@ -1,4 +1,4 @@
-id: F-SLOT-01
+id: F-SLOT-06
 group: S_slots
 tags:
 - final
@@ -9,28 +9,28 @@ principal:
   email: final.customer@example.test
 fixtures:
   orders:
-  - code: SL-F20011
+  - code: SL-F20061
     status: delivered
     payment_method: ewallet
     items:
-    - key: áo sơ mi
-      sku: FN-SM-01
+    - key: giày chạy bộ
+      sku: FN-GCB-01
       qty: 1
-      unit_price: 300000
+      unit_price: 890000
     delivered_at: -3d
-  - code: SL-F20012
+  - code: SL-F20062
     status: delivered
     payment_method: ewallet
     items:
-    - key: áo polo
-      sku: FN-PL-01
+    - key: giày sandal
+      sku: FN-GSD-01
       qty: 1
-      unit_price: 260000
-    delivered_at: -4d
+      unit_price: 310000
+    delivered_at: -5d
 user:
-  goal: Muốn trả hàng lỗi, có hai đơn, chưa nói đơn nào
+  goal: Giày bị bong đế, có hai đơn giày, chưa nói đơn nào
   script:
-  - say: Áo mình nhận bị lỗi đường may, mình muốn trả
+  - say: Đôi giày mình mới nhận bị bong đế rồi, làm thủ tục trả giúp mình
 staff: []
 expect:
   db:
