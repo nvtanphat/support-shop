@@ -280,3 +280,37 @@ def test_a_reason_the_eligibility_check_accepted_need_not_be_quoted_again() -> N
     ctx = _ctx(("customer", _SAID), ("tool", _HEADPHONES), ("tool", checked))
     args = {"order_code": "SL-A00001", "items": [{"item_id": "it-1", "qty": 1}], "reason_code": "defective"}
     assert find_ungrounded_slot("propose_return", args, ctx) is None
+
+
+# --- From the first independent run: a change of mind in the customer's words; ambiguous orders listed -----------
+_MIXER = json.dumps({"items": [{"item_id": "it-1", "product_name": "máy xay"}]}, ensure_ascii=False)
+
+
+def test_a_change_of_mind_in_the_customers_own_words_can_be_quoted() -> None:
+    said = "Mua về thấy không cần dùng nữa, đơn SL-A00001 trả được không shop?"
+    assert _check("change_of_mind", "thấy không cần dùng nữa", said, _MIXER) is None
+
+
+def test_the_reason_hint_does_not_steer_towards_a_defect() -> None:
+    result = _check("change_of_mind", None, "Mua về thấy không cần dùng nữa, đơn SL-A00001 trả được không shop?", _MIXER)
+    assert result is not None and "đổi ý" in result["message"] and "không cần dùng nữa" in result["message"]
+
+
+def test_an_ambiguous_order_lists_the_candidates() -> None:
+    result = find_ungrounded_slot("propose_return", {"order_code": "SL-A00001"}, _ctx(("customer", "Áo bị lỗi, mình muốn trả"), recent=_TWO))
+    assert result is not None and result["candidates"] == list(_TWO)
+
+
+from shopagent.agent.slot_guard import unasked_missing_slots  # noqa: E402
+
+_AMBIGUOUS = {"tool": "check_return_eligibility", "args": {},
+              "result": {"error_code": "MISSING_SLOT", "slot": "order_code", "candidates": list(_TWO)}}
+
+
+@pytest.mark.parametrize(("draft", "flagged"), [
+    ("Bạn muốn trả áo trong đơn SL-A00001 phải không ạ?", True),             # a leading guess at one order
+    ("Bạn có hai đơn SL-A00001 (áo sơ mi) và SL-B00002 (áo polo), bạn muốn trả áo ở đơn nào ạ?", False),
+    ("Bạn muốn trả áo ở đơn nào ạ?", False),
+])
+def test_after_an_ambiguous_order_the_reply_asks_which_one(draft: str, flagged: bool) -> None:
+    assert bool(unasked_missing_slots([_AMBIGUOUS], draft)) is flagged

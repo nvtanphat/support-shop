@@ -161,6 +161,10 @@ class GroundingContext:
             return False
         return _mentions_reason(unicodedata.normalize("NFC", asked.lower()), remove_vietnamese_accents(asked), reason)
 
+    def recent_order_list(self) -> list[str]:
+        """The recent orders shown to the model, newest first: the candidates when the customer has not chosen."""
+        return list(self._recent_list)
+
     def order_chosen_by_customer(self, code: str) -> bool:
         """The customer chose this order: typed its code, pointed into the recent list, said yes to a question naming
         it, or has only this one recent order. Being in the recent list alone is not a choice when there are several."""
@@ -257,11 +261,14 @@ def find_ungrounded_slot(
         )
 
     if tool in _PROPOSAL_ORDER_TOOLS and not grounding.order_chosen_by_customer(str(code)):
-        return _missing(
-            "order_code",
-            "Khách có nhiều đơn gần đây và chưa nói rõ muốn xử lý đơn nào. Hãy liệt kê các đơn phù hợp (mã đơn, sản phẩm, "
-            "trạng thái) và hỏi khách chọn đơn nào; không tự chọn đơn mới nhất.",
-        )
+        return {
+            **_missing(
+                "order_code",
+                "Khách có nhiều đơn gần đây và chưa nói rõ muốn xử lý đơn nào. Hãy liệt kê các đơn trong `candidates` (mã đơn, "
+                "sản phẩm) và hỏi khách muốn xử lý đơn nào; không đoán một đơn rồi hỏi 'phải không'.",
+            ),
+            "candidates": grounding.recent_order_list(),
+        }
 
     if tool not in _RETURN_TOOLS:
         return None
@@ -290,11 +297,12 @@ def find_ungrounded_slot(
     ):
         return _missing(
             "reason_code",
-            "Chưa có căn cứ cho lý do đổi trả này. Nếu khách đã tự mô tả sự cố (ví dụ 'bị rè một bên tai', 'sạc không vào "
-            "điện'), gọi lại công cụ với `reason_quote` là đúng đoạn khách đã viết (chép nguyên văn, không diễn đạt lại) và "
-            "lý do khớp với đoạn đó. Nếu khách chưa mô tả sự cố, hãy hỏi lý do; nếu lời khách chưa rõ thuộc lý do nào, hỏi "
-            "MỘT câu đóng nêu lý do bằng từ chuẩn, ví dụ 'Sản phẩm bị lỗi phải không ạ?'. Không tự chọn lý do khi khách "
-            f"chưa nói gì về sự cố. Mã hợp lệ: {sorted(_REASONS)}.",
+            "Chưa có căn cứ cho lý do đổi trả này. Nếu khách đã nói lý do bằng lời riêng, gọi lại công cụ với `reason_quote` "
+            "là đúng đoạn khách đã viết (chép nguyên văn, không diễn đạt lại) và lý do khớp với đoạn đó: sản phẩm hỏng "
+            "('bị rè một bên tai' là lỗi), hay đổi ý ('mua về thấy không cần dùng nữa', 'được tặng rồi nên dư' là đổi ý). "
+            "Nếu khách chưa nói lý do, hãy hỏi lý do; nếu lời khách chưa rõ thuộc lý do nào, hỏi MỘT câu đóng nêu đúng lý do "
+            "gần với lời khách, ví dụ 'Sản phẩm bị lỗi phải không ạ?' hoặc 'Bạn đổi ý không dùng nữa phải không ạ?'. "
+            f"Không tự chọn lý do khi khách chưa nói gì. Mã hợp lệ: {sorted(_REASONS)}.",
         )
     if args.get("resolution", "refund") not in _RESOLUTIONS:
         return _missing("resolution", "Hãy hỏi khách muốn hoàn tiền (refund) hay đổi hàng (exchange).")
@@ -377,16 +385,29 @@ def unasked_missing_slots(executed: list[dict[str, Any]], draft: str) -> list[st
     latest = {call.get("tool"): call.get("result") or {} for call in executed}
     slots = sorted({str(r["slot"]) for r in latest.values() if r.get("error_code") == "MISSING_SLOT" and r.get("slot")})
     lowered = draft.lower()
+    candidates = next(
+        (r["candidates"] for r in latest.values() if r.get("slot") == "order_code" and len(r.get("candidates") or []) > 1), None
+    )
+    if candidates is not None:
+        named = {c for c in candidates if c.lower() in lowered}
+        # A guess at one order ("đơn SL-A phải không?") picks for the customer; the choice must stay theirs (seen live:
+        # two orders held a shirt and the reply asked only about the newest).
+        if len(named) < 2 and not re.search(r"đơn\s+(?:hàng\s+)?nào", lowered):
+            return [
+                f"ASK_WHICH_ORDER: order_code (several recent orders could be meant: {', '.join(candidates)}; list them and ask "
+                "which one, instead of asking about one of them)"
+            ]
     if "reason_code" in slots and _CLOSED_QUESTION_RE.search(lowered) and not _names_a_reason(lowered):
         return [
             "UNCLEAR_REASON_QUESTION: reason_code (the question does not name a reason in the standard words, so the "
-            "customer's yes could not be tied to one: ask 'Sản phẩm bị lỗi phải không ạ?' or the matching reason, not the symptom)"
+            "customer's yes could not be tied to one: name the reason closest to the customer's words, e.g. 'Sản phẩm bị lỗi "
+            "phải không ạ?' or 'Bạn đổi ý không dùng nữa phải không ạ?', not the symptom)"
         ]
     if "?" in draft or _ASKS_RE.search(lowered):
         return []
     return [
         f"UNASKED_MISSING_SLOT: {slot} (a tool reported it missing and the reply asks the customer nothing: ask for it in one "
-        "short question; for reason_code ask a closed question such as 'Sản phẩm bị lỗi phải không ạ?')"
+        "short question; for reason_code ask the closed question that names the reason closest to the customer's words)"
         for slot in slots
     ]
 

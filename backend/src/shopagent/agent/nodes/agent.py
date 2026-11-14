@@ -329,8 +329,9 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
             if stuck is not None:
                 instruction = (
                     f"Công cụ đã báo thiếu '{stuck}' nhiều lần và không thể tự có thông tin này. Không gọi thêm công cụ nào: "
-                    "hãy hỏi khách đúng thông tin còn thiếu trong một câu ngắn (lý do trả hàng thì hỏi câu đóng như "
-                    "'Sản phẩm bị lỗi phải không ạ?')."
+                    "hãy hỏi khách đúng thông tin còn thiếu trong một câu ngắn (lý do trả hàng thì hỏi câu đóng nêu lý do "
+                    "gần với lời khách, như 'Sản phẩm bị lỗi phải không ạ?' hoặc 'Bạn đổi ý không dùng nữa phải không ạ?'; "
+                    "nhiều đơn thì liệt kê và hỏi khách chọn đơn nào)."
                 )
             else:
                 instruction = (
