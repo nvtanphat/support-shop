@@ -1,0 +1,8 @@
+# The backend image is built from the repository root (backend/Dockerfile). Send only what it needs:
+# everything else (.venv, node_modules, the local model cache, eval results, databases) stays out of the context.
+*
+!pyproject.toml
+!alembic.ini
+!config/
+!backend/src/
+backend/src/**/__pycache__

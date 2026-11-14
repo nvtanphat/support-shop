@@ -71,7 +71,7 @@ Nhóm lỗi: không có
 
 | Tiêu chí | Ngưỡng | Kết quả đo | Trạng thái |
 |---|---|---|---|
-| P0/P1 regression tests | 100% pass | 393 pass, 0 fail, 0 skip | PASS |
+| P0/P1 regression tests | 100% pass | 396 pass, 0 fail, 0 skip | PASS |
 | Tool Selection Accuracy | >= 0.95 | 1.000 (63/63) | PASS |
 | Tool Argument Accuracy | >= 0.95 | 1.000 (22/22) | PASS |
 | Successful Required Tool Execution | >= 0.95 | 1.000 (63/63) | PASS |
@@ -85,12 +85,12 @@ Nhóm lỗi: không có
 | Cross-Customer Data Leakage | <= 0 | 0.000 (0/3) | PASS |
 | Valid Citation Provenance | 100% | 91/91 citations backed by a successful lookup | PASS |
 | Supported Factual Claims | >= 98% | 103/104 numeric claims match the scenario fixtures, business spec and decision table (independent of tool results and of config); 98/104 also match successful tool results | PASS |
-| Independent final set, real Gemini (all gates) | >= 0.9 task success, every gate | not run: Gemini free-tier daily quota (500 requests/project/model) exhausted on all 4 keys, 2026-11-14 | BLOCKED |
+| Independent final set, real Gemini (all gates) | >= 0.9 task success, every gate | not run: Gemini free-tier daily quota exhausted on all 4 keys, 2026-11-14 | BLOCKED |
 | RAG Recall@1 | >= 0.90 | 0.929 (holdout, n=28/20, ngưỡng chốt từ bộ độc lập) | PASS |
 | RAG Recall@4 | >= 0.95 | 0.982 (holdout, n=28/20, ngưỡng chốt từ bộ độc lập) | PASS |
 | Unsupported-Query Rejection | >= 0.95 | 1.0 (holdout, n=28/20, ngưỡng chốt từ bộ độc lập) | PASS |
 | Checkpoint and State Recovery | 100% pass | 4 PostgreSQL tests pass | PASS |
-| Required Backend/Frontend CI Checks | 100% pass | GitHub Actions status | NOT VERIFIED (pending push) |
+| Required Backend/Frontend CI Checks | 100% pass | GitHub Actions status | PASS (5da198d) |
 
 **AI AGENT ACCEPTANCE: BLOCKED / NOT VERIFIED**
 
@@ -104,4 +104,5 @@ Phần này viết tay; mọi con số ở trên được sinh từ artifact tro
 - **Độ ổn định (k ≥ 3) sau khi sửa:** chưa đo. Lần chạy k=3 trên 16 kịch bản `H-*` bị dừng khi hạn mức hết; trước đó `H-CAN-001` đạt 3/3, `H-CAN-002` trượt 2/3 (từ chối hủy đơn đúng nhưng không trích dẫn điều khoản; một lần trượt do lỗi 429). Lỗi thiếu trích dẫn đã được sửa bằng yêu cầu tool-first sau lời từ chối, chưa đo lại.
 - **Nghiệm thu ứng dụng thật** (`evals/e2e/live_acceptance.py`, 16 kịch bản qua HTTP API, PostgreSQL, Gemini và mô hình retrieval thật) và Playwright với API thật: lần gần nhất 16/16 và 4/4 trên mã trước đợt sửa này; **chưa chạy lại** sau các thay đổi vì hết hạn mức Gemini.
 - **Retrieval:** mã retrieval không đổi trong đợt này; bảng trên là lần đo lại trên cùng tập holdout retrieval (28 câu có đáp án, 20 câu ngoài phạm vi), khoảng tin cậy rộng. Với 10 điều khoản, bước lấy ứng viên hybrid (BM25 + BGE-M3) cho đúng số của BM25 + reranker vì reranker chấm hết cả kho. Số liệu chọn bản int8 và số ứng viên của reranker ở [ADR-008](adr/008-D8-embedding-selection.md) và [ADR-007](adr/007-D7-hybrid-rag.md).
-- **Chưa kiểm chứng:** ảnh Docker (chưa build, kể cả bước nạp sẵn model), tải đồng thời với Gemini thật, và thời gian phản hồi trên phần cứng khác.
+- **Ảnh Docker** (2026-11-14): trước đây không build được (build context `./backend` không có `config/` và `pyproject.toml`); nay build từ gốc repo, 3,28 GB. Đã kiểm: retrieval trong container tắt mạng trả đúng điều khoản (mô hình đã nạp sẵn), migration và seed chạy bằng chính image, API trong container với PostgreSQL (`asyncpg` như `docker-compose.prod.yml`) sẵn sàng, đăng nhập, xem đơn, tạo cuộc trò chuyện, API duyệt của nhân viên. Chưa gửi tin nhắn chat qua container (cần Gemini).
+- **Chưa kiểm chứng:** tải đồng thời với Gemini thật, và thời gian phản hồi trên phần cứng khác.

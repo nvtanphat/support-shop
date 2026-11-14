@@ -1,3 +1,6 @@
+# Built from the repository root: docker build -f backend/Dockerfile .
+# The image keeps the repository layout (backend/src, config, alembic.ini) so configuration and migrations resolve the
+# same paths as in development.
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -22,16 +25,17 @@ RUN uv pip install --system -r pyproject.toml --extra rerank
 # the cross-encoder (570 MB) and the int8 BGE-M3 embedding model (570 MB, retrieval.embedding in config/app.yaml).
 ENV FASTEMBED_CACHE_PATH=/models
 RUN python -c "from fastembed.rerank.cross_encoder import TextCrossEncoder; TextCrossEncoder(model_name='BAAI/bge-reranker-v2-m3-int8')"
-COPY src/shopagent/rag/bge_m3.py /tmp/bge_m3.py
+COPY backend/src/shopagent/rag/bge_m3.py /tmp/bge_m3.py
 RUN cd /tmp && python -c "import bge_m3; bge_m3.prefetch()" && rm /tmp/bge_m3.py
 
-# Copy source code and config
-COPY src/ /app/src/
+# Copy source code, config and migrations
+COPY backend/src/ /app/backend/src/
 COPY config/ /app/config/
+COPY alembic.ini /app/
 
-ENV PYTHONPATH=/app/src
+ENV PYTHONPATH=/app/backend/src
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
-CMD ["uvicorn", "shopagent.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "shopagent.api.app:app", "--host", "0.0.0.0", "--port", "8000"]

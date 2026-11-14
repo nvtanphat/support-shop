@@ -132,8 +132,9 @@ async def open_postgres_checkpointer(sync_url: str, *, max_size: int = 10) -> Ch
     """
     if sys.platform == "win32" and type(asyncio.get_running_loop()).__name__ == "ProactorEventLoop":
         raise RuntimeError(
-            "psycopg async cannot run on the Windows ProactorEventLoop; start the server with "
-            "asyncio.WindowsSelectorEventLoopPolicy (the production Linux image is not affected)."
+            "psycopg async cannot run on the Windows ProactorEventLoop; start uvicorn with "
+            "`--loop asyncio:SelectorEventLoop` (uvicorn picks its own loop and ignores the event loop policy; "
+            "the production Linux image is not affected)."
         )
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
     from psycopg.rows import dict_row
