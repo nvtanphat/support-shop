@@ -1,0 +1,40 @@
+id: G-CAN-01
+group: C_cancellation
+tags:
+- final2
+- cancel
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures:
+  orders:
+  - code: SL-G30001
+    status: confirmed
+    payment_method: ewallet
+    items:
+    - key: gối tựa lưng
+      sku: G-GTL-01
+      qty: 1
+      unit_price: 240000
+user:
+  goal: 'Đơn đã xác nhận: tự hủy'
+  script:
+  - say: Huỷ đơn SL-G30001 giúp mình nhé
+  - on_proposal:
+      type: cancel_order
+    do: confirm
+    say: Xác nhận hủy
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-G30001
+      status: cancelled
+  required_facts: []
+  forbidden: []
+  required_tools:
+  - propose_cancel_order
+  required_tool_args:
+    propose_cancel_order:
+      order_code: SL-G30001

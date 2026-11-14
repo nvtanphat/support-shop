@@ -1,0 +1,23 @@
+id: G-ESC-01
+group: H_handoff
+tags:
+- final2
+- handoff
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures: {}
+user:
+  goal: Bị trừ tiền hai lần, cần người xử lý
+  script:
+  - say: Mình bị trừ tiền hai lần cho một đơn, cần người xử lý gấp
+staff: []
+expect:
+  db:
+    tickets:
+    - reason_code: customer_request
+  required_facts: []
+  forbidden: []
+  required_tools:
+  - escalate_to_human

@@ -53,7 +53,8 @@ from evals.harness.tool_graders import grade_tool_execution, score_tool_use
 
 SCENARIO_DIR = Path("evals/scenarios")
 # Held-out scenarios: never used to tune the agent or the graders (see evals/scenarios_holdout/README.md).
-SCENARIO_SETS = {"dev": SCENARIO_DIR, "holdout": Path("evals/scenarios_holdout")}
+# "final" is the independent acceptance set written after the holdout had been measured (evals/scenarios_final/README.md).
+SCENARIO_SETS = {"dev": SCENARIO_DIR, "holdout": Path("evals/scenarios_holdout"), "final": Path("evals/scenarios_final")}
 EVAL_DB_PATH = Path("evals/results/eval_fixtures.sqlite")
 
 __all__ = ["eval_database_url", "load_scenario_from_yaml", "run_eval_cli", "run_scenario"]
@@ -325,7 +326,7 @@ async def run_eval_cli(
     every_run = [r for group_runs in runs.values() for r in group_runs]
     gate_rows = evaluate_gates(compute_gate_metrics(every_run), load_gates())
 
-    run_id = f"{agent}{'_holdout' if scenario_set == 'holdout' else ''}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    run_id = f"{agent}{'' if scenario_set == 'dev' else '_' + scenario_set}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     target = out_dir or Path("evals/results") / run_id
     save_run_artifacts(
         target,
@@ -343,7 +344,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run Shop Support Agent Evaluation Suite")
     parser.add_argument("--agent", choices=["oracle", "null", "langgraph"], default="oracle", help="Agent implementation")
     parser.add_argument("-k", "--k", type=int, default=1, help="Independent runs per scenario")
-    parser.add_argument("--set", choices=sorted(SCENARIO_SETS), default="dev", dest="scenario_set", help="dev (tuning) or holdout (never tuned on)")
+    parser.add_argument("--set", choices=sorted(SCENARIO_SETS), default="dev", dest="scenario_set", help="dev (tuning), holdout or final (never tuned on)")
     parser.add_argument("--group", default="all", help="Scenario group filter")
     parser.add_argument("--tag", default="all", help="Scenario tag filter")
     parser.add_argument("--gate", action="store_true", help="Exit 1 unless every quality gate PASSes")

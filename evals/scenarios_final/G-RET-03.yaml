@@ -1,0 +1,60 @@
+id: G-RET-03
+group: B_return_eligible
+tags:
+- final2
+- return
+- wrong_item
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures:
+  orders:
+  - code: SL-G10003
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: áo polo
+      sku: G-AP-S
+      qty: 1
+      unit_price: 280000
+    delivered_at: -2d
+user:
+  goal: Giao sai size, khách đã nói muốn hoàn tiền
+  script:
+  - say: Shop giao nhầm áo size S thay vì size L đơn SL-G10003, mình muốn hoàn tiền
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Xác nhận
+staff:
+- when_event: approval.created
+  gate: A_return
+  decision: approve
+  role: agent
+expect:
+  db:
+    return_requests:
+    - order: SL-G10003
+      reason_code: wrong_item
+      status: awaiting_return
+    approval_requests:
+    - gate: A_return
+      status: approved
+  required_facts:
+  - kind: amount_vnd
+    value: 280000
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-G10003
+      reason_code: wrong_item

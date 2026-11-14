@@ -1,0 +1,39 @@
+id: G-SLOT-05
+group: S_slots
+tags:
+- final2
+- slots
+- multi_item
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures:
+  orders:
+  - code: SL-G20051
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: ốp điện thoại
+      sku: G-OP-01
+      qty: 1
+      unit_price: 120000
+    - key: cáp sạc
+      sku: G-CS-01
+      qty: 1
+      unit_price: 150000
+    delivered_at: -3d
+user:
+  goal: Đơn hai món, một món giao sai, chưa nói món nào
+  script:
+  - say: Đơn SL-G20051 có món bị giao sai, mình muốn trả
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: asks_for
+    value: item
+  forbidden:
+  - kind: tool
+    pattern: propose_return

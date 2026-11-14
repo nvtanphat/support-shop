@@ -1,0 +1,23 @@
+id: G-POL-01
+group: A_policy_faq
+tags:
+- final2
+- faq
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures: {}
+user:
+  goal: Hoàn về ví mấy ngày
+  script:
+  - say: Hoàn tiền về ví điện tử thì mấy ngày có tiền vậy?
+staff: []
+expect:
+  db: {}
+  required_facts:
+  - kind: clause
+    id: POL-REFUND-01
+  forbidden: []
+  required_tools:
+  - search_policy

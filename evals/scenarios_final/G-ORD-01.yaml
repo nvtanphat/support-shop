@@ -1,0 +1,35 @@
+id: G-ORD-01
+group: B_order_lookup
+tags:
+- final2
+- lookup
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures:
+  orders:
+  - code: SL-G40001
+    status: shipped
+    payment_method: ewallet
+    items:
+    - key: chảo chống dính
+      sku: G-001
+      qty: 1
+      unit_price: 380000
+user:
+  goal: Hỏi trạng thái đơn shipped
+  script:
+  - say: Đơn SL-G40001 đi tới đâu rồi ạ?
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-G40001
+      status: shipped
+  required_facts:
+  - kind: status
+    value: shipped
+  forbidden: []
+  required_tools:
+  - get_order
