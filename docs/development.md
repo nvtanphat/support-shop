@@ -26,6 +26,7 @@ uv run python -m evals.harness.runner --agent langgraph --set acceptance -k 3   
 uv run --extra rerank python -m evals.retrieval.calibrate --check   # sau khi đổi điều khoản; --write để ghi ngưỡng mới
 uv run python -m shopagent.cli validate-policies                    # kiểm kho chính sách, không cần DB
 uv run --extra rerank python -m evals.retrieval.holdout           # đo retrieval, không gọi LLM
+uv run --extra rerank python -m evals.retrieval.scale             # retrieval khi kho điều khoản lớn lên (điều khoản nhiễu giả lập)
 # nghiệm thu thật: API chạy trên PostgreSQL đã seed, Gemini thật, mô hình retrieval thật; mỗi lần cần seed lại DB
 # trên Windows, API với PostgreSQL cần --loop asyncio:SelectorEventLoop (psycopg async không chạy trên ProactorEventLoop)
 DATABASE_URL=postgresql+psycopg://... uv run --extra rerank uvicorn shopagent.api.app:app --port 8010 --loop asyncio:SelectorEventLoop
