@@ -45,9 +45,12 @@ _PARENTHESISED = re.compile(rf"\s*\(\s*`?\*?({_CODES})\*?`?\s*\)")
 _SLASHED = re.compile(rf"\s*/\s*`?({_CODES})`?(?![\w-])")
 # a code on its own in backticks
 _BACKTICKED = re.compile(rf"`({_CODES})`")
+# a clause citation in backticks: the UI turns [POL-...] into a link, and the backticks would show around it
+_BACKTICKED_CITATION = re.compile(r"`\s*(\[POL-[A-Z0-9-]+\])\s*`")
 
 
 def strip_internal_codes(text: str) -> str:
+    text = _BACKTICKED_CITATION.sub(r"\1", text)
     text = _PARENTHESISED.sub("", text)
     text = _SLASHED.sub("", text)
     return _BACKTICKED.sub(lambda m: CODE_LABELS[m.group(1)], text)
