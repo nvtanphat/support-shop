@@ -19,7 +19,7 @@ Phần này viết tay; mọi con số ở trên được sinh từ artifact tro
 
 **Lỗi tìm thấy khi thử giao diện thật và đã sửa:** nút "Gặp nhân viên" trả 500 trên PostgreSQL do deadlock (thêm test PostgreSQL: 42 request lỗi trước khi sửa, 0 sau); timeout mạng không có thông báo bị coi là lỗi vĩnh viễn; mã điều khoản hiện kèm dấu backtick; ảnh Docker không build được.
 
-**Retrieval:** mã retrieval không đổi; tập holdout retrieval nhỏ (28 câu có đáp án, 20 câu ngoài phạm vi), khoảng tin cậy rộng. Số liệu chọn bản int8 và số ứng viên của reranker ở [ADR-008](adr/008-D8-embedding-selection.md) và [ADR-007](adr/007-D7-hybrid-rag.md).
+**Retrieval:** với 10 điều khoản và 10 ứng viên cho reranker, bước chọn ứng viên chọn hết cả kho, nên BGE-M3 và RRF chưa làm thay đổi kết quả (kết quả tương đương BM25 làm cổng rồi reranker chấm cả kho); bước vector chỉ có tác dụng khi số điều khoản vượt số ứng viên. Mã retrieval không đổi; tập holdout retrieval nhỏ (28 câu có đáp án, 20 câu ngoài phạm vi), khoảng tin cậy rộng. Số liệu chọn bản int8 và số ứng viên của reranker ở [ADR-008](adr/008-D8-embedding-selection.md) và [ADR-007](adr/007-D7-hybrid-rag.md).
 
 **Giới hạn:**
 - Mọi kịch bản do nhóm dự án viết; tập nghiệm thu nhỏ (16 kịch bản), nên 48/48 là bằng chứng tốt trong phạm vi các tình huống đó, không phải tỷ lệ trên khách hàng thật.

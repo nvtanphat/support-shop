@@ -61,6 +61,8 @@ flowchart LR
     T -->|no| X[No clause covers the question]
 ```
 
+With the current 10 clauses and 10 reranker candidates, the candidate stage selects every clause, so the BGE-M3 and rank-fusion steps do not change the result: the output equals BM25 as a gate followed by the reranker over all clauses. The vector stage starts to matter once the corpus has more clauses than reranker candidates. It costs about 0.6 GB of disk, 1.1 GB of memory and 150 ms per question, and `RETRIEVAL_EMBEDDING_ENABLED=false` turns it off.
+
 Agent tools: `search_policy`, `lookup_order_guest`, `list_my_orders`, `get_order`, `track_shipment`, `check_return_eligibility`, `check_variant_stock`, `get_case_status`, `propose_cancel_order`, `propose_return`, `escalate_to_human`. Tools are filtered by the caller's role, and none of them confirms a proposal or changes order or payment state.
 
 ## Evaluation
