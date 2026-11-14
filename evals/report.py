@@ -239,14 +239,17 @@ def build(args: argparse.Namespace) -> str:
         independent = json.loads((Path(args.independent) / "summary.json").read_text(encoding="utf-8"))
         rows = {row["metric"]: row for row in independent["gates"]}
         task = rows["task_success"]
-        failed = sorted(m for m, row in rows.items() if row["status"] != "PASS")
+        failed = sorted(m for m, row in rows.items() if row["status"] == "FAIL")
+        # A gate with no sample in this set (e.g. no multi-turn scenario) is a gap to name, not a failed gate.
+        unsampled = sorted(m for m, row in rows.items() if row["status"] == "NOT VERIFIED")
         matrix.append(
             (
                 "Independent final set, real Gemini (all gates)",
                 ">= 0.9 task success, every gate",
                 f"task success {fmt(task['value'])} ({task['numerator']}/{task['denominator']}, k={independent['meta'].get('k')})"
-                + (f"; failing: {', '.join(failed)}" if failed else ""),
-                "PASS" if not failed else "FAIL",
+                + (f"; failing: {', '.join(failed)}" if failed else "")
+                + (f"; not sampled: {', '.join(unsampled)}" if unsampled else ""),
+                "FAIL" if failed else "PASS",
             )
         )
     else:

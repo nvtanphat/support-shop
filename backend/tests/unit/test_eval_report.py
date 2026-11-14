@@ -85,3 +85,20 @@ def test_a_missing_independent_run_blocks_acceptance_even_when_every_dev_gate_pa
     blocked = build(namespace(tmp_path, gemini=str(tmp_path / "gemini"), independent_note="quota exhausted"))
     assert "Independent final set, real Gemini (all gates) | >= 0.9 task success, every gate | quota exhausted | BLOCKED" in blocked
     assert "AI AGENT ACCEPTANCE: PASS" not in blocked
+
+
+def test_an_unsampled_gate_of_the_independent_set_is_named_but_is_not_a_failure(tmp_path: Path) -> None:
+    # A set with no multi-turn scenario cannot measure multi-turn follow-up; that is a gap to state, not a failed gate.
+    write_run(tmp_path / "gemini", {})
+    write_run(tmp_path / "independent", {"multi_turn_follow_up": None})
+    text = build(namespace(tmp_path, gemini=str(tmp_path / "gemini"), independent=str(tmp_path / "independent")))
+    row = next(line for line in text.splitlines() if line.startswith("| Independent final set"))
+    assert row.endswith("| PASS |") and "not sampled: multi_turn_follow_up" in row
+    write_run(tmp_path / "failing", {"task_success": 0.5})
+    summary = json.loads((tmp_path / "failing" / "summary.json").read_text(encoding="utf-8"))
+    for row in summary["gates"]:
+        if row["metric"] == "task_success":
+            row["status"] = "FAIL"
+    (tmp_path / "failing" / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+    failing = build(namespace(tmp_path, gemini=str(tmp_path / "gemini"), independent=str(tmp_path / "failing")))
+    assert next(line for line in failing.splitlines() if line.startswith("| Independent final set")).endswith("| FAIL |")
