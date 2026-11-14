@@ -123,8 +123,15 @@ _TRANSIENT_MARKERS = (
 
 
 def _is_transient(exc: Exception) -> bool:
-    """Overload, timeout and quota errors may succeed on retry; a malformed request never will."""
-    return any(marker in str(exc).lower() for marker in _TRANSIENT_MARKERS)
+    """Overload, timeout, network and quota errors may succeed on retry; a malformed request never will.
+
+    The exception's type counts as well as its message: httpx raises ConnectTimeout('') with no text at all, which
+    was read as permanent and ended the turn with the generic failure reply (seen live).
+    """
+    if isinstance(exc, (TimeoutError, ConnectionError)):
+        return True
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(marker in text for marker in (*_TRANSIENT_MARKERS, "connect"))
 
 
 _RETRY_HINT_RE = re.compile(r"retry in ([0-9]+(?:\.[0-9]+)?)\s*s", re.IGNORECASE)

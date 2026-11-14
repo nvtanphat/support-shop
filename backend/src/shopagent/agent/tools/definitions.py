@@ -68,7 +68,9 @@ _CASE_NOT_FOUND = {"error_code": "CASE_NOT_FOUND", "message": "Không tìm thấ
 _GUEST_VERIFICATION_REQUIRED = {
     "error_code": "GUEST_VERIFICATION_REQUIRED",
     "message": "Quý khách cần xác minh số điện thoại đặt hàng qua mã OTP để xem thông tin đơn hàng này.",
-    "hint": "Mời khách bấm vào nút 'Xác minh đơn hàng' trên màn hình chat.",
+    # A customer with an account is simply not signed in: signing in shows all their orders without an OTP per order.
+    "hint": "Khách chưa đăng nhập. Mời khách đăng nhập tài khoản (nút Đăng nhập ở góc trên) để xem và xử lý đơn của mình; "
+    "nếu không có tài khoản, bấm nút 'Xác minh đơn hàng' trên màn hình chat để nhận mã OTP.",
 }
 
 def _within_budget(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:

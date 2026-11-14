@@ -531,3 +531,17 @@ def test_a_number_cited_to_a_clause_that_does_not_contain_it_is_caught() -> None
     assert "CITATION_MISMATCH" not in _entity_kinds("Hàng lỗi được trả trong 15 ngày `[POL-RETURN-01]`.")
     assert "CITATION_MISMATCH" not in _entity_kinds("Đổi ý được trả trong 7 ngày [POL-RETURN-02] và hàng lỗi trong 15 ngày [POL-RETURN-01].")
     assert "CITATION_MISMATCH" not in _entity_kinds("Bạn có 7 ngày.")   # no citation: nothing to check against
+
+
+# --- A network timeout with an empty message is still transient --------------------------------------------
+import httpx  # noqa: E402
+
+
+@pytest.mark.parametrize("exc", [httpx.ConnectTimeout(""), httpx.ReadTimeout(""), httpx.ConnectError(""), TimeoutError()])
+def test_network_failures_are_retried_even_without_a_message(exc: Exception) -> None:
+    # Seen live: ConnectTimeout('') was judged permanent, so the turn ended with the generic failure reply.
+    assert agent_mod._is_transient(exc) is True
+
+
+def test_a_malformed_request_is_not_retried() -> None:
+    assert agent_mod._is_transient(ValueError("400 INVALID_ARGUMENT: bad schema")) is False
