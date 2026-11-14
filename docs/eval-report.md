@@ -90,9 +90,9 @@ Nhóm lỗi: không có
 | RAG Recall@4 | >= 0.95 | 0.982 (holdout, n=28/20, ngưỡng chốt từ bộ độc lập) | PASS |
 | Unsupported-Query Rejection | >= 0.95 | 1.0 (holdout, n=28/20, ngưỡng chốt từ bộ độc lập) | PASS |
 | Checkpoint and State Recovery | 100% pass | 4 PostgreSQL tests pass | PASS |
-| Required Backend/Frontend CI Checks | 100% pass | GitHub Actions status | NOT VERIFIED (pending CI on the pushed commit) |
+| Required Backend/Frontend CI Checks | 100% pass | GitHub Actions run 43598503294 on b40cb19: lint & type check, backend + PostgreSQL, frontend + Playwright | PASS |
 
-**AI AGENT ACCEPTANCE: BLOCKED / NOT VERIFIED**
+**AI AGENT ACCEPTANCE: PASS**
 
 ## Bằng chứng và giới hạn của kết luận
 
