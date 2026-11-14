@@ -355,7 +355,7 @@ def test_the_confirmed_reason_is_the_one_that_was_asked() -> None:
 
 
 # --- The customer is never left with a statement after a tool asked for more -------------------------
-from shopagent.agent.slot_guard import unasked_missing_slots  # noqa: E402
+from shopagent.agent.turn_checks import unasked_missing_slots  # noqa: E402
 
 _MISSING_REASON = {"tool": "check_return_eligibility", "args": {}, "result": {"error_code": "MISSING_SLOT", "slot": "reason_code"}}
 _OK_CHECK = {"tool": "check_return_eligibility", "args": {}, "result": {"eligible": True}}
@@ -386,7 +386,7 @@ def test_a_yes_to_any_closed_question_that_states_the_reason_grounds_it() -> Non
 
 
 # --- A question about the reason must use words the guard can tie a yes to; a stuck slot is detected ---
-from shopagent.agent.slot_guard import stuck_slot  # noqa: E402
+from shopagent.agent.turn_checks import stuck_slot  # noqa: E402
 
 
 @pytest.mark.parametrize(
@@ -411,7 +411,7 @@ def test_a_slot_reported_missing_twice_is_stuck_until_something_resolves_it() ->
 
 # --- Refusals carry what to do next, and the same one twice is detected ------------------------------------
 from shopagent.agent.recovery import NEXT_STEP, refusal_code, with_recovery  # noqa: E402
-from shopagent.agent.slot_guard import stuck_refusal  # noqa: E402
+from shopagent.agent.turn_checks import stuck_refusal  # noqa: E402
 
 
 def test_a_known_refusal_gets_a_next_step_and_nothing_else_is_touched() -> None:

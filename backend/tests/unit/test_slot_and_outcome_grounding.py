@@ -301,7 +301,7 @@ def test_an_ambiguous_order_lists_the_candidates() -> None:
     assert result is not None and result["candidates"] == list(_TWO)
 
 
-from shopagent.agent.slot_guard import unasked_missing_slots  # noqa: E402
+from shopagent.agent.turn_checks import unasked_missing_slots  # noqa: E402
 
 _AMBIGUOUS = {"tool": "check_return_eligibility", "args": {},
               "result": {"error_code": "MISSING_SLOT", "slot": "order_code", "candidates": list(_TWO)}}

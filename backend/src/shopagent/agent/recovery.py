@@ -4,7 +4,7 @@ A domain refusal (exchange to the same variant, a return past its window, an ord
 cancelled) is information, not a dead end: the model should explain it and offer the way forward. Left alone it
 tends to retry with the same arguments, search the policy over and over, or ask the customer for things that do
 not change the answer. Each known code therefore carries a `next_step`, and the loop stops the tools when the same
-refusal repeats (agent/slot_guard.py: stuck_refusal), and the answer must cite the policy behind a refusal
+refusal repeats (agent/turn_checks.py: stuck_refusal), and the answer must cite the policy behind a refusal
 (agent/tool_requirements.py: refusal_requirements).
 """
 

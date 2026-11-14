@@ -19,7 +19,18 @@ core: được mọi tầng dùng (Principal, cấu hình, đồng hồ, bảo m
 
 `load_context` -> `screen_input` -> `agent` (vòng gọi tool có hạn mức) -> `verify_output` -> `persist_emit`. Văn bản của trợ lý chỉ được phát sau `verify_output`.
 
-Trong node `agent`, các guard xác định chạy ngoài LLM: `tool_requirements` (tool bắt buộc), `slot_guard` (tham số phải có nguồn trong hội thoại hoặc tool), `proposal_guard` (không đề xuất trùng), `grounding` (số liệu và tuyên bố hoàn tất phải có bằng chứng từ tool thành công). Trạng thái lượt: `completed`, `synthesized`, `requirements_unmet`, `degraded`. Xem [ADR 022](adr/022-D22-agent-turn-control.md).
+`load_context` đọc lại từ cơ sở dữ liệu mỗi lượt: đơn gần đây, thẻ đang chờ, thẻ khách đã xác nhận và phiếu hỗ trợ đang mở, nên agent biết những gì đã xảy ra qua API chứ không chỉ qua công cụ.
+
+Trong node `agent`, các guard xác định chạy ngoài LLM:
+
+- `tool_requirements`: tool bắt buộc theo câu của khách (mã đơn thì phải tra đơn, câu hỏi chính sách thì phải tra chính sách), và sau một lời từ chối nghiệp vụ thì phải có điều khoản.
+- `slot_guard`: mỗi tham số của một lần gọi tool phải có căn cứ: đơn do khách chọn, sản phẩm lấy từ `get_order`, lý do khách nói hoặc trích nguyên văn (`reason_quote`), đổi hàng chỉ khi khách xin đổi, SKU đổi lấy từ `check_variant_stock`.
+- `turn_checks`: nhìn cả lượt: thông tin bị báo thiếu hai lần hoặc lời từ chối lặp lại thì tắt tool và hỏi khách; bản nháp phải hỏi khách khi còn thiếu thông tin, và phải hỏi khách chọn đơn thay vì đoán.
+- `recovery`: gắn `next_step` cho mỗi lời từ chối đã biết, để model giải thích và đưa hướng thay thế.
+- `proposal_guard`: không tạo đề xuất trùng.
+- `grounding` (dùng cả trong `verify_output`): số tiền, mã đơn, trích dẫn và mọi tuyên bố "đã xong" phải có bằng chứng từ tool thành công hoặc từ thẻ khách đã xác nhận.
+
+Trạng thái lượt: `completed`, `synthesized`, `requirements_unmet`, `degraded`. Xem [ADR 022](adr/022-D22-agent-turn-control.md).
 
 ## Vòng đời một hành động ghi
 
@@ -109,7 +120,7 @@ Hai bước. Bước lấy ứng viên là hybrid: BM25 trên điều khoản (c
 
 ```
 backend/src/shopagent/
-  agent/    đồ thị LangGraph, tool, guard (tool_requirements, slot_guard, grounding), checkpoint
+  agent/    đồ thị LangGraph, tool, guard (tool_requirements, slot_guard, turn_checks, recovery, grounding), checkpoint
   api/      router, schema, dependency, health
   core/     Principal, cấu hình, đồng hồ tiêm được
   domain/   nghiệp vụ, policy engine, tính tiền hoàn

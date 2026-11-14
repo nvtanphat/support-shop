@@ -32,9 +32,6 @@ from shopagent.agent.slot_guard import (
     find_ungrounded_slot,
     recent_order_codes,
     serialize_result,
-    stuck_refusal,
-    stuck_slot,
-    unasked_missing_slots,
 )
 from shopagent.agent.state import AgentState
 from shopagent.agent.tool_requirements import (
@@ -48,6 +45,7 @@ from shopagent.agent.tool_requirements import (
     unretrieved_citations,
 )
 from shopagent.agent.tools.registry import ToolRegistry
+from shopagent.agent.turn_checks import stuck_refusal, stuck_slot, unasked_missing_slots
 from shopagent.core.config import get_models_config
 from shopagent.core.principal import Principal
 from shopagent.core.text import extract_text_content
