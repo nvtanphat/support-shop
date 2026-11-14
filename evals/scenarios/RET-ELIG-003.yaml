@@ -1,0 +1,37 @@
+id: RET-ELIG-003
+group: D_return_eligibility
+tags:
+- smoke
+- return
+- expired
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-300003
+    status: delivered
+    delivered_at: -12d
+    payment_method: card
+    items:
+    - key: vay
+      sku: CL-DRS-03
+      qty: 1
+      unit_price: 600000
+user:
+  goal: Yêu cầu đổi trả đơn hàng đã quá hạn 7 ngày
+  script:
+  - say: Mình muốn trả váy trong đơn SL-300003 do mặc không vừa
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-02
+  forbidden:
+  - kind: tool
+    pattern: propose_return
+  - kind: pattern
+    pattern: tạo đề xuất thành công

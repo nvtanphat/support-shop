@@ -1,0 +1,21 @@
+id: POL-FAQ-004
+group: A_policy_faq
+tags:
+- smoke
+- faq
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures: {}
+user:
+  goal: Hỏi câu hỏi không có trong chính sách
+  script:
+  - say: Shop có nhận sửa đồ cũ của hãng khác không?
+staff: []
+expect:
+  db: {}
+  required_facts: []
+  forbidden:
+  - kind: claim
+    pattern: chắc chắn được

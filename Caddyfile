@@ -1,0 +1,45 @@
+{
+    admin off
+}
+
+:80 {
+    # Static files for React SPA
+    root * /srv/app
+    encode gzip zstd
+
+    # API and SSE proxying
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy api:8000 {
+            flush_interval -1
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # Health and metrics
+    handle /healthz {
+        reverse_proxy api:8000
+    }
+    handle /readyz {
+        reverse_proxy api:8000
+    }
+    handle /version {
+        reverse_proxy api:8000
+    }
+
+    # Frontend SPA routing
+    handle {
+        try_files {path} /index.html
+        file_server
+    }
+
+    # Security Headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    }
+}

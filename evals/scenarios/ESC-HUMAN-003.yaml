@@ -1,0 +1,28 @@
+id: ESC-HUMAN-003
+group: G_escalation
+tags:
+- smoke
+- escalation
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders: []
+user:
+  goal: Khách hàng yêu cầu chuyển gặp nhân viên tổng đài
+  script:
+  - say: Cho mình gặp nhân viên tư vấn trực tiếp với, mình có vấn đề cần giải quyết gấp
+staff: []
+expect:
+  db:
+    tickets:
+    - priority: high
+  required_facts:
+  - kind: pattern
+    value: chuyên viên
+  forbidden:
+  - kind: pattern
+    pattern: không hỗ trợ
+  required_tools:
+  - escalate_to_human

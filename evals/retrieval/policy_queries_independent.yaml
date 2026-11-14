@@ -1,0 +1,89 @@
+# Independent retrieval benchmark for the Vietnamese policy index.
+#
+# Ground truth is the clause a human support agent would cite, decided from the policy meaning and
+# not from clause wording; queries deliberately avoid copying clause phrasing. `split` separates
+# the calibration set (used only to pick the unsupported-query threshold) from the test set.
+#
+# expected: clause ids that together answer the query (all must be retrieved for full credit);
+#           an empty list means the policy does not cover it and nothing should be presented.
+# as_of:    optional ISO time for temporal cases (see `temporal_clauses` below).
+
+temporal_clauses:
+  # A superseded version of the change-of-mind rule that conflicts with the current one (14 vs 7 days).
+  - clause_id: POL-RETURN-02
+    version: "2026-01-01"
+    effective_from: "2026-01-01T00:00:00+07:00"
+    effective_to: "2026-11-01T00:00:00+07:00"
+    text: "Chính sách đổi trả do khách hàng đổi ý không còn nhu cầu (phiên bản cũ). Thời hạn yêu cầu: trong vòng 14 ngày kể từ khi nhận hàng. Hàng phải chưa qua sử dụng, còn nguyên tem mác và hộp. Phí vận chuyển chiều về do khách hàng thanh toán."
+    topic: return
+
+queries:
+  # ---- paraphrase: same intent, different words
+  - {id: P01, kind: paraphrase, split: test, q: "Mua về xài thử thấy không hợp, gửi lại shop được tới ngày thứ mấy?", expected: [POL-RETURN-02]}
+  - {id: P02, kind: paraphrase, split: test, q: "Áo giặt lần đầu đã bung chỉ, tôi có được trả không và ai trả tiền ship?", expected: [POL-RETURN-01]}
+  - {id: P03, kind: paraphrase, split: dev, q: "Nhận nhầm màu khác với đơn đặt, xử lý thế nào ạ?", expected: [POL-RETURN-01]}
+  - {id: P04, kind: paraphrase, split: test, q: "Quần lót mới mua nhưng ưng không, có trả lại được hông?", expected: [POL-RETURN-03]}
+  - {id: P05, kind: paraphrase, split: test, q: "Đơn chưa thanh toán xong thì tôi tự bỏ đơn được chứ?", expected: [POL-CANCEL-01]}
+  - {id: P06, kind: paraphrase, split: dev, q: "Kiện hàng đã giao cho shipper rồi còn rút lại đơn được không?", expected: [POL-CANCEL-01]}
+  - {id: P07, kind: paraphrase, split: test, q: "Tiền trả hàng về thẻ Visa mất khoảng bao lâu?", expected: [POL-REFUND-01]}
+  - {id: P08, kind: paraphrase, split: test, q: "Số tiền trả lại bao nhiêu thì cần sếp duyệt mới chuyển?", expected: [POL-REFUND-02]}
+  - {id: P09, kind: paraphrase, split: dev, q: "Đã được duyệt trả hàng thì phải gửi ra bưu điện chậm nhất khi nào?", expected: [POL-RETURN-04]}
+  - {id: P10, kind: paraphrase, split: test, q: "Muốn lấy size lớn hơn cho cái áo vừa mua thì làm sao?", expected: [POL-EXCHANGE-01]}
+  - {id: P11, kind: paraphrase, split: test, q: "Đổi lần hai cùng một món có được không?", expected: [POL-EXCHANGE-01]}
+  - {id: P12, kind: paraphrase, split: test, q: "Đặt hôm nay thì mấy hôm nữa hàng tới nhà?", expected: [POL-SHIP-01]}
+  - {id: P13, kind: paraphrase, split: dev, q: "Bấm xác nhận trễ quá thì yêu cầu có còn hiệu lực không?", expected: [POL-GENERAL-01]}
+  - {id: P14, kind: paraphrase, split: test, q: "Ở ngoài Hà Nội ship về mất lâu hơn nội thành đúng không?", expected: [POL-SHIP-01]}
+  - {id: P15, kind: paraphrase, split: test, q: "Món sale cuối mùa mà mua nhầm có hoàn lại được không?", expected: [POL-RETURN-03]}
+  - {id: P16, kind: paraphrase, split: test, q: "Phải chụp bao nhiêu ảnh để chứng minh hàng hỏng?", expected: [POL-RETURN-01]}
+  # ---- teen code / slang
+  - {id: S01, kind: slang, split: test, q: "ship ko z shop, hàng lỗi mà bắt mik chịu phí ts", expected: [POL-RETURN-01]}
+  - {id: S02, kind: slang, split: test, q: "đổi ý thoy có trả dc k a, trả trong mấy hôm", expected: [POL-RETURN-02]}
+  - {id: S03, kind: slang, split: dev, q: "hủy đơn lẹ cái, đơn mới đặt chưa đóng gói nè", expected: [POL-CANCEL-01]}
+  - {id: S04, kind: slang, split: test, q: "tiền hoàn bao giờ về momo vậy shop", expected: [POL-REFUND-01]}
+  - {id: S05, kind: slang, split: test, q: "áo chật quá đổi sz dc hok", expected: [POL-EXCHANGE-01]}
+  - {id: S06, kind: slang, split: test, q: "hàng xả kho mua rồi hối hận trả đc ko shop ơi", expected: [POL-RETURN-03]}
+  - {id: S07, kind: slang, split: dev, q: "đơn của mik ship mấy ngày v ad", expected: [POL-SHIP-01]}
+  - {id: S08, kind: slang, split: test, q: "quá hạn gửi hàng trả thì sao, bị huỷ luôn hả", expected: [POL-RETURN-04]}
+  # ---- typos
+  - {id: T01, kind: typo, split: test, q: "hang bi loi do nha san xuat toi muon doi tra trog may ngay", expected: [POL-RETURN-01]}
+  - {id: T02, kind: typo, split: test, q: "chinh sach hoan tine vi dien tu bao lau", expected: [POL-REFUND-01]}
+  - {id: T03, kind: typo, split: dev, q: "huy don hnag khi dang dong goi co duoc ko", expected: [POL-CANCEL-01]}
+  - {id: T04, kind: typo, split: test, q: "đổi hàng khac size còn tồn khoo không", expected: [POL-EXCHANGE-01]}
+  - {id: T05, kind: typo, split: test, q: "trả hàng đổ lót có đượ k", expected: [POL-RETURN-03]}
+  - {id: T06, kind: typo, split: test, q: "thới gian giao hnag là bao lâu", expected: [POL-SHIP-01]}
+  # ---- unaccented, conversational
+  - {id: U01, kind: unaccented, split: test, q: "toi muon tra do vi khong thich nua thi phi ship ai chiu", expected: [POL-RETURN-02]}
+  - {id: U02, kind: unaccented, split: test, q: "hoan tien tren 2 trieu thi ai duyet", expected: [POL-REFUND-02]}
+  - {id: U03, kind: unaccented, split: dev, q: "don dang tren duong giao co huy duoc khong", expected: [POL-CANCEL-01]}
+  - {id: U04, kind: unaccented, split: test, q: "mot mon do doi size duoc may lan", expected: [POL-EXCHANGE-01]}
+  - {id: U05, kind: unaccented, split: test, q: "tien ve the tin dung mat bao nhieu ngay lam viec", expected: [POL-REFUND-01]}
+  - {id: U06, kind: unaccented, split: test, q: "yeu cau tra hang duoc duyet roi toi da may ngay phai gui", expected: [POL-RETURN-04]}
+  # ---- multi-intent: every listed clause is needed
+  - {id: M01, kind: multi_intent, split: test, q: "Hủy đơn đã thanh toán ví rồi thì bao giờ tiền về?", expected: [POL-CANCEL-01, POL-REFUND-01]}
+  - {id: M02, kind: multi_intent, split: test, q: "Áo bị lỗi mình muốn trả, tiền hoàn mấy ngày về tài khoản ngân hàng?", expected: [POL-RETURN-01, POL-REFUND-01]}
+  - {id: M03, kind: multi_intent, split: test, q: "Đổi ý trả hàng thì được hoàn tiền thế nào và gửi hàng về trong bao lâu?", expected: [POL-RETURN-02, POL-RETURN-04]}
+  - {id: M04, kind: multi_intent, split: dev, q: "Muốn đổi size khác, nếu đã đổi một lần rồi thì có trả hàng đổi ý được không?", expected: [POL-EXCHANGE-01, POL-RETURN-02]}
+  - {id: M05, kind: multi_intent, split: test, q: "Hoàn trên 500 nghìn ai duyệt và duyệt xong bao lâu nhận tiền?", expected: [POL-REFUND-02, POL-REFUND-01]}
+  - {id: M06, kind: multi_intent, split: test, q: "Đồ lót lỗi do nhà sản xuất có được trả không, còn nếu chỉ không thích thì sao?", expected: [POL-RETURN-01, POL-RETURN-03]}
+  # ---- out of domain: the policy says nothing; nothing should be presented as authoritative
+  - {id: O01, kind: out_of_domain, split: test, q: "Hôm nay thời tiết Sài Gòn thế nào?", expected: []}
+  - {id: O02, kind: out_of_domain, split: test, q: "Giá bitcoin bây giờ là bao nhiêu?", expected: []}
+  - {id: O03, kind: out_of_domain, split: dev, q: "Cách nấu phở bò ngon tại nhà", expected: []}
+  - {id: O04, kind: out_of_domain, near_topic: true, split: test, q: "Shop có hỗ trợ trả góp thẻ tín dụng không?", expected: []}
+  - {id: O05, kind: out_of_domain, split: test, q: "Cửa hàng đang tuyển nhân viên bán hàng không?", expected: []}
+  - {id: O06, kind: out_of_domain, split: dev, q: "Iphone 16 giá bao nhiêu tiền", expected: []}
+  - {id: O07, kind: out_of_domain, split: test, q: "Viết giúp tôi một bài thơ về mùa thu", expected: []}
+  - {id: O08, kind: out_of_domain, split: test, q: "Ai là tổng thống nước Mỹ hiện nay", expected: []}
+  - {id: O09, kind: out_of_domain, split: test, q: "Mật khẩu wifi tại cửa hàng là gì", expected: []}
+  - {id: O10, kind: out_of_domain, near_topic: true, split: test, q: "Làm sao đăng ký làm đại lý bán hàng cho shop", expected: []}
+  - {id: O11, kind: out_of_domain, near_topic: true, split: dev, q: "Shop có chương trình tặng quà sinh nhật không", expected: []}
+  - {id: O12, kind: out_of_domain, near_topic: true, split: test, q: "Bảo hành điện thoại bao lâu", expected: []}
+  - {id: O13, kind: out_of_domain, split: test, q: "tỷ giá đô la hôm nay", expected: []}
+  - {id: O14, kind: out_of_domain, split: test, q: "dich giup toi cau hello sang tieng viet", expected: []}
+  - {id: O15, kind: out_of_domain, split: test, q: "sua xe may o dau tot", expected: []}
+  - {id: O16, kind: out_of_domain, near_topic: true, split: test, q: "Shop có nhận sửa đồ cũ của hãng khác không?", expected: []}
+  # ---- temporal: an expired, conflicting version must not win; version is part of the answer
+  - {id: V01, kind: temporal, split: test, q: "đổi ý muốn trả hàng thì được trong bao nhiêu ngày", as_of: "2026-06-01T10:00:00+07:00", expected: [POL-RETURN-02], expected_version: "2026-01-01"}
+  - {id: V02, kind: temporal, split: test, q: "đổi ý muốn trả hàng thì được trong bao nhiêu ngày", as_of: "2026-11-12T10:00:00+07:00", expected: [POL-RETURN-02], expected_version: "2026-11-01"}
+  - {id: V03, kind: temporal, split: test, q: "mua rồi không thích nữa trả lại trong mấy ngày", as_of: "2026-03-15T09:00:00+07:00", expected: [POL-RETURN-02], expected_version: "2026-01-01"}
+  - {id: V04, kind: temporal, split: test, q: "mua rồi không thích nữa trả lại trong mấy ngày", as_of: "2026-12-01T09:00:00+07:00", expected: [POL-RETURN-02], expected_version: "2026-11-01"}

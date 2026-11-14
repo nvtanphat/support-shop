@@ -1,0 +1,39 @@
+id: ORD-LOOK-002
+group: B_order_lookup
+tags:
+- smoke
+- lookup
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-100002
+    status: delivered
+    delivered_at: -2d
+    payment_method: ewallet
+    items:
+    - key: giay
+      sku: TS-GIAY-02
+      qty: 1
+      unit_price: 500000
+user:
+  goal: Tra cứu đơn hàng đã giao SL-100002
+  script:
+  - say: Đơn SL-100002 của mình giao tới chưa?
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-100002
+      status: delivered
+  required_facts:
+  - kind: status
+    value: delivered
+  forbidden: []
+  required_tools:
+  - get_order
+  required_tool_args:
+    get_order:
+      order_code: SL-100002

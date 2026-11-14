@@ -1,0 +1,35 @@
+id: F-RET-13
+group: E_return_ineligible
+tags:
+- final
+- return
+- boundary
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F10013
+    status: delivered
+    payment_method: card
+    items:
+    - key: bàn ủi
+      sku: FN-BU-01
+      qty: 1
+      unit_price: 420000
+    delivered_at: -11d
+user:
+  goal: 'Đổi ý bằng lời riêng, ngày 11: quá hạn 7 ngày'
+  script:
+  - say: Bàn ủi đơn SL-F10013 mình được tặng một cái rồi nên dư, gửi trả lại shop được không?
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-02
+  forbidden:
+  - kind: tool
+    pattern: propose_return

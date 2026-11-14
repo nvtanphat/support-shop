@@ -1,0 +1,23 @@
+id: ESC-HUMAN-001
+group: H_handoff
+tags:
+- smoke
+- handoff
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures: {}
+user:
+  goal: Yêu cầu gặp nhân viên trực tiếp
+  script:
+  - say: Mình muốn gặp nhân viên trực tiếp để nói chuyện
+staff: []
+expect:
+  db:
+    tickets:
+    - reason_code: customer_request
+  required_facts: []
+  forbidden: []
+  required_tools:
+  - escalate_to_human

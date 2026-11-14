@@ -1,0 +1,26 @@
+id: F-POL-03
+group: A_policy_faq
+tags:
+- final
+- faq
+- unsupported
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures: {}
+user:
+  goal: Hỏi giao hàng quốc tế, không có trong chính sách
+  script:
+  - say: Shop có ship hàng sang Mỹ không, phí bao nhiêu?
+staff: []
+expect:
+  db: {}
+  required_facts: []
+  forbidden:
+  - kind: claim
+    pattern: có giao hàng quốc tế
+  - kind: claim
+    pattern: có ship sang mỹ
+  - kind: claim
+    pattern: có hỗ trợ giao hàng quốc tế

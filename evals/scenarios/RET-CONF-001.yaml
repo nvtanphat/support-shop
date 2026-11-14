@@ -1,0 +1,58 @@
+id: RET-CONF-001
+group: S_slots
+tags:
+- slots
+- multi_turn
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-720001
+    status: delivered
+    delivered_at: -2d
+    payment_method: card
+    items:
+    - key: tainghe
+      sku: TS-TN-01
+      qty: 1
+      unit_price: 690000
+user:
+  goal: Mô tả sự cố bằng từ không có trong danh sách, xác nhận khi agent hỏi lại
+  script:
+  - say: Tai nghe đơn SL-720001 bị chập chờn một bên, mình muốn trả hàng
+  - when_asked: confirm_reason
+    say: Đúng rồi
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Xác nhận giúp mình
+staff:
+- when_event: approval.created
+  gate: A_return
+  decision: approve
+  role: agent
+expect:
+  db:
+    return_requests:
+    - order: SL-720001
+      reason_code: defective
+      status: awaiting_return
+    approval_requests:
+    - gate: A_return
+      status: approved
+  required_facts: []
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - [check_return_eligibility, propose_return]
+  required_tool_args:
+    propose_return:
+      order_code: SL-720001
+      reason_code: defective

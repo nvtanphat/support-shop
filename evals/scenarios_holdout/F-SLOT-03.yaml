@@ -1,0 +1,39 @@
+id: F-SLOT-03
+group: S_slots
+tags:
+- final
+- slots
+- multi_item
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F20003
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: đèn bàn
+      sku: FN-DB-01
+      qty: 1
+      unit_price: 230000
+    - key: ổ cắm
+      sku: FN-OC-01
+      qty: 1
+      unit_price: 120000
+    delivered_at: -3d
+user:
+  goal: Đơn hai món, có món lỗi, chưa nói món nào
+  script:
+  - say: Đơn SL-F20003 có món bị lỗi, mình muốn trả
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: asks_for
+    value: item
+  forbidden:
+  - kind: tool
+    pattern: propose_return

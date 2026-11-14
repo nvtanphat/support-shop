@@ -1,0 +1,35 @@
+id: G-ORD-02
+group: B_order_lookup
+tags:
+- final2
+- lookup
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures:
+  orders:
+  - code: SL-G40002
+    status: out_for_delivery
+    payment_method: ewallet
+    items:
+    - key: nồi lẩu điện
+      sku: G-002
+      qty: 1
+      unit_price: 690000
+user:
+  goal: Hỏi trạng thái đơn out_for_delivery
+  script:
+  - say: Hôm nay đơn SL-G40002 có tới không shop?
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-G40002
+      status: out_for_delivery
+  required_facts:
+  - kind: status
+    value: out_for_delivery
+  forbidden: []
+  required_tools:
+  - get_order

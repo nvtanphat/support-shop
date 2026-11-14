@@ -1,0 +1,52 @@
+id: G-RET-01
+group: B_return_eligible
+tags:
+- final2
+- return
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures:
+  orders:
+  - code: SL-G10001
+    status: delivered
+    payment_method: card
+    items:
+    - key: sneaker
+      sku: G-SNK-01
+      qty: 1
+      unit_price: 520000
+    delivered_at: -3d
+user:
+  goal: 'Đổi ý ngày 3: hoàn 520.000 - 30.000'
+  script:
+  - say: Đôi sneaker đơn SL-G10001 mình đi thử thấy chật, trả lại được không shop
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Xác nhận nhé
+staff: []
+expect:
+  db:
+    return_requests:
+    - order: SL-G10001
+      reason_code: change_of_mind
+      status: awaiting_return
+  required_facts:
+  - kind: amount_vnd
+    value: 490000
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-G10001
+      reason_code: change_of_mind

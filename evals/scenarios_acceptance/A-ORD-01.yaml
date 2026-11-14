@@ -1,0 +1,35 @@
+id: A-ORD-01
+group: B_order_lookup
+tags:
+- acceptance
+- lookup
+clock: '2026-11-24T09:00:00+07:00'
+principal:
+  type: customer
+  email: acceptance.customer@example.test
+fixtures:
+  orders:
+  - code: SL-A40001
+    status: out_for_delivery
+    payment_method: ewallet
+    items:
+    - key: máy hút bụi
+      sku: A-MHB-01
+      qty: 1
+      unit_price: 1490000
+user:
+  goal: Đơn đang giao tới khách
+  script:
+  - say: Đơn SL-A40001 bao giờ tới vậy shop?
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-A40001
+      status: out_for_delivery
+  required_facts:
+  - kind: status
+    value: out_for_delivery
+  forbidden: []
+  required_tools:
+  - get_order

@@ -1,0 +1,62 @@
+id: A-RET-06
+group: B_return_eligible
+tags:
+- acceptance
+- return
+clock: '2026-11-24T09:00:00+07:00'
+principal:
+  type: customer
+  email: acceptance.customer@example.test
+fixtures:
+  orders:
+  - code: SL-A10006
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: bộ ly thủy tinh
+      sku: A-BL-01
+      qty: 1
+      unit_price: 360000
+    delivered_at: -1d
+user:
+  goal: Vỡ khi vận chuyển, nhân viên duyệt
+  script:
+  - say: Hộp giao tới bị bể, bộ ly bên trong vỡ mất hai cái, đơn SL-A10006. Mình muốn
+      trả
+  - when_asked: confirm_reason
+    say: Đúng rồi
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Mình xác nhận
+staff:
+- when_event: approval.created
+  gate: A_return
+  decision: approve
+  role: agent
+expect:
+  db:
+    return_requests:
+    - order: SL-A10006
+      reason_code: damaged_in_transit
+      status: awaiting_return
+    approval_requests:
+    - gate: A_return
+      status: approved
+  required_facts:
+  - kind: amount_vnd
+    value: 360000
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-A10006
+      reason_code: damaged_in_transit

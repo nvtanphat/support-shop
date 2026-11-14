@@ -1,0 +1,37 @@
+id: G-RET-05
+group: E_return_ineligible
+tags:
+- final2
+- return
+- excluded
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures:
+  orders:
+  - code: SL-G10005
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: quần lót
+      sku: G-QL-01
+      qty: 1
+      unit_price: 150000
+      flags:
+      - hygiene
+    delivered_at: -2d
+user:
+  goal: 'Đồ lót, đổi ý: loại trừ'
+  script:
+  - say: Quần lót đơn SL-G10005 mặc không vừa, trả được không?
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-03
+  forbidden:
+  - kind: tool
+    pattern: propose_return

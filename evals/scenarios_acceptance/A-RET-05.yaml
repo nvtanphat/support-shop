@@ -1,0 +1,61 @@
+id: A-RET-05
+group: B_return_eligible
+tags:
+- acceptance
+- return
+clock: '2026-11-24T09:00:00+07:00'
+principal:
+  type: customer
+  email: acceptance.customer@example.test
+fixtures:
+  orders:
+  - code: SL-A10005
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: bàn phím cơ
+      sku: A-BP-01
+      qty: 1
+      unit_price: 850000
+    delivered_at: -12d
+user:
+  goal: Hàng lỗi ngày 12, nhân viên duyệt
+  script:
+  - say: Bàn phím đơn SL-A10005 bị liệt mấy phím rồi, mình muốn trả
+  - when_asked: confirm_reason
+    say: Đúng vậy
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Mình xác nhận
+staff:
+- when_event: approval.created
+  gate: A_return
+  decision: approve
+  role: agent
+expect:
+  db:
+    return_requests:
+    - order: SL-A10005
+      reason_code: defective
+      status: awaiting_return
+    approval_requests:
+    - gate: A_return
+      status: approved
+  required_facts:
+  - kind: amount_vnd
+    value: 850000
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-A10005
+      reason_code: defective

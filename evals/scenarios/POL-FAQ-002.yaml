@@ -1,0 +1,25 @@
+id: POL-FAQ-002
+group: A_policy_faq
+tags:
+- smoke
+- faq
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures: {}
+user:
+  goal: Hỏi về phí đổi trả khi đổi ý
+  script:
+  - say: Nếu mình không thích và muốn trả hàng thì mất phí bao nhiêu?
+staff: []
+expect:
+  db: {}
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-02
+  - kind: amount_vnd
+    value: 30000
+  forbidden: []
+  required_tools:
+  - search_policy

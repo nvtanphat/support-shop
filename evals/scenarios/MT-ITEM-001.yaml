@@ -1,0 +1,60 @@
+id: MT-ITEM-001
+group: S_slots
+tags:
+- multi_turn
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: ctx.customer@example.test
+fixtures:
+  orders:
+  - code: SL-710001
+    status: delivered
+    delivered_at: -2d
+    payment_method: ewallet
+    items:
+    - key: ao
+      sku: TS-AO-S-XANH
+      qty: 1
+      unit_price: 250000
+  - code: SL-710002
+    status: delivered
+    delivered_at: -5d
+    payment_method: ewallet
+    items:
+    - key: ao
+      sku: TS-AO-M-TRANG
+      qty: 1
+      unit_price: 300000
+    - key: quan
+      sku: TS-QUAN-L-DEN
+      qty: 1
+      unit_price: 400000
+user:
+  goal: Trả cái quần (không phải cái áo) trong đơn nhiều sản phẩm
+  script:
+  - say: Mình muốn trả đồ trong đơn SL-710002 vì bị lỗi
+  - say: cái quần
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Xác nhận tạo yêu cầu
+staff: []
+expect:
+  db:
+    return_requests:
+    - order: SL-710002
+      reason_code: defective
+      status: pending_review
+  required_facts:
+  - kind: amount_vnd
+    value: 400000
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - [check_return_eligibility, propose_return]
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền

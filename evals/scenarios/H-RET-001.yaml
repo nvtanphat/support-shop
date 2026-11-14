@@ -1,0 +1,55 @@
+id: H-RET-001
+group: B_return_eligible
+tags:
+- former_holdout
+- paraphrase
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: holdout.customer@example.test
+fixtures:
+  orders:
+  - code: SL-H10001
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: giay
+      sku: HD-GIAY-40
+      qty: 1
+      unit_price: 450000
+    delivered_at: -6d
+user:
+  goal: Đổi ý ngày thứ 6, giày
+  script:
+  - say: Đôi giày đơn SL-H10001 mình đi thấy không hợp lắm, gửi trả lại lấy tiền được
+      không shop?
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Ok mình đồng ý
+staff: []
+expect:
+  db:
+    return_requests:
+    - order: SL-H10001
+      reason_code: change_of_mind
+      status: awaiting_return
+  required_facts:
+  - kind: amount_vnd
+    value: 420000
+  - kind: clause
+    id: POL-RETURN-02
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-H10001
+      reason_code: change_of_mind

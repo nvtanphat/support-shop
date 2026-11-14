@@ -1,0 +1,23 @@
+id: A-POL-01
+group: A_policy_faq
+tags:
+- acceptance
+- faq
+clock: '2026-11-24T09:00:00+07:00'
+principal:
+  type: customer
+  email: acceptance.customer@example.test
+fixtures: {}
+user:
+  goal: Đổi ý được trả trong mấy ngày
+  script:
+  - say: Đổi ý thì được trả hàng trong bao nhiêu ngày?
+staff: []
+expect:
+  db: {}
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-02
+  forbidden: []
+  required_tools:
+  - search_policy

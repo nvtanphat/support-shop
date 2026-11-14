@@ -1,0 +1,40 @@
+id: H-CAN-001
+group: C_cancel
+tags:
+- former_holdout
+- paraphrase
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: holdout.customer@example.test
+fixtures:
+  orders:
+  - code: SL-H20001
+    status: confirmed
+    payment_method: ewallet
+    items:
+    - key: binh
+      sku: HD-BINH-01
+      qty: 1
+      unit_price: 180000
+user:
+  goal: Hủy đơn đã xác nhận, nói kiểu khác
+  script:
+  - say: Thôi mình không lấy nữa, bỏ đơn SL-H20001 giúp mình nha
+  - on_proposal:
+      type: cancel_order
+    do: confirm
+    say: Ừ hủy đi
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-H20001
+      status: cancelled
+  required_facts: []
+  forbidden: []
+  required_tools:
+  - propose_cancel_order
+  required_tool_args:
+    propose_cancel_order:
+      order_code: SL-H20001

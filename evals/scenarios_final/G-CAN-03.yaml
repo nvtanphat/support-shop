@@ -1,0 +1,45 @@
+id: G-CAN-03
+group: C_cancellation
+tags:
+- final2
+- cancel
+- approval
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures:
+  orders:
+  - code: SL-G30003
+    status: packing
+    payment_method: card
+    items:
+    - key: kệ giày
+      sku: G-KG-01
+      qty: 1
+      unit_price: 430000
+user:
+  goal: Đơn đang đóng gói, trưởng ca duyệt hủy
+  script:
+  - say: Mình muốn hủy đơn SL-G30003
+  - on_proposal:
+      type: cancel_order
+    do: confirm
+    say: Gửi yêu cầu
+staff:
+- when_event: approval.created
+  gate: cancel_packing
+  decision: approve
+  role: supervisor
+expect:
+  db:
+    orders:
+    - code: SL-G30003
+      status: cancelled
+    approval_requests:
+    - gate: cancel_packing
+      status: approved
+  required_facts: []
+  forbidden: []
+  required_tools:
+  - propose_cancel_order

@@ -1,0 +1,53 @@
+id: APP-FLOW-001
+group: F_approvals
+tags:
+- smoke
+- approval
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-500001
+    status: delivered
+    delivered_at: -3d
+    payment_method: card
+    items:
+    - key: ao
+      sku: TS-AO-09
+      qty: 1
+      unit_price: 400000
+user:
+  goal: Yêu cầu trả hàng cần nhân viên duyệt
+  script:
+  - say: Mình muốn trả áo đơn SL-500001 do lỗi vải
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Gửi đề xuất
+staff:
+- when_event: approval.created
+  gate: A_return
+  decision: approve
+  role: agent
+expect:
+  db:
+    return_requests:
+    - order: SL-500001
+      status: awaiting_return
+    approval_requests:
+    - gate: A_return
+      status: approved
+  required_facts: []
+  forbidden: []
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - [check_return_eligibility, propose_return]
+  required_tool_args:
+    propose_return:
+      order_code: SL-500001
+      reason_code: defective

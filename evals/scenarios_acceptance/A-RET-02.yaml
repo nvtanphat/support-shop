@@ -1,0 +1,52 @@
+id: A-RET-02
+group: B_return_eligible
+tags:
+- acceptance
+- return
+clock: '2026-11-24T09:00:00+07:00'
+principal:
+  type: customer
+  email: acceptance.customer@example.test
+fixtures:
+  orders:
+  - code: SL-A10002
+    status: delivered
+    payment_method: card
+    items:
+    - key: áo len
+      sku: A-AL-01
+      qty: 1
+      unit_price: 410000
+    delivered_at: -4d
+user:
+  goal: 'Không vừa, muốn trả: 410.000 - 30.000'
+  script:
+  - say: Áo len đơn SL-A10002 mặc không vừa, mình muốn trả
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Mình xác nhận
+staff: []
+expect:
+  db:
+    return_requests:
+    - order: SL-A10002
+      reason_code: change_of_mind
+      status: awaiting_return
+  required_facts:
+  - kind: amount_vnd
+    value: 380000
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-A10002
+      reason_code: change_of_mind

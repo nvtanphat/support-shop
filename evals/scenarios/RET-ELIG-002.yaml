@@ -1,0 +1,53 @@
+id: RET-ELIG-002
+group: D_return_eligible
+tags:
+- smoke
+- return
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-300002
+    status: delivered
+    delivered_at: -3d
+    payment_method: ewallet
+    items:
+    - key: ao
+      sku: TS-AO-06
+      qty: 1
+      unit_price: 300000
+user:
+  goal: Trả hàng do đổi ý
+  script:
+  - say: Mình đổi ý không thích áo đơn SL-300002 nữa nên muốn trả
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Xác nhận trả hàng
+staff: []
+expect:
+  db:
+    return_requests:
+    - order: SL-300002
+      reason_code: change_of_mind
+      status: awaiting_return
+  required_facts:
+  - kind: amount_vnd
+    value: 270000
+  - kind: clause
+    id: POL-RETURN-02
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - [check_return_eligibility, propose_return]
+  required_tool_args:
+    propose_return:
+      order_code: SL-300002
+      reason_code: change_of_mind

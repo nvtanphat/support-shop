@@ -1,0 +1,37 @@
+id: F-RET-07
+group: E_return_ineligible
+tags:
+- former_holdout
+- return
+- boundary
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F10007
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: máy xay
+      sku: FN-MX-01
+      qty: 1
+      unit_price: 350000
+    delivered_at: -9d
+user:
+  goal: 'Đổi ý ngày 9: quá hạn 7 ngày'
+  script:
+  - say: Mua về thấy không cần dùng nữa, đơn SL-F10007 trả được không shop?
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-02
+  forbidden:
+  - kind: tool
+    pattern: propose_return
+  - kind: claim
+    pattern: đã tạo yêu cầu

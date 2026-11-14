@@ -1,0 +1,60 @@
+id: RET-REC-001
+group: S_slots
+tags:
+- slots
+- multi_turn
+- recovery
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-730001
+    status: delivered
+    delivered_at: -2d
+    payment_method: ewallet
+    items:
+    - key: quan
+      sku: TS-QUAN-M
+      qty: 1
+      unit_price: 400000
+user:
+  goal: Giao nhầm hàng, không có phân loại khác để đổi, chuyển sang hoàn tiền
+  script:
+  - say: Shop giao nhầm quần cho mình, đơn SL-730001, mình đặt quần đen mà nhận quần xám
+  - when_asked: hoàn tiền
+    say: Mình lấy hoàn tiền nhé
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Xác nhận
+staff:
+- when_event: approval.created
+  gate: A_return
+  decision: approve
+  role: agent
+expect:
+  db:
+    return_requests:
+    - order: SL-730001
+      reason_code: wrong_item
+      status: awaiting_return
+    approval_requests:
+    - gate: A_return
+      status: approved
+  required_facts: []
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - [check_return_eligibility, propose_return]
+  required_tool_args:
+    propose_return:
+      order_code: SL-730001
+      reason_code: wrong_item
+      resolution: refund

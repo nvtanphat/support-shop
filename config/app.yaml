@@ -1,0 +1,56 @@
+app_name: "ShopLab"
+store_name: "ShopLab"
+timezone: "Asia/Ho_Chi_Minh"
+locale: "vi_VN"
+
+business_hours:
+  days: [1, 2, 3, 4, 5, 6]  # Thứ 2 đến Thứ 7
+  start_hour: 8
+  start_minute: 30
+  end_hour: 21
+  end_minute: 0
+  sla_off_hours_reply: "8:30 sáng ngày làm việc tiếp theo"
+
+retention_days:
+  conversation_days: 180
+  evidence_days: 90
+  audit_log_days: 365
+
+rate_limits:
+  messages_per_minute_user: 20
+  guest_otp_requests_window_minutes: 15
+  guest_otp_requests_max_per_ip: 5
+  guest_otp_requests_max_per_order: 3
+  guest_otp_max_failed_attempts: 5
+
+# Proposal lifetime is a published policy term: see pending_action_ttl_minutes in policy/rules.yaml.
+guest_view_token_ttl_minutes: 30
+
+allowed_link_domains:
+  - "shoplab.test"
+  - "sandbox.vnpayment.vn"
+  - "mailpit.local"
+
+# Cross-encoder reranking of policy lookups, with an unsupported-question threshold.
+# Needs the `rerank` extra and a ~570 MB model, and costs ~2 s per policy lookup on CPU. If it is enabled
+# and cannot load, policy lookups fail loudly instead of falling back to the weaker ranking.
+# min_score: below this best cross-encoder score the question is treated as outside the policy. It was
+# calibrated on evals/retrieval/policy_queries_independent.yaml and then measured once on the untouched
+# policy_queries_holdout.yaml (see docs/eval-report.md); recalibrate with `python -m evals.retrieval.holdout`
+# whenever the model or the clause texts change. Tests turn the reranker off (RETRIEVAL_RERANKER_ENABLED=false).
+retrieval:
+  # Dense half of the hybrid candidate stage (BM25 + embedding, fused by rank); needs `uv sync --extra rerank`.
+  # Without it the stage is BM25 only. Chunks are re-embedded by `index-policies` whenever this model name changes.
+  #   Xenova/bge-m3-int8  int8 BGE-M3: 0.57 GB on disk, about 1.1 GB of RAM (default; as accurate on our benchmark)
+  #   BAAI/bge-m3         full precision: 2.27 GB on disk, about 1.8 GB of RAM
+  embedding:
+    enabled: true
+    model: "Xenova/bge-m3-int8"
+  # Upper bound on the clause text one search_policy call hands to the model (about 3 characters per token).
+  # Clauses are capped at ingestion (rag/documents.py), so this only drops the lowest-ranked ones, never cuts one.
+  max_result_chars: 4000
+  reranker:
+    enabled: true
+    model: "BAAI/bge-reranker-v2-m3-int8"
+    candidates: 10
+    min_score: -4.76

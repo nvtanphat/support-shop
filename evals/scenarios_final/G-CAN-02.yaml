@@ -1,0 +1,36 @@
+id: G-CAN-02
+group: C_cancellation
+tags:
+- final2
+- cancel
+- status
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures:
+  orders:
+  - code: SL-G30002
+    status: shipped
+    payment_method: ewallet
+    items:
+    - key: tai nghe chụp tai
+      sku: G-TNC-01
+      qty: 1
+      unit_price: 990000
+user:
+  goal: 'Đơn đã gửi: không hủy được'
+  script:
+  - say: Đơn SL-G30002 shop gửi rồi nhưng mình muốn huỷ
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-G30002
+      status: shipped
+  required_facts:
+  - kind: clause
+    id: POL-CANCEL-01
+  forbidden:
+  - kind: tool
+    pattern: propose_cancel_order

@@ -1,0 +1,58 @@
+id: F-RET-12
+group: B_return_eligible
+tags:
+- final
+- return
+- discount
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F10012
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: áo len
+      sku: FN-AL-01
+      qty: 1
+      unit_price: 600000
+    - key: khăn choàng
+      sku: FN-KC-01
+      qty: 1
+      unit_price: 400000
+    delivered_at: -2d
+    discount_total: 100000
+user:
+  goal: 'Trả một món của đơn có giảm giá: phân bổ giảm giá rồi trừ phí'
+  script:
+  - say: Đơn SL-F10012 mình muốn trả cái khăn choàng vì đổi ý, không thích màu nữa
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Xác nhận
+staff: []
+expect:
+  db:
+    return_requests:
+    - order: SL-F10012
+      reason_code: change_of_mind
+      status: awaiting_return
+  required_facts:
+  - kind: amount_vnd
+    value: 330000
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-F10012
+      reason_code: change_of_mind

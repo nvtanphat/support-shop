@@ -1,0 +1,39 @@
+id: F-MT-02
+group: S_slots
+tags:
+- final
+- multi_turn
+- change_of_mind
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F60002
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: mũ len
+      sku: FN-ML-01
+      qty: 1
+      unit_price: 180000
+    delivered_at: -2d
+user:
+  goal: Tạo đề xuất trả hàng rồi khách hủy thẻ, giữ lại hàng
+  script:
+  - say: Mình muốn trả cái mũ len đơn SL-F60002 vì không thích nữa
+  - on_proposal:
+      type: return
+    do: cancel
+    say: Thôi mình giữ lại, không trả nữa
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts: []
+  forbidden:
+  - kind: claim
+    pattern: đã tạo yêu cầu
+  - kind: claim
+    pattern: đã hoàn tiền

@@ -1,0 +1,35 @@
+id: G-RET-04
+group: E_return_ineligible
+tags:
+- final2
+- return
+- boundary
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures:
+  orders:
+  - code: SL-G10004
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: đèn ngủ
+      sku: G-DN-01
+      qty: 1
+      unit_price: 210000
+    delivered_at: -8d
+user:
+  goal: 'Đổi ý ngày 8: quá hạn'
+  script:
+  - say: Mình đổi ý không muốn cái đèn đơn SL-G10004 nữa, trả được không?
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-02
+  forbidden:
+  - kind: tool
+    pattern: propose_return

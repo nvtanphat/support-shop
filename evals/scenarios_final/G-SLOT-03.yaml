@@ -1,0 +1,73 @@
+id: G-SLOT-03
+group: S_slots
+tags:
+- final2
+- slots
+- multi_turn
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures:
+  orders:
+  - code: SL-G20031
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: máy sấy tóc du lịch
+      sku: G-MST-DL
+      qty: 1
+      unit_price: 310000
+    delivered_at: -4d
+  - code: SL-G20032
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: máy sấy tóc ion
+      sku: G-MST-IO
+      qty: 1
+      unit_price: 640000
+    delivered_at: -2d
+user:
+  goal: Hai đơn máy sấy, khách chọn đơn khi được hỏi, máy không lên nguồn
+  script:
+  - say: Máy sấy tóc mới mua không lên nguồn luôn, cho mình trả
+  - when_asked: order_code
+    say: Đơn SL-G20032 nha
+  - when_asked: confirm_reason
+    say: Đúng rồi
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Xác nhận
+staff:
+- when_event: approval.created
+  gate: A_return
+  decision: approve
+  role: agent
+expect:
+  db:
+    return_requests:
+    - order: SL-G20032
+      reason_code: defective
+      status: awaiting_return
+    approval_requests:
+    - gate: A_return
+      status: approved
+  required_facts:
+  - kind: asks_for
+    value: order_code
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-G20032
+      reason_code: defective

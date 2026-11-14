@@ -1,0 +1,46 @@
+id: G-SLOT-02
+group: S_slots
+tags:
+- final2
+- slots
+- cancel
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures:
+  orders:
+  - code: SL-G20021
+    status: confirmed
+    payment_method: ewallet
+    items:
+    - key: bàn chải điện
+      sku: G-BCD-01
+      qty: 1
+      unit_price: 520000
+  - code: SL-G20022
+    status: pending_payment
+    payment_method: ewallet
+    items:
+    - key: kem đánh răng
+      sku: G-KDR-01
+      qty: 1
+      unit_price: 90000
+user:
+  goal: Hai đơn hủy được, khách chưa nói đơn nào
+  script:
+  - say: Huỷ đơn giúp em với ạ
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-G20021
+      status: confirmed
+    - code: SL-G20022
+      status: pending_payment
+  required_facts:
+  - kind: asks_for
+    value: order_code
+  forbidden:
+  - kind: tool
+    pattern: propose_cancel_order

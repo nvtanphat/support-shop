@@ -1,0 +1,373 @@
+"""Comprehensive integration tests for FastAPI endpoints."""
+
+from __future__ import annotations
+
+import uuid
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+from shopagent.api.app import app
+from shopagent.api.deps import get_db_session
+from shopagent.core.security import hash_password
+from shopagent.infra.db.tables import (
+    Base,
+    CustomerCredentialsModel,
+    CustomerModel,
+    OrderItemModel,
+    OrderModel,
+    ProductModel,
+    ProductVariantModel,
+    StaffUserModel,
+)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+
+@pytest.fixture
+async def test_app_client():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    # Seed test customer and staff
+    cust_id = uuid.uuid4()
+    staff_id = uuid.uuid4()
+    order_id = uuid.uuid4()
+
+    async with session_factory() as session:
+        cust = CustomerModel(
+            id=cust_id,
+            email="cust1@example.com",
+            phone="0901234567",
+            full_name="Nguyễn Văn A",
+        )
+        creds = CustomerCredentialsModel(
+            customer_id=cust_id,
+            password_hash=hash_password("Pass1234!"),
+        )
+        staff = StaffUserModel(
+            id=staff_id,
+            email="staff1@shoplab.vn",
+            role="agent",
+            full_name="Nhân viên CSKH",
+            password_hash=hash_password("StaffPass123!"),
+        )
+        session.add(cust)
+        session.add(creds)
+        session.add(staff)
+
+        # Order
+        prod = ProductModel(id=uuid.uuid4(), name="Áo thun", category="fashion")
+        var = ProductVariantModel(id=uuid.uuid4(), product_id=prod.id, sku="TS-AO-01", price=250000, stock=10)
+        order = OrderModel(
+            id=order_id,
+            code="SL-TEST01",
+            customer_id=cust_id,
+            status="confirmed",
+            payment_method="card",
+            payment_status="paid",
+            subtotal=250000,
+            discount_total=0,
+            shipping_fee=0,
+            total=250000,
+            paid_amount=250000,
+            refunded_amount=0,
+        )
+        item = OrderItemModel(
+            id=uuid.uuid4(),
+            order_id=order_id,
+            variant_id=var.id,
+            qty=1,
+            unit_price=250000,
+            allocated_discount=0,
+            returned_qty=0,
+            exchanged=False,
+        )
+        session.add(prod)
+        session.add(var)
+        session.add(order)
+        session.add(item)
+        await session.commit()
+
+    async def override_get_db_session():
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+    app.dependency_overrides.clear()
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_health_and_version(test_app_client: AsyncClient):
+    res_h = await test_app_client.get("/healthz")
+    assert res_h.status_code == 200
+    assert res_h.json()["status"] == "ok"
+
+    res_v = await test_app_client.get("/version")
+    assert res_v.status_code == 200
+    assert res_v.json()["version"] == "1.0.0"
+
+
+@pytest.mark.asyncio
+async def test_customer_auth_and_orders(test_app_client: AsyncClient):
+    # 1. Login
+    res_login = await test_app_client.post(
+        "/auth/login",
+        json={"email": "cust1@example.com", "password": "Pass1234!"},
+    )
+    assert res_login.status_code == 200
+    token = res_login.json()["access_token"]
+    assert token
+
+    # 2. Get Orders
+    headers = {"Authorization": f"Bearer {token}"}
+    res_orders = await test_app_client.get("/me/orders", headers=headers)
+    assert res_orders.status_code == 200
+    orders = res_orders.json()["orders"]
+    assert len(orders) == 1
+    assert orders[0]["order_code"] == "SL-TEST01"
+    assert orders[0]["summary_items"] == ["1x Áo thun"]  # the product name, not the SKU
+
+
+@pytest.mark.asyncio
+async def test_staff_login_and_approvals(test_app_client: AsyncClient):
+    res_staff = await test_app_client.post(
+        "/staff/auth/login",
+        json={"email": "staff1@shoplab.vn", "password": "StaffPass123!"},
+    )
+    assert res_staff.status_code == 200
+    data = res_staff.json()
+    assert data["role"] == "agent"
+
+    token = data["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    res_app = await test_app_client.get("/staff/approvals", headers=headers)
+    assert res_app.status_code == 200
+    assert "approvals" in res_app.json()
+
+
+@pytest.mark.asyncio
+async def test_guest_otp_flow(test_app_client: AsyncClient):
+    # 1. Request verification
+    res_req = await test_app_client.post(
+        "/guest/verifications",
+        json={"order_code": "SL-TEST01", "phone": "0901234567"},
+    )
+    assert res_req.status_code == 202
+    data = res_req.json()
+    v_id = data["verification_id"]
+    simulated_otp = data.get("simulated_otp")
+    assert simulated_otp is not None
+
+    # 2. Wrong OTP
+    res_wrong = await test_app_client.post(
+        f"/guest/verifications/{v_id}/otp",
+        json={"otp": "000000"},
+    )
+    assert res_wrong.status_code == 400
+
+    # 3. Correct OTP verification succeeds
+    res_ok = await test_app_client.post(
+        f"/guest/verifications/{v_id}/otp",
+        json={"otp": simulated_otp},
+    )
+    assert res_ok.status_code == 200
+    guest_token = res_ok.json()["guest_token"]
+    assert guest_token is not None
+
+    # 3b. Unauthenticated call to /orders/SL-TEST01 must return 403 Forbidden (P0 data protection)
+    res_unauth = await test_app_client.get("/orders/SL-TEST01")
+    assert res_unauth.status_code == 403
+
+    # 3c. Verified guest with valid grant accesses /orders/SL-TEST01 -> 200 OK
+    res_verified_order = await test_app_client.get(
+        "/orders/SL-TEST01",
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert res_verified_order.status_code == 200
+    assert res_verified_order.json()["order_code"] == "SL-TEST01"
+
+    # 4. Anti-Replay: Attempt to verify same OTP again -> 404 Not Found (invalidated)
+    res_replay = await test_app_client.post(
+        f"/guest/verifications/{v_id}/otp",
+        json={"otp": simulated_otp},
+    )
+    assert res_replay.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_otp_rate_limiting_and_brute_force_protection(test_app_client: AsyncClient):
+    """Test cooldown rate limiting and brute force cancellation."""
+    from shopagent.api.routers.guest import _GUEST_VERIFICATIONS, _RATE_LIMIT_STORE
+    _RATE_LIMIT_STORE.clear()
+    _GUEST_VERIFICATIONS.clear()
+
+    # Rate limit cooldown test: sending request twice for same phone within 60s
+    res1 = await test_app_client.post(
+        "/guest/verifications",
+        json={"order_code": "SL-TEST01", "phone": "0901234567"},
+    )
+    assert res1.status_code == 202
+
+    res_fast_cooldown = await test_app_client.post(
+        "/guest/verifications",
+        json={"order_code": "SL-TEST01", "phone": "0901234567"},
+    )
+    assert res_fast_cooldown.status_code == 429
+
+    # Brute force test: try wrong OTP 5 times -> gets locked with 429
+    v_id = res1.json()["verification_id"]
+    for _i in range(4):
+        r = await test_app_client.post(f"/guest/verifications/{v_id}/otp", json={"otp": "000000"})
+        assert r.status_code == 400
+
+    # 5th attempt must return 429 and terminate session
+    r5 = await test_app_client.post(f"/guest/verifications/{v_id}/otp", json={"otp": "000000"})
+    assert r5.status_code == 429
+
+    # 6th attempt: session was terminated -> 404
+    r6 = await test_app_client.post(f"/guest/verifications/{v_id}/otp", json={"otp": "000000"})
+    assert r6.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_conversation_and_handoff_flow(test_app_client: AsyncClient):
+    # 1. Login
+    res_login = await test_app_client.post(
+        "/auth/login",
+        json={"email": "cust1@example.com", "password": "Pass1234!"},
+    )
+    token = res_login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 2. Create conversation
+    res_conv = await test_app_client.post(
+        "/conversations",
+        json={"channel": "web"},
+        headers=headers,
+    )
+    assert res_conv.status_code == 200
+    conv_id = res_conv.json()["id"]
+
+    # 3. Request human handoff
+    res_handoff = await test_app_client.post(
+        f"/conversations/{conv_id}/handoff",
+        headers=headers,
+    )
+    assert res_handoff.status_code == 200
+    assert res_handoff.json()["status"] == "waiting_human"
+
+    # 4. Staff claims ticket and returns to AI
+    res_staff = await test_app_client.post(
+        "/staff/auth/login",
+        json={"email": "staff1@shoplab.vn", "password": "StaffPass123!"},
+    )
+    staff_token = res_staff.json()["access_token"]
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+
+    res_tickets = await test_app_client.get("/staff/tickets", headers=staff_headers)
+    assert res_tickets.status_code == 200
+    tickets = res_tickets.json()["tickets"]
+    assert len(tickets) >= 1
+    t_id = tickets[0]["id"]
+
+    # Claim ticket
+    res_claim = await test_app_client.post(f"/staff/tickets/{t_id}/claim", headers=staff_headers)
+    assert res_claim.status_code == 200
+    assert res_claim.json()["status"] == "claimed"
+
+    # Return conversation to AI
+    res_return = await test_app_client.post(f"/staff/conversations/{conv_id}/return-to-ai", headers=staff_headers)
+    assert res_return.status_code == 200
+    assert res_return.json()["status"] == "returned_to_ai"
+
+
+@pytest.mark.asyncio
+async def test_conversation_authorization_and_idor_protection(test_app_client: AsyncClient):
+    """Test strict IDOR protection for conversations across guests and authenticated customers."""
+    # 1. Customer A logs in and creates a conversation
+    res_login = await test_app_client.post(
+        "/auth/login",
+        json={"email": "cust1@example.com", "password": "Pass1234!"},
+    )
+    cust_token = res_login.json()["access_token"]
+    cust_headers = {"Authorization": f"Bearer {cust_token}"}
+
+    res_conv_a = await test_app_client.post("/conversations", json={"channel": "web"}, headers=cust_headers)
+    assert res_conv_a.status_code == 200
+    conv_a_id = res_conv_a.json()["id"]
+
+    # 2. Guest attempts to read Customer A's conversation without token -> 403 Forbidden
+    res_unauth_get = await test_app_client.get(f"/conversations/{conv_a_id}")
+    assert res_unauth_get.status_code == 403
+
+    # 3. Guest attempts to send message to Customer A's conversation -> 403 Forbidden
+    res_unauth_post = await test_app_client.post(
+        f"/conversations/{conv_a_id}/messages",
+        json={"content": "Hacker injection message"},
+    )
+    assert res_unauth_post.status_code == 403
+
+    # 4. Guest attempts to open SSE stream of Customer A's conversation -> 403 Forbidden
+    res_unauth_sse = await test_app_client.get(f"/conversations/{conv_a_id}/events")
+    assert res_unauth_sse.status_code == 403
+
+    # 5. Guest creates own conversation and receives secure guest_token
+    res_guest_conv = await test_app_client.post("/conversations", json={"channel": "web"})
+    assert res_guest_conv.status_code == 200
+    guest_conv_data = res_guest_conv.json()
+    guest_conv_id = guest_conv_data["id"]
+    guest_token = guest_conv_data["guest_token"]
+    assert guest_token is not None and len(guest_token) >= 32
+
+    # 6. Another guest with an invalid guest_token attempts to access -> 403 Forbidden
+    res_invalid_token = await test_app_client.get(
+        f"/conversations/{guest_conv_id}",
+        headers={"X-Guest-Token": "invalid_fake_token"},
+    )
+    assert res_invalid_token.status_code == 403
+
+    # 6b. Guest with NO guest token attempts to access guest conversation -> 403 Forbidden
+    res_no_token = await test_app_client.get(f"/conversations/{guest_conv_id}")
+    assert res_no_token.status_code == 403
+
+    # 6c. Guest with NO guest token attempts to access guest SSE -> 403 Forbidden
+    res_no_token_sse = await test_app_client.get(f"/conversations/{guest_conv_id}/events")
+    assert res_no_token_sse.status_code == 403
+
+    # 7. Guest with legitimate guest_token accesses successfully via header and query param -> 200 OK
+    res_valid_token = await test_app_client.get(
+        f"/conversations/{guest_conv_id}",
+        headers={"X-Guest-Token": guest_token},
+    )
+    assert res_valid_token.status_code == 200
+
+    res_valid_query = await test_app_client.get(
+        f"/conversations/{guest_conv_id}?guest_token={guest_token}"
+    )
+    assert res_valid_query.status_code == 200
+
+    # 8. Customer accesses SSE with query token -> 200 OK
+    res_cust_sse_query = await test_app_client.get(
+        f"/conversations/{conv_a_id}/events?token={cust_token}"
+    )
+    assert res_cust_sse_query.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_domain_errors_keep_their_own_http_status(test_app_client: AsyncClient):
+    """A forbidden or missing resource must not be reported as a generic 400."""
+    staff = await test_app_client.post("/staff/auth/login", json={"email": "staff1@shoplab.vn", "password": "StaffPass123!"})
+    headers = {"Authorization": f"Bearer {staff.json()['access_token']}"}
+    forbidden = await test_app_client.get("/me/orders", headers=headers)  # staff have no customer order list
+    assert forbidden.status_code == 403
+    assert forbidden.json()["error"]["code"] == "FORBIDDEN"
+

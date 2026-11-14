@@ -1,0 +1,23 @@
+id: F-POL-01
+group: A_policy_faq
+tags:
+- final
+- faq
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures: {}
+user:
+  goal: Hoàn tiền về thẻ mất bao lâu
+  script:
+  - say: Nếu được hoàn tiền về thẻ ngân hàng thì bao lâu tiền mới về?
+staff: []
+expect:
+  db: {}
+  required_facts:
+  - kind: clause
+    id: POL-REFUND-01
+  forbidden: []
+  required_tools:
+  - search_policy

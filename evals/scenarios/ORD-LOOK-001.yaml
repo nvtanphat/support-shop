@@ -1,0 +1,43 @@
+id: ORD-LOOK-001
+group: B_order_lookup
+tags:
+- smoke
+- lookup
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-100001
+    status: confirmed
+    delivered_at: null
+    payment_method: card
+    items:
+    - key: ao
+      sku: TS-AO-01
+      qty: 1
+      unit_price: 250000
+user:
+  goal: Tra cứu đơn hàng SL-100001
+  script:
+  - say: Cho mình kiểm tra đơn hàng SL-100001 với
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-100001
+      status: confirmed
+  required_facts:
+  - kind: status
+    value: confirmed
+  - kind: amount_vnd
+    value: 250000
+  forbidden:
+  - kind: claim
+    pattern: đã giao
+  required_tools:
+  - get_order
+  required_tool_args:
+    get_order:
+      order_code: SL-100001

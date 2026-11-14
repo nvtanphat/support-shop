@@ -1,0 +1,155 @@
+"""Node 1: load_context - Fetch dynamic context for the turn."""
+
+from __future__ import annotations
+
+import uuid
+from typing import Any
+
+from langchain_core.runnables import RunnableConfig
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from shopagent.agent.state import AgentState
+from shopagent.core.clock import get_clock
+from shopagent.core.config import get_rules_config
+from shopagent.infra.db.tables import (
+    CustomerModel,
+    OrderModel,
+    PendingActionModel,
+    ReturnRequestModel,
+    TicketModel,
+)
+
+
+async def _conversation_outcomes(session: AsyncSession, conversation_id: uuid.UUID) -> dict[str, list[dict[str, Any]]]:
+    """What this conversation already produced, read from the database on every turn.
+
+    The customer confirms a card through the API, not through a tool, so without this the agent has no evidence
+    that the return exists or the order was cancelled, and a ticket from an earlier turn is invisible: true replies
+    were blocked and the customer was handed to staff again. Statuses are read live (staff may have decided since).
+    """
+    confirmed: list[dict[str, Any]] = []
+    actions = (
+        await session.execute(
+            select(PendingActionModel)
+            .where(PendingActionModel.conversation_id == conversation_id, PendingActionModel.status == "confirmed")
+            .order_by(PendingActionModel.presented_at.asc())
+        )
+    ).scalars().all()
+    for act in actions:
+        result = act.result or {}
+        if result.get("return_code"):
+            ret = (
+                await session.execute(select(ReturnRequestModel).where(ReturnRequestModel.code == result["return_code"]))
+            ).scalar_one_or_none()
+            status = ret.status if ret else result.get("status")
+            confirmed.append({"type": act.type, "return_code": result["return_code"], "status": status})
+        elif result.get("order_code"):
+            order = (await session.execute(select(OrderModel).where(OrderModel.code == result["order_code"]))).scalar_one_or_none()
+            status = order.status if order else result.get("status")
+            confirmed.append({"type": act.type, "order_code": result["order_code"], "status": status})
+    tickets = (
+        await session.execute(
+            select(TicketModel)
+            .where(TicketModel.conversation_id == conversation_id, TicketModel.status.in_(["open", "assigned"]))
+            .order_by(TicketModel.created_at.asc())
+        )
+    ).scalars().all()
+    return {"confirmed_actions": confirmed, "open_tickets": [{"code": t.code, "status": t.status} for t in tickets]}
+
+
+async def load_context_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
+    """Load dynamic facts (Principal, tier, pending actions, recent orders, clock)."""
+    session = config.get("configurable", {}).get("session")
+    if not session or not isinstance(session, AsyncSession):
+        raise ValueError("AsyncSession must be provided in config['configurable']['session']")
+    principal = state.get("principal")
+    clock = state.get("clock") or get_clock().now()
+    conv_id = state.get("conversation_id")
+    try:
+        conv_uuid = uuid.UUID(conv_id) if conv_id else None
+    except ValueError:
+        conv_uuid = None
+
+    dynamic_context: dict[str, Any] = {
+        "clock_iso": clock.isoformat(),
+        "role": principal.role.value if principal else "guest",
+        "customer": None,
+        "active_pending_action": None,
+        "recent_orders": [],
+        "conversation_outcomes": {"confirmed_actions": [], "open_tickets": []},
+        "policy_version": str(get_rules_config()["version"]),
+    }
+
+    if principal and principal.is_authenticated_customer and principal.customer_id:
+        stmt = select(CustomerModel).where(CustomerModel.id == principal.customer_id)
+        res = await session.execute(stmt)
+        cust = res.scalar_one_or_none()
+        if cust:
+            dynamic_context["customer"] = {
+                "id": str(cust.id),
+                "full_name": cust.full_name,
+                "tier": cust.tier,
+            }
+
+        # Active pending action in this conversation
+        if conv_uuid is not None:
+            stmt_act = (
+                select(PendingActionModel)
+                .where(
+                    PendingActionModel.conversation_id == conv_uuid,
+                    PendingActionModel.status == "proposed",
+                )
+                .order_by(PendingActionModel.presented_at.desc())
+            )
+            res_act = await session.execute(stmt_act)
+            acts = res_act.scalars().all()
+            for act in acts:
+                act_exp = act.expires_at
+                clock_cmp = clock
+                if act_exp.tzinfo is not None and clock_cmp.tzinfo is None:
+                    clock_cmp = clock_cmp.replace(tzinfo=act_exp.tzinfo)
+                elif act_exp.tzinfo is None and clock_cmp.tzinfo is not None:
+                    act_exp = act_exp.replace(tzinfo=clock_cmp.tzinfo)
+
+                if act_exp > clock_cmp:
+                    dynamic_context["active_pending_action"] = {
+                        "action_id": str(act.id),
+                        "code": str(act.id)[:8],
+                        "type": act.type,
+                        "preview": act.preview,
+                        "preview_hash": act.payload_hash,
+                        "expires_at": act.expires_at.isoformat(),
+                    }
+                    break
+
+        # Recent orders
+        stmt_orders = (
+            select(OrderModel)
+            .where(OrderModel.customer_id == principal.customer_id)
+            .order_by(OrderModel.placed_at.desc())
+            .limit(3)
+        )
+        res_orders = await session.execute(stmt_orders)
+        orders = res_orders.scalars().all()
+        dynamic_context["recent_orders"] = [
+            {"code": o.code, "status": o.status, "total": o.total, "placed_at": o.placed_at.isoformat()}
+            for o in orders
+        ]
+
+    if conv_uuid is not None:
+        dynamic_context["conversation_outcomes"] = await _conversation_outcomes(session, conv_uuid)
+
+    return {
+        "dynamic_context": dynamic_context,
+        "clock": clock,
+        "pending_action": dynamic_context.get("active_pending_action"),
+        # Per-turn outputs are reset so nothing from the previous turn can leak into this one.
+        "retrieved_clauses": [],
+        "tool_calls": [],
+        "turn_status": "incomplete",
+        "unmet_requirements": [],
+        "claim_evidence": {},
+        "verified_output": None,
+        "error": None,
+    }

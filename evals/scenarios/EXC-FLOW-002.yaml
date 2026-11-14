@@ -1,0 +1,33 @@
+id: EXC-FLOW-002
+group: G_exchange
+tags:
+- smoke
+- exchange
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-600002
+    status: delivered
+    delivered_at: -2d
+    payment_method: card
+    items:
+    - key: ao
+      sku: TS-AO-L
+      qty: 1
+      unit_price: 300000
+user:
+  goal: Thử đổi hàng lần 2
+  script:
+  - say: Sản phẩm này mình đã đổi một lần rồi, giờ muốn đổi tiếp được không?
+staff: []
+expect:
+  db: {}
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-01
+  forbidden:
+  - kind: claim
+    pattern: chắc chắn được

@@ -1,0 +1,25 @@
+id: POL-FAQ-006
+group: A_policy_faq
+tags:
+- faq
+- unsupported
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures: {}
+user:
+  goal: Hỏi trả góp không có trong chính sách
+  script:
+  - say: Shop có hỗ trợ trả góp thẻ tín dụng không?
+staff: []
+expect:
+  db: {}
+  required_facts: []
+  forbidden:
+  - kind: claim
+    pattern: có hỗ trợ trả góp
+  - kind: claim
+    pattern: được trả góp
+  - kind: claim
+    pattern: trả góp 0%

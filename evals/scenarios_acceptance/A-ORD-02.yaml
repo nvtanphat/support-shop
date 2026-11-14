@@ -1,0 +1,36 @@
+id: A-ORD-02
+group: B_order_lookup
+tags:
+- acceptance
+- lookup
+clock: '2026-11-24T09:00:00+07:00'
+principal:
+  type: customer
+  email: acceptance.customer@example.test
+fixtures:
+  orders:
+  - code: SL-A40002
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: đồng hồ treo tường
+      sku: A-DH-01
+      qty: 1
+      unit_price: 230000
+    delivered_at: -1d
+user:
+  goal: Đơn đã giao
+  script:
+  - say: Đơn SL-A40002 giao chưa ạ?
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-A40002
+      status: delivered
+  required_facts:
+  - kind: status
+    value: delivered
+  forbidden: []
+  required_tools:
+  - get_order

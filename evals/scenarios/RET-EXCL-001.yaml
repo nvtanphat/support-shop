@@ -1,0 +1,38 @@
+id: RET-EXCL-001
+group: E_return_ineligible
+tags:
+- smoke
+- exclusion
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-400001
+    status: delivered
+    delivered_at: -2d
+    payment_method: card
+    items:
+    - key: dolot
+      sku: TS-UND-01
+      qty: 1
+      unit_price: 150000
+      flags:
+      - hygiene
+user:
+  goal: Đổi ý trả đồ lót
+  script:
+  - say: Mình muốn trả sản phẩm đồ lót đơn SL-400001 vì mặc không ưng
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-03
+  forbidden:
+  - kind: tool
+    pattern: propose_return
+  - kind: claim
+    pattern: đã tạo yêu cầu

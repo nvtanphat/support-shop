@@ -1,0 +1,37 @@
+id: H-RET-005
+group: E_return_ineligible
+tags:
+- former_holdout
+- exclusion
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: holdout.customer@example.test
+fixtures:
+  orders:
+  - code: SL-H10005
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: son
+      sku: HD-SON-01
+      qty: 1
+      unit_price: 259000
+      flags:
+      - sealed_cosmetic
+    delivered_at: -2d
+user:
+  goal: Mỹ phẩm nguyên seal, đổi ý
+  script:
+  - say: Thỏi son đơn SL-H10005 mình chưa bóc seal nhưng không thích màu, trả được
+      không?
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts: []
+  forbidden:
+  - kind: tool
+    pattern: propose_return
+  - kind: claim
+    pattern: đã tạo yêu cầu

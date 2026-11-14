@@ -1,0 +1,42 @@
+id: CAN-SELF-002
+group: C_cancellation
+tags:
+- smoke
+- cancel
+- pending
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-200002
+    status: pending_payment
+    delivered_at: null
+    payment_method: card
+    items:
+    - key: ao
+      sku: TS-AO-02
+      qty: 1
+      unit_price: 350000
+user:
+  goal: Hủy đơn hàng vừa đặt đang ở trạng thái pending_payment
+  script:
+  - say: Mình muốn hủy đơn SL-200002
+  - on_proposal:
+      type: cancel_order
+    do: confirm
+    say: Xác nhận hủy đơn
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-200002
+      status: cancelled
+  required_facts: []
+  forbidden: []
+  required_tools:
+  - propose_cancel_order
+  required_tool_args:
+    propose_cancel_order:
+      order_code: SL-200002

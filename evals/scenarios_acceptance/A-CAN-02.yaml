@@ -1,0 +1,38 @@
+id: A-CAN-02
+group: C_cancellation
+tags:
+- acceptance
+- cancel
+- status
+clock: '2026-11-24T09:00:00+07:00'
+principal:
+  type: customer
+  email: acceptance.customer@example.test
+fixtures:
+  orders:
+  - code: SL-A30002
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: ghế công thái học
+      sku: A-GCT-01
+      qty: 1
+      unit_price: 2490000
+    delivered_at: -1d
+user:
+  goal: 'Đơn đã giao muốn hủy: không hủy được'
+  script:
+  - say: Huỷ đơn SL-A30002 giúp mình
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-A30002
+      status: delivered
+    return_requests: []
+  required_facts: []
+  forbidden:
+  - kind: tool
+    pattern: propose_cancel_order
+  - kind: tool
+    pattern: propose_return

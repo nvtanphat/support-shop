@@ -1,0 +1,47 @@
+id: CAN-PACK-002
+group: C_cancellation
+tags:
+- smoke
+- cancel
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-200002
+    status: packing
+    payment_method: card
+    items:
+    - key: ao
+      sku: TS-AO-04
+      qty: 1
+      unit_price: 400000
+user:
+  goal: Hủy đơn hàng đang packing
+  script:
+  - say: Mình muốn hủy đơn hàng SL-200002
+  - on_proposal:
+      type: cancel_order
+    do: confirm
+    say: Đồng ý hủy đơn
+staff:
+- when_event: approval.created
+  gate: cancel_packing
+  decision: approve
+  role: supervisor
+expect:
+  db:
+    orders:
+    - code: SL-200002
+      status: cancelled
+    approval_requests:
+    - gate: cancel_packing
+      status: approved
+  required_facts: []
+  forbidden: []
+  required_tools:
+  - propose_cancel_order
+  required_tool_args:
+    propose_cancel_order:
+      order_code: SL-200002

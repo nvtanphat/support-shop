@@ -1,0 +1,25 @@
+id: H-POL-001
+group: A_policy
+tags:
+- former_holdout
+- policy
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: holdout.customer@example.test
+fixtures:
+  orders: []
+user:
+  goal: Hỏi thời gian hoàn tiền chuyển khoản
+  script:
+  - say: Nếu mình thanh toán chuyển khoản ngân hàng thì mấy ngày mới nhận lại được
+      tiền hoàn?
+staff: []
+expect:
+  db: {}
+  required_facts:
+  - kind: status
+    value: 3-5 ngày
+  forbidden: []
+  required_tools:
+  - search_policy

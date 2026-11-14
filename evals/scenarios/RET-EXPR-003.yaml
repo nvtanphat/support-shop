@@ -1,0 +1,36 @@
+id: RET-EXPR-003
+group: E_return_ineligible
+tags:
+- smoke
+- expired
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders:
+  - code: SL-400003
+    status: delivered
+    delivered_at: -10d
+    payment_method: card
+    items:
+    - key: ao
+      sku: TS-AO-07
+      qty: 1
+      unit_price: 350000
+user:
+  goal: Đổi ý trả hàng sau 10 ngày
+  script:
+  - say: Đơn SL-400003 nhận 10 ngày rồi giờ đổi ý trả được không?
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-02
+  forbidden:
+  - kind: tool
+    pattern: propose_return
+  - kind: claim
+    pattern: đã tạo yêu cầu

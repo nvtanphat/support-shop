@@ -1,0 +1,25 @@
+id: F-ESC-02
+group: H_handoff
+tags:
+- final
+- handoff
+- multi_turn
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures: {}
+user:
+  goal: 'Đã chuyển nhân viên, lượt sau hỏi tiếp: không tạo phiếu thứ hai'
+  script:
+  - say: Mình cần gặp nhân viên hỗ trợ trực tiếp
+  - say: Khoảng bao lâu thì có người liên hệ mình vậy?
+staff: []
+expect:
+  db:
+    tickets:
+    - reason_code: customer_request
+  required_facts: []
+  forbidden: []
+  required_tools:
+  - escalate_to_human

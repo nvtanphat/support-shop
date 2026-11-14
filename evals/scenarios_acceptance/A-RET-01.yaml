@@ -1,0 +1,52 @@
+id: A-RET-01
+group: B_return_eligible
+tags:
+- acceptance
+- return
+clock: '2026-11-24T09:00:00+07:00'
+principal:
+  type: customer
+  email: acceptance.customer@example.test
+fixtures:
+  orders:
+  - code: SL-A10001
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: quần tây
+      sku: A-QT-01
+      qty: 1
+      unit_price: 330000
+    delivered_at: -2d
+user:
+  goal: 'Rộng quá, muốn trả lấy tiền: 330.000 - 30.000'
+  script:
+  - say: Quần tây đơn SL-A10001 rộng quá, cho mình trả lại lấy tiền
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Mình xác nhận
+staff: []
+expect:
+  db:
+    return_requests:
+    - order: SL-A10001
+      reason_code: change_of_mind
+      status: awaiting_return
+  required_facts:
+  - kind: amount_vnd
+    value: 300000
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-A10001
+      reason_code: change_of_mind

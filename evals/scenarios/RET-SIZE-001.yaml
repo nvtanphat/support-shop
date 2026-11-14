@@ -1,0 +1,53 @@
+id: RET-SIZE-001
+group: B_return_eligible
+tags:
+- return
+- size
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: size.customer@example.test
+staff: []
+fixtures:
+  orders:
+  - code: SL-740001
+    status: delivered
+    delivered_at: -3d
+    payment_method: ewallet
+    items:
+    - key: váy
+      sku: SZ-VAY-M
+      qty: 1
+      unit_price: 360000
+user:
+  goal: 'Váy chật, khách muốn trả lại: trả hàng đổi ý, không tự chuyển sang đổi size'
+  script:
+  - say: Váy đơn SL-740001 mặc chật, mình muốn trả lại
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Xác nhận
+expect:
+  db:
+    return_requests:
+    - order: SL-740001
+      reason_code: change_of_mind
+      status: awaiting_return
+  required_facts:
+  - kind: amount_vnd
+    value: 330000
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - - check_return_eligibility
+    - propose_return
+  required_tool_args:
+    propose_return:
+      order_code: SL-740001
+      reason_code: change_of_mind
+      resolution: refund

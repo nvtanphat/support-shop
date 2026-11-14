@@ -1,0 +1,40 @@
+id: A-CAN-01
+group: C_cancellation
+tags:
+- acceptance
+- cancel
+clock: '2026-11-24T09:00:00+07:00'
+principal:
+  type: customer
+  email: acceptance.customer@example.test
+fixtures:
+  orders:
+  - code: SL-A30001
+    status: pending_payment
+    payment_method: ewallet
+    items:
+    - key: thảm yoga
+      sku: A-TY-01
+      qty: 1
+      unit_price: 280000
+user:
+  goal: 'Đơn chờ thanh toán: tự hủy'
+  script:
+  - say: Đơn SL-A30001 mình chưa trả tiền, huỷ giúp mình
+  - on_proposal:
+      type: cancel_order
+    do: confirm
+    say: Xác nhận hủy
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-A30001
+      status: cancelled
+  required_facts: []
+  forbidden: []
+  required_tools:
+  - propose_cancel_order
+  required_tool_args:
+    propose_cancel_order:
+      order_code: SL-A30001

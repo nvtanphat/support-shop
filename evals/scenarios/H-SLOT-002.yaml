@@ -1,0 +1,45 @@
+id: H-SLOT-002
+group: S_slots
+tags:
+- former_holdout
+- slots
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: holdout.customer@example.test
+fixtures:
+  orders:
+  - code: SL-H30002
+    status: confirmed
+    payment_method: ewallet
+    items:
+    - key: a
+      sku: HD-A-01
+      qty: 1
+      unit_price: 150000
+  - code: SL-H30003
+    status: confirmed
+    payment_method: ewallet
+    items:
+    - key: b
+      sku: HD-B-01
+      qty: 1
+      unit_price: 220000
+user:
+  goal: Muốn hủy nhưng có hai đơn, chưa nói đơn nào
+  script:
+  - say: Cho mình hủy đơn với
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-H30002
+      status: confirmed
+    - code: SL-H30003
+      status: confirmed
+  required_facts:
+  - kind: asks_for
+    value: order_code
+  forbidden:
+  - kind: tool
+    pattern: propose_cancel_order

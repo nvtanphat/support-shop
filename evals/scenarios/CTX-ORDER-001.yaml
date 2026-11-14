@@ -1,0 +1,47 @@
+id: CTX-ORDER-001
+group: S_slots
+tags:
+- multi_turn
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: ctx.customer@example.test
+fixtures:
+  orders:
+  - code: SL-710001
+    status: delivered
+    delivered_at: -2d
+    payment_method: ewallet
+    items:
+    - key: ao
+      sku: TS-AO-S-XANH
+      qty: 1
+      unit_price: 250000
+  - code: SL-710002
+    status: delivered
+    delivered_at: -5d
+    payment_method: ewallet
+    items:
+    - key: ao
+      sku: TS-AO-M-TRANG
+      qty: 1
+      unit_price: 300000
+    - key: quan
+      sku: TS-QUAN-L-DEN
+      qty: 1
+      unit_price: 400000
+user:
+  goal: Hỏi đơn gần nhất, không nêu mã
+  script:
+  - say: Đơn gần nhất của mình giao chưa vậy?
+staff: []
+expect:
+  db: {}
+  required_facts:
+  - kind: status
+    value: delivered
+  required_tools:
+  - get_order
+  required_tool_args:
+    get_order:
+      order_code: SL-710001

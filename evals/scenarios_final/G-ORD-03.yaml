@@ -1,0 +1,35 @@
+id: G-ORD-03
+group: B_order_lookup
+tags:
+- final2
+- lookup
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures:
+  orders:
+  - code: SL-G40003
+    status: packing
+    payment_method: ewallet
+    items:
+    - key: bình giữ nhiệt
+      sku: G-003
+      qty: 1
+      unit_price: 260000
+user:
+  goal: Hỏi trạng thái đơn packing
+  script:
+  - say: Đơn SL-G40003 đóng gói chưa vậy?
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-G40003
+      status: packing
+  required_facts:
+  - kind: status
+    value: packing
+  forbidden: []
+  required_tools:
+  - get_order

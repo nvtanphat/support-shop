@@ -1,0 +1,24 @@
+id: G-POL-02
+group: A_policy_faq
+tags:
+- final2
+- faq
+- unsupported
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures: {}
+user:
+  goal: Hỏi trả góp, không có trong chính sách
+  script:
+  - say: Shop có cho trả góp qua thẻ tín dụng không?
+staff: []
+expect:
+  db: {}
+  required_facts: []
+  forbidden:
+  - kind: claim
+    pattern: có hỗ trợ trả góp
+  - kind: claim
+    pattern: được trả góp

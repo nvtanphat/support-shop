@@ -1,0 +1,37 @@
+id: H-CAN-003
+group: C_cancel
+tags:
+- former_holdout
+- multi_turn
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: holdout.customer@example.test
+fixtures:
+  orders:
+  - code: SL-H20003
+    status: confirmed
+    payment_method: ewallet
+    items:
+    - key: quan
+      sku: HD-QUAN-01
+      qty: 1
+      unit_price: 320000
+user:
+  goal: Khách đổi ý, không xác nhận hủy
+  script:
+  - say: Hủy đơn SL-H20003 giúp mình
+  - on_proposal:
+      type: cancel_order
+    do: cancel
+    say: À thôi, mình giữ đơn lại
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-H20003
+      status: confirmed
+  required_facts: []
+  forbidden:
+  - kind: claim
+    pattern: đã hủy

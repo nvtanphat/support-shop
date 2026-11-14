@@ -1,0 +1,37 @@
+id: A-RET-04
+group: E_return_ineligible
+tags:
+- acceptance
+- return
+- excluded
+clock: '2026-11-24T09:00:00+07:00'
+principal:
+  type: customer
+  email: acceptance.customer@example.test
+fixtures:
+  orders:
+  - code: SL-A10004
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: giày lười
+      sku: A-GL-01
+      qty: 1
+      unit_price: 390000
+      flags:
+      - final_sale
+    delivered_at: -3d
+user:
+  goal: 'Hàng xả kho chật: loại trừ khi đổi ý'
+  script:
+  - say: Đôi giày mua đợt xả kho đơn SL-A10004 đi chật, cho mình trả nhé
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-03
+  forbidden:
+  - kind: tool
+    pattern: propose_return

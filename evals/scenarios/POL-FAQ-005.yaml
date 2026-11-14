@@ -1,0 +1,27 @@
+id: POL-FAQ-005
+group: A_policy_faq
+tags:
+- smoke
+- policy
+- shipping
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: customer@example.com
+fixtures:
+  orders: []
+user:
+  goal: Hỏi chính sách và thời gian giao nhận hàng
+  script:
+  - say: Shop giao hàng trong bao lâu thì nhận được?
+staff: []
+expect:
+  db: {}
+  required_facts:
+  - kind: pattern
+    value: ngày
+  forbidden:
+  - kind: claim
+    pattern: vi phạm
+  required_tools:
+  - search_policy

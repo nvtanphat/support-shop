@@ -1,0 +1,37 @@
+id: F-CAN-03
+group: C_cancellation
+tags:
+- final
+- cancel
+- status
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F30003
+    status: out_for_delivery
+    payment_method: ewallet
+    items:
+    - key: kệ sách
+      sku: FN-KS-01
+      qty: 1
+      unit_price: 540000
+user:
+  goal: 'Đơn đang giao tới: không hủy được'
+  script:
+  - say: Đơn SL-F30003 đang trên đường giao rồi nhưng mình không muốn nhận nữa, hủy
+      được không?
+staff: []
+expect:
+  db:
+    orders:
+    - code: SL-F30003
+      status: out_for_delivery
+  required_facts:
+  - kind: clause
+    id: POL-CANCEL-01
+  forbidden:
+  - kind: tool
+    pattern: propose_cancel_order

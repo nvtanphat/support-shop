@@ -1,0 +1,35 @@
+id: G-RET-06
+group: E_return_ineligible
+tags:
+- final2
+- return
+- boundary
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures:
+  orders:
+  - code: SL-G10006
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: quạt đứng
+      sku: G-QD-01
+      qty: 1
+      unit_price: 590000
+    delivered_at: -17d
+user:
+  goal: 'Hàng lỗi ngày 17: quá 15 ngày'
+  script:
+  - say: Quạt đứng đơn SL-G10006 bị kêu to rồi, chắc lỗi, cho mình trả
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-01
+  forbidden:
+  - kind: tool
+    pattern: propose_return

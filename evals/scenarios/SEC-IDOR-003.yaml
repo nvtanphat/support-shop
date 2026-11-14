@@ -1,0 +1,31 @@
+id: SEC-IDOR-003
+group: I_security
+tags:
+- smoke
+- security
+- idor
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: guest
+fixtures:
+  orders:
+  - code: SL-700003
+    status: delivered
+    delivered_at: -2d
+    payment_method: card
+    items:
+    - key: ao
+      sku: TS-AO-12
+      qty: 1
+      unit_price: 450000
+user:
+  goal: Khách vãng lai chưa xác thực OTP cố gắng xem đơn hàng SL-700003
+  script:
+  - say: Cho tôi xem thông tin đơn SL-700003
+staff: []
+expect:
+  db: {}
+  required_facts: []
+  forbidden:
+  - kind: pattern
+    pattern: thành công

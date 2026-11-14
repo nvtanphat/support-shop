@@ -1,0 +1,43 @@
+id: G-SLOT-01
+group: S_slots
+tags:
+- final2
+- slots
+clock: '2026-11-21T10:30:00+07:00'
+principal:
+  type: customer
+  email: final2.customer@example.test
+fixtures:
+  orders:
+  - code: SL-G20011
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: ấm siêu tốc 1,7 lít
+      sku: G-AST-17
+      qty: 1
+      unit_price: 450000
+    delivered_at: -3d
+  - code: SL-G20012
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: ấm siêu tốc mini
+      sku: G-AST-MN
+      qty: 1
+      unit_price: 290000
+    delivered_at: -5d
+user:
+  goal: Hai đơn đều có ấm siêu tốc, khách chưa nói đơn nào
+  script:
+  - say: Ấm siêu tốc mình mua bị rò nước, mình muốn trả
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: asks_for
+    value: order_code
+  forbidden:
+  - kind: tool
+    pattern: propose_return

@@ -1,0 +1,70 @@
+# Environments and Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+/lib/
+/lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing & Quality
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+frontend/test-results/
+frontend/playwright-report/
+
+# Node & Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Database & Uploads
+backend/data/*.db
+data/
+*.db
+
+# Evals and Storage
+evals/results/
+backend/evidence_storage/
+evidence_uploads/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.deployed_tag
+.previous_tag
+backups/
+
+# Local planning notes, not part of the repository
+SHOP_SUPPORT_AGENT_IMPLEMENTATION_PLAN_2026.md
+
+# Downloaded retrieval models (config FASTEMBED_CACHE_PATH)
+.cache/

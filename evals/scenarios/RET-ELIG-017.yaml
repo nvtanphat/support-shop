@@ -1,0 +1,63 @@
+id: RET-ELIG-017
+group: D_return_eligible
+tags:
+- smoke
+- voucher
+- partial
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: lan.pham@example.test
+fixtures:
+  orders:
+  - code: SL-900017
+    status: delivered
+    delivered_at: -6d
+    payment_method: ewallet
+    discount_total: 60000
+    items:
+    - key: ao
+      sku: TS-AO-M-TRANG
+      qty: 1
+      unit_price: 300000
+    - key: vay
+      sku: TS-VAY-S-DEN
+      qty: 1
+      unit_price: 500000
+    - key: tat
+      sku: TS-TAT-FREE
+      qty: 2
+      unit_price: 100000
+user:
+  goal: Trả cái váy vì đổi ý, lấy lại tiền
+  script:
+  - say: mình muốn trả cái váy trong đơn SL-900017 vì đổi ý
+  - on_proposal:
+      type: return
+    do: confirm
+    say: Đồng ý xác nhận
+staff: []
+expect:
+  db:
+    return_requests:
+    - order: SL-900017
+      reason_code: change_of_mind
+      status: awaiting_return
+  required_facts:
+  - kind: amount_vnd
+    value: 440000
+  - kind: clause
+    id: POL-RETURN-02
+  forbidden:
+  - kind: claim
+    pattern: đã hoàn tiền
+  required_tools:
+  - get_order
+  - check_return_eligibility
+  - propose_return
+  tool_ordering:
+  - [check_return_eligibility, propose_return]
+  required_tool_args:
+    propose_return:
+      order_code: SL-900017
+      reason_code: change_of_mind

@@ -1,0 +1,50 @@
+id: F-CAN-02
+group: C_cancellation
+tags:
+- final
+- cancel
+- approval
+clock: '2026-11-18T14:00:00+07:00'
+principal:
+  type: customer
+  email: final.customer@example.test
+fixtures:
+  orders:
+  - code: SL-F30002
+    status: packing
+    payment_method: card
+    items:
+    - key: loa
+      sku: FN-LOA-01
+      qty: 1
+      unit_price: 880000
+user:
+  goal: Đơn đang đóng gói, trưởng ca từ chối hủy
+  script:
+  - say: Hủy giúp mình đơn SL-F30002 với, mình không cần nữa
+  - on_proposal:
+      type: cancel_order
+    do: confirm
+    say: Gửi yêu cầu hủy
+staff:
+- when_event: approval.created
+  gate: cancel_packing
+  decision: reject
+  role: supervisor
+expect:
+  db:
+    orders:
+    - code: SL-F30002
+      status: packing
+    approval_requests:
+    - gate: cancel_packing
+      status: rejected
+  required_facts: []
+  forbidden:
+  - kind: claim
+    pattern: đã hủy đơn
+  required_tools:
+  - propose_cancel_order
+  required_tool_args:
+    propose_cancel_order:
+      order_code: SL-F30002
