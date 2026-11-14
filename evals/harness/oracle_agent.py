@@ -57,7 +57,7 @@ class OracleAgent:
         (1, ("thứ hai", "thứ 2")),
         (2, ("thứ ba", "thứ 3")),
     )
-    _CHANGE_OF_MIND_WORDS = ("đổi ý", "không thích", "không vừa", "không hợp", "mặc không ưng", "xả kho", "đồ lót")
+    _CHANGE_OF_MIND_WORDS = ("đổi ý", "không thích", "không vừa", "không hợp", "không cần", "mặc không ưng", "xả kho", "đồ lót")
     # Symptoms a customer reports for a faulty product, not only the word "lỗi".
     _DEFECT_WORDS = ("lỗi", "rách", "hỏng", "bung", "sờn", "dột", "méo", "rè", "chập chờn", "không lên", "tắt ngúm")
     _CANCEL_WORDS = ("hủy", "huỷ", "cancel", "bỏ đơn", "không lấy nữa")

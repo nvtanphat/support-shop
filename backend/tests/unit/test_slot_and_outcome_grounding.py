@@ -314,3 +314,13 @@ _AMBIGUOUS = {"tool": "check_return_eligibility", "args": {},
 ])
 def test_after_an_ambiguous_order_the_reply_asks_which_one(draft: str, flagged: bool) -> None:
     assert bool(unasked_missing_slots([_AMBIGUOUS], draft)) is flagged
+
+
+@pytest.mark.parametrize(("draft", "flagged"), [
+    # both orders listed, then the question still picks one of them
+    ("Bạn có hai đơn: SL-A00001 (áo sơ mi) và SL-B00002 (áo polo). Bạn muốn trả áo ở đơn SL-A00001 phải không?", True),
+    ("Bạn có hai đơn: SL-A00001 (áo sơ mi) và SL-B00002 (áo polo). Bạn muốn trả áo ở đơn nào ạ?", False),
+    ("Bạn muốn trả đơn SL-A00001 hay đơn SL-B00002 ạ?", False),
+])
+def test_listing_both_orders_does_not_excuse_a_leading_question(draft: str, flagged: bool) -> None:
+    assert bool(unasked_missing_slots([_AMBIGUOUS], draft)) is flagged

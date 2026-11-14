@@ -10,7 +10,7 @@ principal:
 fixtures:
   orders:
   - code: SL-100003
-    status: shipping
+    status: shipped
     delivered_at: null
     payment_method: card
     items:
@@ -27,10 +27,10 @@ expect:
   db:
     orders:
     - code: SL-100003
-      status: shipping
+      status: shipped
   required_facts:
   - kind: status
-    value: shipping
+    value: shipped
   - kind: amount_vnd
     value: 850000
   forbidden:

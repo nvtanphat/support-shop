@@ -388,11 +388,13 @@ def unasked_missing_slots(executed: list[dict[str, Any]], draft: str) -> list[st
     candidates = next(
         (r["candidates"] for r in latest.values() if r.get("slot") == "order_code" and len(r.get("candidates") or []) > 1), None
     )
-    if candidates is not None:
+    if candidates is not None and not re.search(r"đơn\s+(?:hàng\s+)?nào", lowered):
         named = {c for c in candidates if c.lower() in lowered}
-        # A guess at one order ("đơn SL-A phải không?") picks for the customer; the choice must stay theirs (seen live:
-        # two orders held a shirt and the reply asked only about the newest).
-        if len(named) < 2 and not re.search(r"đơn\s+(?:hàng\s+)?nào", lowered):
+        questions = [s for s in re.split(r"(?<=[.!?])\s+|\n", lowered) if "?" in s]
+        asked = {c for c in candidates if any(c.lower() in q for q in questions)}
+        # A guess at one order ("đơn SL-A phải không?") picks for the customer; the choice must stay theirs. Listing every
+        # order first does not change that when the question itself names only one (both seen live).
+        if len(named) < 2 or len(asked) == 1:
             return [
                 f"ASK_WHICH_ORDER: order_code (several recent orders could be meant: {', '.join(candidates)}; list them and ask "
                 "which one, instead of asking about one of them)"
