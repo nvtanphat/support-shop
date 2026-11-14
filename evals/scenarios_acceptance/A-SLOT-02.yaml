@@ -1,0 +1,34 @@
+id: A-SLOT-02
+group: S_slots
+tags:
+- acceptance
+- slots
+clock: '2026-11-24T09:00:00+07:00'
+principal:
+  type: customer
+  email: acceptance.customer@example.test
+fixtures:
+  orders:
+  - code: SL-A20021
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: nồi inox
+      sku: A-NI-01
+      qty: 1
+      unit_price: 420000
+    delivered_at: -2d
+user:
+  goal: Trả hàng, chưa nói lý do
+  script:
+  - say: Cho mình trả cái nồi đơn SL-A20021
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: asks_for
+    value: reason
+  forbidden:
+  - kind: tool
+    pattern: propose_return

@@ -1,0 +1,43 @@
+id: A-SLOT-01
+group: S_slots
+tags:
+- acceptance
+- slots
+clock: '2026-11-24T09:00:00+07:00'
+principal:
+  type: customer
+  email: acceptance.customer@example.test
+fixtures:
+  orders:
+  - code: SL-A20011
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: tai nghe không dây
+      sku: A-TN-KD
+      qty: 1
+      unit_price: 790000
+    delivered_at: -3d
+  - code: SL-A20012
+    status: delivered
+    payment_method: ewallet
+    items:
+    - key: tai nghe có dây
+      sku: A-TN-CD
+      qty: 1
+      unit_price: 190000
+    delivered_at: -6d
+user:
+  goal: Hai đơn cùng có tai nghe, khách chưa nói đơn nào
+  script:
+  - say: Tai nghe mình nhận bị mất tiếng một bên, mình muốn trả
+staff: []
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: asks_for
+    value: order_code
+  forbidden:
+  - kind: tool
+    pattern: propose_return

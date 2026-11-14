@@ -1,0 +1,23 @@
+id: A-ESC-01
+group: H_handoff
+tags:
+- acceptance
+- handoff
+clock: '2026-11-24T09:00:00+07:00'
+principal:
+  type: customer
+  email: acceptance.customer@example.test
+fixtures: {}
+user:
+  goal: Muốn nói chuyện với nhân viên
+  script:
+  - say: Cho mình nói chuyện với nhân viên chăm sóc khách hàng
+staff: []
+expect:
+  db:
+    tickets:
+    - reason_code: customer_request
+  required_facts: []
+  forbidden: []
+  required_tools:
+  - escalate_to_human
