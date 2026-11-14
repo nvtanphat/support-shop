@@ -1,15 +1,13 @@
 # Quy trình Đổi hàng (exchange)
 
-1. Khách hàng yêu cầu đổi sang phân loại khác (kích cỡ, màu sắc):
-   - Đổi kích cỡ (size) hoặc màu sắc thuộc chính sách đổi hàng `POL-EXCHANGE-01` áp dụng trong thời hạn 15 ngày theo chính sách đổi trả `POL-RETURN-01`.
-   - Luôn gọi `search_policy` với từ khóa "đổi size đổi hàng" và trích dẫn mã điều khoản quy định `[POL-RETURN-01]` cùng `[POL-EXCHANGE-01]`.
-   - Giới hạn số lần đổi: Mỗi sản phẩm chỉ được hỗ trợ đổi tối đa 1 lần duy nhất. Nếu khách hỏi đã đổi 1 lần có đổi tiếp được không, BẮT BUỘC gọi `search_policy` và trích dẫn `[POL-RETURN-01]` giải thích quy định chỉ hỗ trợ đổi tối đa 1 lần.
-   - Đổi hàng chỉ áp dụng cho cùng sản phẩm, khác phân loại, cùng tầm giá trong 15 ngày.
-2. Kiểm tra tồn kho:
-   - Gọi `check_variant_stock` với SKU phân loại mà khách muốn đổi.
-   - Nếu hết hàng: Báo khách hết hàng và đề xuất chuyển sang giải pháp trả hàng hoàn tiền.
-   - Nếu còn hàng:
-     - Gọi `check_return_eligibility` với `resolution: "exchange"`.
-3. Tạo đề xuất:
-   - Gọi `propose_return` với `resolution: "exchange"` và mã `exchange_sku`.
+1. Khi nào là đổi hàng:
+   - Chỉ khi khách nói muốn đổi sang phân loại khác ("đổi sang size L", "đổi màu khác", "đổi cái khác"), hoặc trả lời đồng ý khi được hỏi có muốn đổi không.
+   - Hàng chật, rộng, không vừa mà khách nói muốn **trả** là trả hàng hoàn tiền (lý do đổi ý), không phải đổi size. Không tự chuyển yêu cầu trả hàng thành đổi hàng. Nếu khách chưa nói muốn trả hay đổi, hỏi một câu: trả hàng hoàn tiền hay đổi sang size khác.
+2. Điều kiện đổi hàng: tra cứu `search_policy` (chính sách đổi hàng) và trích dẫn điều khoản trả về; thời hạn và điều kiện lấy từ điều khoản và từ `check_return_eligibility`, không tự nêu con số. Đổi hàng chỉ sang cùng sản phẩm, khác phân loại, cùng giá, mỗi sản phẩm đổi tối đa một lần.
+3. Kiểm tra tồn kho:
+   - Gọi `check_variant_stock` với SKU sản phẩm khách đang có để xem các phân loại khác.
+   - Không có phân loại khách muốn, hoặc hết hàng: nói rõ và đề nghị trả hàng hoàn tiền.
+   - Có hàng: gọi `check_return_eligibility` với `resolution: "exchange"`.
+4. Tạo đề xuất:
+   - Gọi `propose_return` với `resolution: "exchange"` và `exchange_sku` lấy từ kết quả `check_variant_stock`.
    - Hướng dẫn khách bấm nút **Xác nhận** trên thẻ hành động để tạo phiếu gửi hàng đổi.

@@ -1,0 +1,34 @@
+id: RET-SIZE-003
+group: G_exchange
+tags:
+- exchange
+- size
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: size.customer@example.test
+staff: []
+fixtures:
+  orders:
+  - code: SL-740003
+    status: delivered
+    delivered_at: -3d
+    payment_method: ewallet
+    items:
+    - key: áo sơ mi
+      sku: SZ-SM-M
+      qty: 1
+      unit_price: 290000
+user:
+  goal: Khách thật sự muốn đổi size, nhưng sản phẩm không có phân loại khác
+  script:
+  - say: Áo sơ mi đơn SL-740003 hơi chật, cho mình đổi sang size L
+expect:
+  db:
+    return_requests: []
+  required_facts: []
+  required_tools:
+  - check_variant_stock
+  forbidden:
+  - kind: claim
+    pattern: đã đổi

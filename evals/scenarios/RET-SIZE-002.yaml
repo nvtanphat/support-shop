@@ -1,0 +1,37 @@
+id: RET-SIZE-002
+group: E_return_ineligible
+tags:
+- return
+- size
+- excluded
+clock: '2026-11-11T10:00:00+07:00'
+principal:
+  type: customer
+  email: size.customer@example.test
+staff: []
+fixtures:
+  orders:
+  - code: SL-740002
+    status: delivered
+    delivered_at: -3d
+    payment_method: ewallet
+    items:
+    - key: tất
+      sku: SZ-TAT-01
+      qty: 1
+      unit_price: 90000
+      flags:
+      - hygiene
+user:
+  goal: 'Tất đi không vừa: hàng vệ sinh, không trả được khi đổi ý'
+  script:
+  - say: Tất đơn SL-740002 đi không vừa, trả được không?
+expect:
+  db:
+    return_requests: []
+  required_facts:
+  - kind: clause
+    id: POL-RETURN-03
+  forbidden:
+  - kind: tool
+    pattern: propose_return

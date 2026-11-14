@@ -81,6 +81,14 @@ _ASKS_RE = re.compile(
     r"|cho\s+(?:mình|em|tôi)\s+(?:biết|xin|hỏi)|(?:mình|em)\s+cần\s+(?:biết|thêm\s+thông\s+tin)"
 )
 _RESOLUTIONS = frozenset(r.value for r in ReturnResolution)
+# Words by which a customer asks for another variant. "Chật" or "không vừa" alone is a reason (change of mind), not a
+# wish to exchange: seen live, "đi thử thấy chật, trả lại được không" was turned into a size exchange. "Đổi ý" and
+# "đổi trả" contain "đổi" but ask for nothing to be exchanged, so only these phrases count.
+_EXCHANGE_WORDS_VI: tuple[str, ...] = (
+    "đổi size", "đổi sang", "đổi qua", "đổi cỡ", "đổi màu", "đổi phân loại", "đổi hàng", "đổi cái khác", "đổi lấy",
+    "đổi lại size", "size khác", "cỡ khác", "màu khác",
+)
+_EXCHANGE_WORDS: tuple[str, ...] = tuple(dict.fromkeys(remove_vietnamese_accents(w) for w in _EXCHANGE_WORDS_VI))
 
 
 class GroundingContext:
@@ -160,6 +168,16 @@ class GroundingContext:
         if not asked or not _AFFIRMATION_RE.match(self._latest_human) or not _CLOSED_QUESTION_RE.search(asked.lower()):
             return False
         return _mentions_reason(unicodedata.normalize("NFC", asked.lower()), remove_vietnamese_accents(asked), reason)
+
+    def customer_wants_exchange(self) -> bool:
+        """The customer asked for another variant, or said yes when the assistant offered one."""
+        for raw, stripped in zip(self._human_raw, self._human_text, strict=True):
+            words, text = (_EXCHANGE_WORDS_VI, raw) if raw != stripped else (_EXCHANGE_WORDS, stripped)
+            if any(_has_word(text, w) for w in words):
+                return True
+        asked = unicodedata.normalize("NFC", self._assistant_before_latest.lower())
+        offered = any(_has_word(asked, w) for w in _EXCHANGE_WORDS_VI)
+        return offered and _CLOSED_QUESTION_RE.search(asked) is not None and _AFFIRMATION_RE.match(self._latest_human) is not None
 
     def recent_order_list(self) -> list[str]:
         """The recent orders shown to the model, newest first: the candidates when the customer has not chosen."""
@@ -306,6 +324,13 @@ def find_ungrounded_slot(
         )
     if args.get("resolution", "refund") not in _RESOLUTIONS:
         return _missing("resolution", "Hãy hỏi khách muốn hoàn tiền (refund) hay đổi hàng (exchange).")
+    if args.get("resolution") == "exchange" and not grounding.customer_wants_exchange():
+        return _missing(
+            "resolution",
+            "Khách chưa yêu cầu đổi sang phân loại khác. Hàng chật, rộng hay không vừa là lý do trả hàng (đổi ý), không phải "
+            "yêu cầu đổi size: khách nói muốn trả thì dùng resolution=refund. Chỉ khi khách chưa nói muốn trả hay đổi, hỏi một "
+            "câu: bạn muốn trả hàng hoàn tiền hay đổi sang size khác.",
+        )
     if tool == "propose_return" and args.get("resolution") == "exchange":
         sku = str(args.get("exchange_sku") or "").strip()
         if not sku or not grounding.knows_item(f'"{sku}"'):

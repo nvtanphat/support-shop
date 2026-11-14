@@ -523,17 +523,17 @@ def test_item_must_come_from_get_order_result() -> None:
 
 
 def test_invalid_reason_and_missing_exchange_sku_are_rejected() -> None:
-    g = grounding(["đơn SL-100002 cái áo mình đổi ý"], [ORDER_RESULT])
+    g = grounding(["đơn SL-100002 cái áo mình đổi ý, đổi sang size M giúp mình"], [ORDER_RESULT])
     base = {"order_code": "SL-100002", "items": [{"item_id": "11111111-aaaa", "qty": 1}]}
     assert find_ungrounded_slot("propose_return", {**base, "reason_code": "khong_thich"}, g)["slot"] == "reason_code"
     exchange = {**base, "reason_code": "change_of_mind", "resolution": "exchange"}
     assert find_ungrounded_slot("propose_return", exchange, g)["slot"] == "exchange_sku"
     checked = '{"eligible": true, "checked": {"order_code": "SL-100002", "item_ids": ["11111111-aaaa"], "reason_code": "change_of_mind", "resolution": "exchange"}}'
-    g_checked = grounding(["đơn SL-100002 cái áo mình đổi ý"], [ORDER_RESULT, checked])
+    g_checked = grounding(["đơn SL-100002 cái áo mình đổi ý, đổi sang size M giúp mình"], [ORDER_RESULT, checked])
     # A SKU no tool returned is a guess, even when the eligibility check passed.
     assert find_ungrounded_slot("propose_return", {**exchange, "exchange_sku": "TS-M"}, g_checked)["slot"] == "exchange_sku"
     stock = '{"sku": "TS-S", "variants": [{"sku": "TS-S"}, {"sku": "TS-M"}]}'
-    g_stock = grounding(["đơn SL-100002 cái áo mình đổi ý"], [ORDER_RESULT, checked, stock])
+    g_stock = grounding(["đơn SL-100002 cái áo mình đổi ý, đổi sang size M giúp mình"], [ORDER_RESULT, checked, stock])
     assert find_ungrounded_slot("propose_return", {**exchange, "exchange_sku": "TS-M"}, g_stock) is None
 
 

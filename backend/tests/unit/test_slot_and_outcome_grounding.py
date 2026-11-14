@@ -324,3 +324,36 @@ def test_after_an_ambiguous_order_the_reply_asks_which_one(draft: str, flagged: 
 ])
 def test_listing_both_orders_does_not_excuse_a_leading_question(draft: str, flagged: bool) -> None:
     assert bool(unasked_missing_slots([_AMBIGUOUS], draft)) is flagged
+
+
+# --- An exchange is what the customer asked for, not what the model reads into "chật" -------------------------
+_DRESS_TIGHT = json.dumps({"items": [{"item_id": "it-1", "product_name": "váy"}]}, ensure_ascii=False)
+
+
+def _with_resolution(said: str, resolution: str, *more: tuple[str, str]) -> dict[str, Any] | None:
+    args = {"order_code": "SL-A00001", "item_ids": ["it-1"], "reason_code": "change_of_mind", "resolution": resolution}
+    return find_ungrounded_slot("check_return_eligibility", args, _ctx(("customer", said), ("tool", _DRESS_TIGHT), *more))
+
+
+def test_a_size_complaint_with_a_wish_to_return_is_not_an_exchange() -> None:
+    # Seen live: "đi thử thấy chật, trả lại được không" became a size exchange and the reply kept asking for a size.
+    result = _with_resolution("Váy đơn SL-A00001 mặc chật, mình muốn trả lại", "exchange")
+    assert result is not None and result["slot"] == "resolution"
+    assert _with_resolution("Váy đơn SL-A00001 mặc chật, mình muốn trả lại", "refund") is None
+
+
+@pytest.mark.parametrize("said", ["Váy đơn SL-A00001 chật, cho mình đổi sang size L", "Váy đơn SL-A00001 không vừa, đổi size giúp mình"])
+def test_an_exchange_the_customer_asked_for_is_grounded(said: str) -> None:
+    assert _with_resolution(said, "exchange") is None
+
+
+def test_change_of_mind_or_returns_wording_is_not_an_exchange_request() -> None:
+    assert _with_resolution("Váy đơn SL-A00001 mình đổi ý rồi, chính sách đổi trả thế nào", "exchange") is not None
+
+
+def test_a_yes_to_an_offer_of_another_size_grounds_the_exchange() -> None:
+    result = _with_resolution(
+        "Váy đơn SL-A00001 mặc chật", "exchange",
+        ("assistant", "Bạn muốn đổi sang size khác phải không ạ?"), ("customer", "Đúng rồi"),
+    )
+    assert result is None

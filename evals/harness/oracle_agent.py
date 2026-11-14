@@ -57,7 +57,7 @@ class OracleAgent:
         (1, ("thứ hai", "thứ 2")),
         (2, ("thứ ba", "thứ 3")),
     )
-    _CHANGE_OF_MIND_WORDS = ("đổi ý", "không thích", "không vừa", "không hợp", "không cần", "mặc không ưng", "xả kho", "đồ lót")
+    _CHANGE_OF_MIND_WORDS = ("đổi ý", "không thích", "không vừa", "không hợp", "không cần", "chật", "rộng", "mặc không ưng", "xả kho", "đồ lót")
     # Symptoms a customer reports for a faulty product, not only the word "lỗi".
     _DEFECT_WORDS = ("lỗi", "rách", "hỏng", "bung", "sờn", "dột", "méo", "rè", "chập chờn", "không lên", "tắt ngúm")
     _CANCEL_WORDS = ("hủy", "huỷ", "cancel", "bỏ đơn", "không lấy nữa")
@@ -196,7 +196,7 @@ class OracleAgent:
         is_return_turn = any(w in msg_lower for w in ("trả", "đổi trả", "hoàn tiền", "đổi ý", "lỗi", "hỏng", *self._WRONG_ITEM_WORDS)) and not any(
             w in msg_lower for w in self._CANCEL_WORDS
         )
-        is_policy_question = any(w in msg_lower for w in self._POLICY_WORDS) and not re.search(r"SL-\w+", user_message, re.IGNORECASE)
+        is_policy_question = any(w in msg_lower for w in self._POLICY_WORDS) and not re.search(r"\bSL-\w+", user_message, re.IGNORECASE)
         if is_policy_question:
             self._pending_intent = None
         if (is_return_turn and not is_policy_question) or self._pending_intent == "return":
@@ -349,7 +349,30 @@ class OracleAgent:
                         None,
                     )
 
-        # 3.5 Exchange inquiry
+        # 3.5 Exchange request for an order: look up the other variants before promising anything (spec 1.3).
+        if order_code and any(w in msg_lower for w in ("đổi size", "đổi sang", "đổi màu", "đổi cỡ")):
+            order_model = (await self.session.execute(select(OrderModel).where(OrderModel.code == order_code))).scalar_one_or_none()
+            if order_model:
+                rows = await self._order_items(order_model.id)
+                chosen = self._pick_items(rows, customer_text) or [rows[0][0]]
+                variant = await self.session.get(ProductVariantModel, chosen[0].variant_id)
+                has_other = await self._has_exchange_variant(chosen)
+                tool_calls.append({
+                    "tool": "check_variant_stock",
+                    "args": {"sku": variant.sku if variant else ""},
+                    "result": {"sku": variant.sku if variant else "", "other_variants_in_stock": has_other},
+                })
+                if not has_other:
+                    tool_calls.append({"tool": "search_policy", "args": {"query": "đổi size đổi hàng"}, "result": {"status": "success", "results": []}})
+                    return (
+                        f"Theo chính sách đổi hàng [POL-EXCHANGE-01] và đổi trả [POL-RETURN-01], chỉ đổi sang phân loại khác của cùng "
+                        f"sản phẩm còn hàng. Sản phẩm trong đơn {order_code} hiện không có phân loại khác còn hàng nên chưa đổi được. "
+                        "Quý khách có muốn trả hàng hoàn tiền thay thế không ạ?",
+                        tool_calls,
+                        None,
+                    )
+
+        # 3.6 Exchange inquiry (no order)
         if any(w in msg_lower for w in ("đổi size", "size", "đổi sang", "chật", "rộng")):
             tool_calls.append({"tool": "search_policy", "args": {"query": user_message}, "result": {"status": "success", "results": []}})
             return (
