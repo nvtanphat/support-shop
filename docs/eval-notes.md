@@ -21,17 +21,6 @@ Phần này viết tay; mọi con số ở trên được sinh từ artifact tro
 
 **Retrieval:** với 10 điều khoản và 10 ứng viên cho reranker, bước chọn ứng viên chọn hết cả kho, nên BGE-M3 và RRF chưa làm thay đổi kết quả (kết quả tương đương BM25 làm cổng rồi reranker chấm cả kho); bước vector chỉ có tác dụng khi số điều khoản vượt số ứng viên. Mã retrieval không đổi; tập holdout retrieval nhỏ (28 câu có đáp án, 20 câu ngoài phạm vi), khoảng tin cậy rộng. Số liệu chọn bản int8 và số ứng viên của reranker ở [ADR-008](adr/008-D8-embedding-selection.md) và [ADR-007](adr/007-D7-hybrid-rag.md).
 
-**Retrieval khi kho điều khoản lớn lên** (`python -m evals.retrieval.scale`, điều khoản nhiễu sinh theo mẫu về các chủ đề khác, chạy lại bộ 106 câu hỏi; ngưỡng giữ nguyên như đang chạy):
-
-| Số điều khoản | Điều khoản đúng còn trong 10 ứng viên | Recall@1 | Recall@4 | Từ chối câu ngoài phạm vi |
-|---|---|---|---|---|
-| 10 | 28/28 | 0,929 | 0,982 | 20/20 |
-| 50 | 28/28 | 0,929 | 0,982 | 20/20 |
-| 100 | 28/28 | 0,893 | 0,982 | 19/20 |
-| 150 | 28/28 | 0,893 | 0,982 | 17/20 |
-
-Giai đoạn chọn ứng viên mất vài mili giây ở mọi kích thước, nhúng 150 điều khoản mất khoảng 11 giây. Chất lượng giữ được cho câu trả lời được; phần giảm là **từ chối câu ngoài phạm vi**. Hiệu chỉnh lại ngưỡng không khắc phục (ở 150 điều khoản vẫn 17/20; ở 50 điều khoản còn làm một câu hợp lệ bị từ chối nhầm). Nguyên nhân đã thấy: bước khôi phục dấu học từ vựng từ chính kho điều khoản, nên khi kho lớn hơn nó đổi câu không dấu ngoài phạm vi thành chữ giống ngôn ngữ của kho ("ban nhac" thành "bản nhắc", khớp điều khoản "nhắc giỏ hàng"), và reranker chấm các điều khoản ngắn, chung chung gần ngưỡng. Hai câu khác lọt qua với điểm chỉ cao hơn ngưỡng 0,2 đến 0,8. Hạn chế của phép đo: điều khoản nhiễu là giả lập theo mẫu, mẫu câu hỏi nhỏ (28 và 20), chưa đo bộ nhớ.
-
 **Giới hạn:**
 - Mọi kịch bản do nhóm dự án viết; tập nghiệm thu nhỏ (16 kịch bản), nên 48/48 là bằng chứng tốt trong phạm vi các tình huống đó, không phải tỷ lệ trên khách hàng thật.
 - Gemini là dịch vụ ngoài: quá tải (503) và hết hạn mức ngày đã xảy ra trong lúc đo. Agent trả câu an toàn khi đó, nhưng khách không được phục vụ trong lượt ấy.
